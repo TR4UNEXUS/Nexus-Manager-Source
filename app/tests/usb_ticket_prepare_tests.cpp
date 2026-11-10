@@ -1,0 +1,43 @@
+using namespace sphaira;
+using namespace sphaira::nexusapp;
+void Reset(){gate_error=transport_error=extract_error=report_error=list_error=0;archive_writes=export_reads=save_attempts=fail_save_at=cancel_after=scan_calls=es_sessions=disconnect_after=gate_after=0;running=true;short_export=bad_export_rights=oversized=personal_export=transfer_active=false;count_fault=list_fault=ticket_return_delta=certificate_return_delta=0;actual_generation=42;on_rescan={};originals.clear();archives.clear();personal.clear();invalid_archives.clear();report_files.clear();report_dirs.clear();scan_current={42,{},true};}
+FsRightsId RightsFor(unsigned id){FsRightsId r{};r.bytes[0]=id;return r;}
+UsbTicketPair Original(unsigned id){UsbTicketPair p;es::TicketData d{RightsFor(id),es::TitleKeyType_Common};p.ticket.resize(sizeof(es::TicketHmac160));memcpy(p.ticket.data(),&d,sizeof(d));p.certificate={1,2,3,4};originals[id]=p;return p;}
+UsbImportTitle Row(unsigned title,unsigned right,u32 version=1,UsbImportStatus status=UsbImportStatus::AlreadyRegistered){UsbImportTitle r;r.record.key={0x0100000000000000ULL+title,version,0x80,0};r.record.application_id=r.record.key.id;r.record.installed_meta={u8(title),u8(right),u8(version)};r.record.content.push_back({{},true});r.name="Title "+std::to_string(title);r.meta_path="/registered/00/"+std::to_string(title)+"-"+std::to_string(version)+".nca";r.status=status;if(right)r.required_tickets.push_back(RightsFor(right));return r;}
+UsbTicketPreparePlan Plan(ui::ProgressBox& p){UsbTicketPreparePlan plan;assert(PlanUsbTicketPreparation(&p,scan_current,plan)==0);assert(plan.complete);assert(archive_writes==0&&save_attempts==0&&scan_calls==0);assert(es_sessions==0);return plan;}
+int main(){
+ ui::ProgressBox p;
+ Reset();Original(1);scan_current.titles={Row(1,1)};auto plan=Plan(p);assert(plan.tickets_to_save==1&&plan.titles[0].status==UsbTicketPrepareStatus::Ready);UsbTicketPrepareResult result;assert(PrepareUsbTickets(&p,plan,result)==0);assert(result.prepared==1&&result.saved==1&&archive_writes==1&&export_reads==2&&scan_calls==1&&es_sessions==0);assert(!result.report_path.empty());assert(result.entries[0].find("Prepared:")==0);
+ // Existing archives (including personal originals) need no ES extraction.
+ Reset();archives[1]=Original(1);originals.clear();personal.insert(1);scan_current.titles={Row(1,1),Row(2,0)};plan=Plan(p);assert(plan.tickets_to_save==0&&plan.titles[0].status==UsbTicketPrepareStatus::AlreadyPrepared&&plan.titles[1].status==UsbTicketPrepareStatus::AlreadyPrepared&&export_reads==0);
+ // Personal-only, missing and corrupt archives remain explicit, read-only failures.
+ Reset();personal.insert(1);invalid_archives.insert(3);Original(3);scan_current.titles={Row(1,1),Row(2,2),Row(3,3)};plan=Plan(p);assert(plan.tickets_to_save==0&&export_reads==0);for(const auto& row:plan.titles)assert(row.status==UsbTicketPrepareStatus::NeedsBackup&&!row.reason.empty());
+ // A failed/oversized/short/mismatched/common-type export cannot become a candidate.
+ for(int failure=0;failure<6;++failure){Reset();Original(1);scan_current.titles={Row(1,1)};if(failure==0)oversized=true;if(failure==1)short_export=true;if(failure==2)bad_export_rights=true;if(failure==3)personal_export=true;if(failure==4)extract_error=123;if(failure==5)originals[1].certificate.clear();plan=Plan(p);assert(plan.tickets_to_save==0&&plan.titles[0].status==UsbTicketPrepareStatus::NeedsBackup);}
+ for(int failure=0;failure<5;++failure){Reset();Original(1);scan_current.titles={Row(1,1)};if(failure==0)ticket_return_delta=1;if(failure==1)certificate_return_delta=-1;if(failure==2)certificate_return_delta=1;if(failure==3)originals[1].ticket.clear();if(failure==4)originals[1].certificate.resize(65537);plan=Plan(p);assert(plan.tickets_to_save==0&&plan.titles[0].status==UsbTicketPrepareStatus::NeedsBackup);}
+ // Duplicate rights are saved once; an incomplete latest version never selects an older one.
+ Reset();Original(1);scan_current.titles={Row(1,1),Row(2,1),Row(3,1,1),Row(3,1,2,UsbImportStatus::Incomplete)};plan=Plan(p);assert(plan.tickets_to_save==1&&plan.titles[2].status==UsbTicketPrepareStatus::Incomplete&&plan.titles[3].status==UsbTicketPrepareStatus::Incomplete);assert(PrepareUsbTickets(&p,plan,result)==0&&result.prepared==2&&result.skipped==2&&result.saved==1);
+ // Exact drive/content identity is rechecked before any archive writes.
+ for(int change=0;change<5;++change){Reset();Original(1);scan_current.titles={Row(1,1)};plan=Plan(p);on_rescan=[change](){if(change==0)actual_generation=43;if(change==1)scan_current.titles[0].record.installed_meta.push_back(9);if(change==2)scan_current.titles[0].record.content[0].expected_hash[31]=8;if(change==3)scan_current.titles[0].required_tickets[0].bytes[1]=1;if(change==4)scan_current.titles[0].status=UsbImportStatus::Incomplete;};assert(PrepareUsbTickets(&p,plan,result)!=0&&archive_writes==0&&result.prepared==0);}
+ // A ticket changed since preview must not be archived under old approval.
+ Reset();Original(1);scan_current.titles={Row(1,1)};plan=Plan(p);originals[1].certificate[0]^=0xff;assert(PrepareUsbTickets(&p,plan,result)!=0&&archive_writes==0);
+ // A valid archive created after preview is retained, not overwritten.
+ Reset();Original(1);scan_current.titles={Row(1,1)};plan=Plan(p);archives[1]=originals[1];archives[1].certificate[0]=99;assert(PrepareUsbTickets(&p,plan,result)==0&&result.prepared==1&&result.saved==0&&save_attempts==0&&archives[1].certificate[0]==99);
+ // Previously saved licenses are rechecked even with current-system tickets,
+ // no new copies, or one title requiring both old and new ticket archives.
+ for(int change=0;change<3;++change){Reset();archives[1]=Original(1);Original(2);auto row=Row(1,1);if(change==2)row.required_tickets.push_back(RightsFor(2));scan_current.titles={row};plan=Plan(p);if(change==1)invalid_archives.insert(1);else archives.erase(1);assert(PrepareUsbTickets(&p,plan,result)!=0&&archive_writes==0&&result.prepared==0&&result.already_prepared==0&&result.skipped==1);}
+ // Cancellation/write error after the first save report honest partial progress.
+ for(bool cancel:{false,true}){Reset();Original(1);Original(2);scan_current.titles={Row(1,1),Row(2,2)};plan=Plan(p);if(cancel)cancel_after=1;else fail_save_at=2;assert(PrepareUsbTickets(&p,plan,result)!=0&&archive_writes==1&&archives.contains(1)&&!archives.contains(2));assert(result.prepared==1&&result.saved==1&&result.skipped==1&&result.entries.size()==2&&!result.report_path.empty()&&es_sessions==0);}
+ for(bool gate:{false,true}){Reset();Original(1);Original(2);scan_current.titles={Row(1,1),Row(2,2)};plan=Plan(p);if(gate)gate_after=1;else disconnect_after=1;assert(PrepareUsbTickets(&p,plan,result)!=0&&archive_writes==1&&result.saved==1&&result.skipped==1&&save_attempts==1);}
+ // Journal, lifecycle and media failures prohibit exports/writes.
+ for(int failure=0;failure<4;++failure){Reset();Original(1);scan_current.titles={Row(1,1)};if(failure==0)gate_error=444;if(failure==1)running=false;if(failure==2)transport_error=333;if(failure==3)transfer_active=true;UsbTicketPreparePlan failed;assert(PlanUsbTicketPreparation(&p,scan_current,failed)!=0&&!failed.complete&&export_reads==0&&archive_writes==0&&es_sessions==0);}
+ // ES list allocation/returned bounds and initialized cursor are mandatory.
+ for(int fault=0;fault<5;++fault){Reset();Original(1);scan_current.titles={Row(1,1)};if(fault==0)count_fault=-1;if(fault==1)count_fault=65537;if(fault==2)list_fault=-1;if(fault==3)list_fault=2;if(fault==4)list_error=987;UsbTicketPreparePlan failed;assert(PlanUsbTicketPreparation(&p,scan_current,failed)!=0&&archive_writes==0&&export_reads==0&&es_sessions==0);}
+ Reset();Original(1);scan_current.titles={Row(1,1)};UsbTicketPreparePlan nullplan;assert(PlanUsbTicketPreparation(nullptr,scan_current,nullplan)!=0);plan=Plan(p);assert(PrepareUsbTickets(nullptr,plan,result)!=0&&archive_writes==0);
+ Reset();Original(1);scan_current.titles={Row(1,1)};plan=Plan(p);gate_error=444;assert(PrepareUsbTickets(&p,plan,result)==444&&archive_writes==0);
+ // Report failure does not undo a valid archive or hide the saved result.
+ Reset();Original(1);scan_current.titles={Row(1,1)};plan=Plan(p);report_error=111;assert(PrepareUsbTickets(&p,plan,result)==0&&result.prepared==1&&result.report_path.empty()&&result.detail.find("report could not be saved")!=std::string::npos);
+ // Plans contain only digests, and reports do not expose raw tickets or IDs.
+ assert(result.detail.find("rights")==std::string::npos);assert(es_sessions==0);
+ std::cout<<"USB ticket preparation: preview, exact common export, identity, deduplication, unsupported tickets, cancellation, partial results and reports passed\n";
+}

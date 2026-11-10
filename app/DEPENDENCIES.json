@@ -1,0 +1,62 @@
+[
+  {
+    "Name": "libnfs",
+    "Commit": "65f3e115973d724971e8d85e021083259245962f",
+    "URL": "https://github.com/ITotalJustice/libnfs.git"
+  },
+  {
+    "Name": "libsmb2",
+    "Commit": "867beea093f2863dfddea01945204f724afd6c45",
+    "URL": "https://github.com/ITotalJustice/libsmb2.git"
+  },
+  {
+    "Name": "dr_libs",
+    "Commit": "b962384395249f54168d5f5f175c47bd7b39dc1d",
+    "URL": "https://github.com/mackron/dr_libs.git"
+  },
+  {
+    "Name": "id3v2lib",
+    "Commit": "141ffb8e61abd736d7074e89d70b805b2fb5f6ed",
+    "URL": "https://github.com/larsbs/id3v2lib.git"
+  },
+  {
+    "Name": "libnxtc",
+    "Commit": "aa0a375fdfae77c81cbe97e0b05515b96096a859",
+    "URL": "https://github.com/DarkMatterCore/libnxtc.git"
+  },
+  {
+    "Name": "libpulsar",
+    "Commit": "ac7bc973c92ef7c64bf4b9ee496e928e68b05939",
+    "URL": "https://github.com/ITotalJustice/switch-libpulsar.git"
+  },
+  {
+    "Name": "minini",
+    "Commit": "6e952b67459cf84637ae72facb269b9893d160ca",
+    "URL": "https://github.com/ITotalJustice/minIni-nx.git"
+  },
+  {
+    "Name": "nanovg",
+    "Commit": "845c9fcc5afae6951c1fb9fcdf1ed908cfe7de71",
+    "URL": "https://github.com/ITotalJustice/nanovg-deko3d.git"
+  },
+  {
+    "Name": "stb_nanovg",
+    "Commit": "5c205738c191bcb0abc65c4febfa9bd25ff35234",
+    "URL": "https://github.com/nothings/stb.git"
+  },
+  {
+    "Name": "stb",
+    "Commit": "5c205738c191bcb0abc65c4febfa9bd25ff35234",
+    "URL": "https://github.com/nothings/stb.git"
+  },
+  {
+    "Name": "yyjson",
+    "Commit": "8b4a38dc994a110abaec8a400615567bd996105f",
+    "URL": "https://github.com/ibireme/yyjson.git"
+  },
+  {
+    "Name": "zstd",
+    "Commit": "f8745da6ff1ad1e7bab384bd1f9d742439278e99",
+    "URL": "https://github.com/facebook/zstd.git"
+  }
+]

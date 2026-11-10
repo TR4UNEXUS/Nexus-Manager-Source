@@ -1,0 +1,800 @@
+NEXUS MANAGER PORT FOLDER CATALOGUE
+Inspected 26 October 2026. B2 was accessed read-only.
+All 72 NSP files inspected. 45 NSZ packages are listed separately in the JSON and have not been inspected.
+Paths below are relative to the selected SD/USB filesystem. Whole folders include all nested files, local saves, configuration and runtime data.
+This is a package-layout inventory, not proof that each port runs on USB.
+
+Angry Bird Epic All Stars
+  Package: Angry Bird Epic All Stars.nsp
+  Format: installer + forwarder
+  Installed ID: 050044820DA08000
+  Forwarder ID: 0500E9F7E5F1E000
+  NRO: /switch/angrybirdas_nx/angrybirdas_nx.nro
+  Launch: sdmc:/switch/angrybirdas_nx/angrybirdas_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/angrybirdas_nx
+  Standalone files: (none)
+
+Angry Birds 2
+  Package: Angry Birds 2.nsp
+  Format: installer + forwarder
+  Installed ID: 05001CEF72E20000
+  Forwarder ID: 05008196B9148000
+  NRO: /switch/angrybird2_nx/angrybird2_nx.nro
+  Launch: sdmc:/switch/angrybird2_nx/angrybird2_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/angrybird2_nx
+  Standalone files: (none)
+
+Asphalt 8 Airborne
+  Package: Asphalt 8 Airborne.nsp
+  Format: installer + forwarder
+  Installed ID: 050097CBD0776000
+  Forwarder ID: 0500F7B168290000
+  NRO: /switch/a8retry_nx/a8retry_nx.nro
+  Launch: sdmc:/switch/a8retry_nx/a8retry_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/a8retry_nx
+  Standalone files: (none)
+
+Black and White
+  Package: Black and White.nsp
+  Format: installer + forwarder
+  Installed ID: 050008767D45E000
+  Forwarder ID: 0500AD18B0038000
+  NRO: /switch/openblack/openblack.nro
+  Launch: sdmc:/switch/openblack/openblack.nro
+  Address-space type: 1
+  Whole folders: /switch/openblack
+  Standalone files: (none)
+
+Burnout 3 Takedown
+  Package: Burnout 3 Takedown.nsp
+  Format: installer + forwarder
+  Installed ID: 0500CF5739002000
+  Forwarder ID: 05004F3621FCC000
+  NRO: /switch/b3x/b3x.nro
+  Launch: sdmc:/switch/b3x/b3x.nro
+  Address-space type: 1
+  Whole folders: /switch/b3x
+  Standalone files: (none)
+
+Call of Duty 4 Modern Warfare
+  Package: Call of Duty 4 Modern Warfare.nsp
+  Format: installer + forwarder
+  Installed ID: 05007234B5E28000
+  Forwarder ID: 0500CD187DDB0000
+  NRO: /switch/codmw/codmw.nro
+  Launch: sdmc:/switch/codmw/codmw.nro
+  Address-space type: 1
+  Whole folders: /switch/codmw
+  Standalone files: (none)
+
+Call of Duty Black Ops Zombies
+  Package: Call of Duty Black Ops Zombies.nsp
+  Format: installer + forwarder
+  Installed ID: 05003F27FDBB0000
+  Forwarder ID: 0500FB32255D8000
+  NRO: /switch/boz/codboz.nro
+  Launch: sdmc:/switch/boz/codboz.nro
+  Address-space type: 1
+  Whole folders: /switch/boz
+  Standalone files: (none)
+
+Conker's Bad Fur Day
+  Package: Conkers Bad Fur Day.nsp
+  Format: installer + forwarder
+  Installed ID: 050006550E228000
+  Forwarder ID: 05004A5C3531A000
+  NRO: /switch/ConkerRecomp/ConkerRecomp.nro
+  Launch: sdmc:/switch/ConkerRecomp/ConkerRecomp.nro
+  Address-space type: 1
+  Whole folders: /switch/ConkerRecomp
+  Standalone files: (none)
+
+Dante's Inferno
+  Package: Dantes Inferno.nsp
+  Format: installer + forwarder
+  Installed ID: 0500528577356000
+  Forwarder ID: 0500EEFD5C7E4000
+  NRO: /switch/dantes-inferno-nx/dantes-inferno-nx.nro
+  Launch: sdmc:/switch/dantes-inferno-nx/dantes-inferno-nx.nro
+  Address-space type: 1
+  Whole folders: /switch/dantes-inferno-nx
+  Standalone files: (none)
+
+Dead Space 2
+  Package: Dead Space 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0500E7EAC4622000
+  Forwarder ID: 0500ADB5FA686000
+  NRO: /switch/ds2-nx/ds2-nx.nro
+  Launch: sdmc:/switch/ds2-nx/ds2-nx.nro
+  Address-space type: 1
+  Whole folders: /switch/ds2-nx
+  Standalone files: (none)
+
+Dead Space
+  Package: Dead Space.nsp
+  Format: installer + forwarder
+  Installed ID: 0500CA54423D4000
+  Forwarder ID: 0500C2CAF2108000
+  NRO: /switch/deadspace_nx/deadspace_nx.nro
+  Launch: sdmc:/switch/deadspace_nx/deadspace_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/deadspace_nx
+  Standalone files: (none)
+  Note: Bundled Atmosphere files stay on physical SD and are not moved or changed by the port transfer.
+
+Def Jam Fight for NY
+  Package: Def Jam Fight for NY.nsp
+  Format: installer + forwarder
+  Installed ID: 050007532771E000
+  Forwarder ID: 05009CBBB91D2000
+  NRO: /switch/defjamx/defjamx.nro
+  Launch: sdmc:/switch/defjamx/defjamx.nro
+  Address-space type: 1
+  Whole folders: /switch/defjamx
+  Standalone files: (none)
+
+Diablo
+  Package: Diablo.nsp
+  Format: installer + forwarder
+  Installed ID: 0500B4DA67EC6000
+  Forwarder ID: 050055BCE6186000
+  NRO: /switch/devilutionx-switch/devilutionx.nro
+  Launch: sdmc:/switch/devilutionx-switch/devilutionx.nro
+  Address-space type: 1
+  Whole folders: /switch/devilutionx-switch
+  Standalone files: (none)
+
+Donkey Kong 64
+  Package: Donkey Kong 64.nsp
+  Format: installer + forwarder
+  Installed ID: 0500EFBD4D812000
+  Forwarder ID: 050050CAD70E6000
+  NRO: /switch/dk64recomp/dk64recomp.nro
+  Launch: sdmc:/switch/dk64recomp/dk64recomp.nro
+  Address-space type: 1
+  Whole folders: /switch/dk64recomp
+  Standalone files: (none)
+
+Donkey Kong Country 2
+  Package: Donkey Kong Country 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0500359858A64000
+  Forwarder ID: 0500195581298000
+  NRO: /switch/dkc2/dkc2.nro
+  Launch: sdmc:/switch/dkc2/dkc2.nro
+  Address-space type: 1
+  Whole folders: /switch/dkc2
+  Standalone files: (none)
+
+Donkey Kong Country 3
+  Package: Donkey Kong Country 3.nsp
+  Format: installer + forwarder
+  Installed ID: 0500BAC67E230000
+  Forwarder ID: 05006D9CEE9F4000
+  NRO: /switch/dkc3/dkc3.nro
+  Launch: sdmc:/switch/dkc3/dkc3.nro
+  Address-space type: 1
+  Whole folders: /switch/dkc3
+  Standalone files: (none)
+
+Donkey Kong Country
+  Package: Donkey Kong Country.nsp
+  Format: installer + forwarder
+  Installed ID: 05008A6A2C6E8000
+  Forwarder ID: 05000665F408A000
+  NRO: /switch/dkc1/dkc1.nro
+  Launch: sdmc:/switch/dkc1/dkc1.nro
+  Address-space type: 1
+  Whole folders: /switch/dkc1
+  Standalone files: (none)
+
+Dr. Mario Mania
+  Package: Dr Mario Mania.nsp
+  Format: installer + forwarder
+  Installed ID: 0500CEA287E08000
+  Forwarder ID: 05004A3B72B88000
+  NRO: /switch/drmariomania_nx/drmario.nro
+  Launch: sdmc:/switch/drmariomania_nx/drmario.nro
+  Address-space type: 1
+  Whole folders: /switch/drmariomania_nx
+  Standalone files: (none)
+
+Driver 2
+  Package: Driver 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0100C8FAB4EA6000
+  Forwarder ID: 010030990CFE8000
+  NRO: /switch/redriver2/REDRIVER2.nro
+  Launch: sdmc:/switch/redriver2/REDRIVER2.nro
+  Address-space type: 1
+  Whole folders: /switch/redriver2
+  Standalone files: (none)
+
+DuckTales Remastered
+  Package: DuckTales Remastered.nsp
+  Format: installer + forwarder
+  Installed ID: 0500BAFE9A146000
+  Forwarder ID: 050007E525DFA000
+  NRO: /switch/ducktales_nx/ducktales_nx.nro
+  Launch: sdmc:/switch/ducktales_nx/ducktales_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/ducktales_nx
+  Standalone files: (none)
+
+Fallout 1 CE
+  Package: Fallout 1 CE.nsp
+  Format: installer + forwarder
+  Installed ID: 05004D59894BA000
+  Forwarder ID: 050029DE7215C000
+  NRO: /fallout1/fallout-ce.nro
+  Launch: sdmc:/fallout1/fallout-ce.nro
+  Address-space type: 1
+  Whole folders: /fallout1
+  Standalone files: (none)
+
+Fallout 2 CE
+  Package: Fallout 2 CE.nsp
+  Format: installer + forwarder
+  Installed ID: 050002ADE06D0000
+  Forwarder ID: 0500FE2FD65C4000
+  NRO: /fallout2/fallout2-ce.nro
+  Launch: sdmc:/fallout2/fallout2-ce.nro
+  Address-space type: 1
+  Whole folders: /fallout2
+  Standalone files: (none)
+
+Far Cry
+  Package: Far Cry.nsp
+  Format: installer + forwarder
+  Installed ID: 0500C85170BB6000
+  Forwarder ID: 0500EB17E25B8000
+  NRO: /switch/NearChuckle_nx/NearChuckle_nx.nro
+  Launch: sdmc:/switch/NearChuckle_nx/NearChuckle_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/NearChuckle_nx
+  Standalone files: (none)
+
+Final Fantasy Dimensions 2
+  Package: Final Fantasy Dimensions 2.nsp
+  Format: installer + forwarder
+  Installed ID: 05001548ED1BE000
+  Forwarder ID: 0500C0420EE72000
+  NRO: /switch/ffd2_nx/ffd2_nx.nro
+  Launch: sdmc:/switch/ffd2_nx/ffd2_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/ffd2_nx
+  Standalone files: (none)
+
+Final Fantasy Dimensions
+  Package: Final Fantasy Dimensions.nsp
+  Format: installer + forwarder
+  Installed ID: 0500D65D1D44C000
+  Forwarder ID: 05009ADE668D2000
+  NRO: /switch/ffd/ffd_nx.nro
+  Launch: sdmc:/switch/ffd/ffd_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/ffd
+  Standalone files: (none)
+
+Flatout 2
+  Package: Flatout 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0500A93A42438000
+  Forwarder ID: 050066C1CD804000
+  NRO: /switch/fo2x/fo2x-vulkan.nro
+  Launch: sdmc:/switch/fo2x/fo2x-vulkan.nro
+  Address-space type: 1
+  Whole folders: /switch/fo2x
+  Standalone files: (none)
+
+Gears Of War 2
+  Package: Gears Of War 2.nsp
+  Format: installer + forwarder
+  Installed ID: 05004C2133F78000
+  Forwarder ID: 0500932CF25C8000
+  NRO: /switch/gears2-nx/gears2-nx.nro
+  Launch: sdmc:/switch/gears2-nx/gears2-nx.nro
+  Address-space type: 1
+  Whole folders: /switch/gears2-nx
+  Standalone files: (none)
+
+Gizmoduck
+  Package: Gizmoduck.nsp
+  Format: installer + forwarder
+  Installed ID: 0500C5EE038D6000
+  Forwarder ID: 0500FFCF1F25A000
+  NRO: /switch/gizmoduck/gizmoduck.nro
+  Launch: sdmc:/switch/gizmoduck/gizmoduck.nro
+  Address-space type: 1
+  Whole folders: /switch/gizmoduck
+  Standalone files: (none)
+
+Grand Theft Auto IV
+  Package: Grand Theft Auto IV.nsp
+  Format: installer + forwarder
+  Installed ID: 0500949B25E0A000
+  Forwarder ID: 05002465C0CC4000
+  NRO: /switch/gta4nx/gta4nx.nro
+  Launch: sdmc:/switch/gta4nx/gta4nx.nro
+  Address-space type: 1
+  Whole folders: /switch/gta4nx
+  Standalone files: (none)
+
+Grand Theft Auto V
+  Package: Grand Theft Auto V.nsp
+  Format: installed content
+  Installed ID: 0100B00B51230000
+  Note: Data is embedded in installed content. Use the normal installed-game transfer; no external folder is inferred from RomFS names.
+
+Half-Life 2
+  Package: Half-Life 2.nsp
+  Format: installer + forwarder
+  Installed ID: 05002D89BEC18000
+  Forwarder ID: 050086D54CCDE000
+  NRO: /switch/hl2_nx/hl2_nx.nro
+  Launch: sdmc:/switch/hl2_nx/hl2_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/hl2_nx
+  Standalone files: (none)
+
+Halo: Combat Evolved
+  Package: Halo Combat Evolved.nsp
+  Format: installer + forwarder
+  Installed ID: 0500067A76D4E000
+  Forwarder ID: 0500FD2A9AE12000
+  NRO: /switch/halo/halo.nro
+  Launch: sdmc:/switch/halo/halo.nro
+  Address-space type: 1
+  Whole folders: /switch/halo
+  Standalone files: (none)
+
+Jak and Daxter
+  Package: Jak and Daxter.nsp
+  Format: installer + forwarder
+  Installed ID: 05008152DC49E000
+  Forwarder ID: 0500D28DDC6A0000
+  NRO: /switch/jak1/gk.nro
+  Launch: sdmc:/switch/jak1/gk.nro
+  Address-space type: 1
+  Whole folders: /switch/jak1
+  Standalone files: (none)
+
+Jazz 2 Ressurection
+  Package: Jazz 2 Ressurection.nsp
+  Format: installer + forwarder
+  Installed ID: 052D79A5A788E000
+  Forwarder ID: 052D79A5A798E000
+  NRO: /switch/Jazz2.nro
+  Launch: sdmc:/switch/Jazz2.nro
+  Address-space type: 1
+  Whole folders: /Games/Jazz2
+  Standalone files: /switch/Jazz2.nro
+  Note: Installer layout: also transfers /Games/Jazz2, outside the NRO folder.
+
+Left 4 Dead
+  Package: Left 4 Dead.nsp
+  Format: installer + forwarder
+  Installed ID: 0500A367C1C8C000
+  Forwarder ID: 05003BB07FA02000
+  NRO: /switch/left4dead/wine-nx-runtime.nro
+  Launch: sdmc:/switch/left4dead/wine-nx-runtime.nro
+  Address-space type: 1
+  Whole folders: /switch/left4dead
+  Standalone files: (none)
+
+Lost Odyssey
+  Package: Lost Odyssey.nsp
+  Format: installer + forwarder
+  Installed ID: 0500F16D4DE6A000
+  Forwarder ID: 0500882E1BDB6000
+  NRO: /switch/LostOdysseyRecomp/LostOdysseyRecomp.nro
+  Launch: sdmc:/switch/LostOdysseyRecomp/LostOdysseyRecomp.nro
+  Address-space type: 1
+  Whole folders: /switch/LostOdysseyRecomp
+  Standalone files: (none)
+
+Majora's Mask
+  Package: Majoras Mask.nsp
+  Format: installer + forwarder
+  Installed ID: 05005BC5263E2000
+  Forwarder ID: 0500C8C02A142000
+  NRO: /switch/2ship/2ship.nro
+  Launch: sdmc:/switch/2ship/2ship.nro
+  Address-space type: 1
+  Whole folders: /switch/2ship
+  Standalone files: (none)
+
+Mass Effect
+  Package: Mass Effect.nsp
+  Format: installer + forwarder
+  Installed ID: 050068CA6543A000
+  Forwarder ID: 05002814B31A6000
+  NRO: /switch/jak1/gk.nro
+  Launch: sdmc:/switch/jak1/gk.nro
+  Address-space type: 1
+  Whole folders: /switch/jak1, /switch/masseffect-nx
+  Standalone files: (none)
+  Note: BLOCKED: target is /switch/jak1/gk.nro (Jak and Daxter), while data also exists in /switch/masseffect-nx. Correct the forwarder before transferring.
+
+Mercenaries 2
+  Package: Mercenaries 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0500B82D1C9F6000
+  Forwarder ID: 0500B240E2BFE000
+  NRO: /switch/Mercenaries2/mercenaries2.nro
+  Launch: sdmc:/switch/Mercenaries2/mercenaries2.nro
+  Address-space type: 1
+  Whole folders: /switch/Mercenaries2
+  Standalone files: (none)
+
+Metal Gear Rising Revengeance
+  Package: Metal Gear Rising Revengeance.nsp
+  Format: Carafe runtime bundle
+  Installed ID: 05C60F3ED07B0000
+  Forwarder ID: 05C60F3ED07B0000
+  NRO: /switch/wine/wine-nx-runtime.nro
+  Launch: sdmc:/switch/wine/wine-nx-runtime.nro "sdmc:/switch/wine/drive_c/Games/hejzb/METAL GEAR RISING REVENGEANCE.exe"
+  Address-space type: 3
+  Whole folders: /switch/wine
+  Standalone files: (none)
+  Note: Shared /switch/wine runtime. Copy the complete folder; keep the source folder during a move so other Wine ports continue to work.
+  Note: Requires the bundle to have extracted its files onto the source first. USB compatibility still needs console testing.
+
+Need for Speed Carbon
+  Package: Need for Speed Carbon.nsp
+  Format: installer + forwarder
+  Installed ID: 0500339792886000
+  Forwarder ID: 050069E5336E6000
+  NRO: /switch/nfscx/nfscx.nro
+  Launch: sdmc:/switch/nfscx/nfscx.nro
+  Address-space type: 1
+  Whole folders: /switch/nfscx
+  Standalone files: (none)
+
+Need For Speed Most Wanted
+  Package: Need For Speed Most Wanted.nsp
+  Format: installer + forwarder
+  Installed ID: 050061D244EEA000
+  Forwarder ID: 0500005A18718000
+  NRO: /switch/nfsmw-nx/nfsmw-nx.nro
+  Launch: sdmc:/switch/nfsmw-nx/nfsmw-nx.nro
+  Address-space type: 1
+  Whole folders: /switch/nfsmw-nx
+  Standalone files: (none)
+
+Need For Speed Underground 2
+  Package: Need For Speed Underground 2.nsp
+  Format: installer + forwarder
+  Installed ID: 05006964F8940000
+  Forwarder ID: 05001347746AA000
+  NRO: /switch/nfsu2x/nfsu2x.nro
+  Launch: sdmc:/switch/nfsu2x/nfsu2x.nro
+  Address-space type: 1
+  Whole folders: /switch/nfsu2x
+  Standalone files: (none)
+
+Need for Speed Underground
+  Package: Need for Speed Underground.nsp
+  Format: installer + forwarder
+  Installed ID: 0500E34974060000
+  Forwarder ID: 050059465F960000
+  NRO: /switch/nfsu1x/nfsu1x.nro
+  Launch: sdmc:/switch/nfsu1x/nfsu1x.nro
+  Address-space type: 1
+  Whole folders: /switch/nfsu1x
+  Standalone files: (none)
+
+N.O.V.A. 3: Near Orbit Vanguard Alliance
+  Package: NOVA 3 Near Orbit Vanguard Alliance.nsp
+  Format: installer + forwarder
+  Installed ID: 0500BC34CBCA0000
+  Forwarder ID: 05009A59D792C000
+  NRO: /switch/defjamx/defjamx.nro
+  Launch: sdmc:/switch/defjamx/defjamx.nro
+  Address-space type: 1
+  Whole folders: /switch/defjamx, /switch/nova3
+  Standalone files: (none)
+  Note: BLOCKED: target is /switch/defjamx/defjamx.nro (Def Jam), while data also exists in /switch/nova3. Correct the forwarder before transferring.
+  Note: Bundled Atmosphere files stay on physical SD and are not moved or changed by the port transfer.
+
+Osmos
+  Package: Osmos.nsp
+  Format: installer + forwarder
+  Installed ID: 0500AAA910D6E000
+  Forwarder ID: 0500A90C8A7E0000
+  NRO: /switch/osmos/osmos_nx.nro
+  Launch: sdmc:/switch/osmos/osmos_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/osmos
+  Standalone files: (none)
+
+outrun 2006
+  Package: Outrun 2006.nsp
+  Format: installer + forwarder
+  Installed ID: 0500C01A65A6A000
+  Forwarder ID: 05005EBC33272000
+  NRO: /switch/outrun2/OutRun2006-NX.nro
+  Launch: sdmc:/switch/outrun2/OutRun2006-NX.nro
+  Address-space type: 1
+  Whole folders: /switch/outrun2
+  Standalone files: (none)
+
+Pocket Mortys
+  Package: Pocket Mortys.nsp
+  Format: installed content
+  Installed ID: 0100F04D4F525000
+  Note: Data is embedded in installed content. Use the normal installed-game transfer; no external folder is inferred from RomFS names.
+
+Prey
+  Package: Prey.nsp
+  Format: installer + forwarder
+  Installed ID: 0500CE8F6E99A000
+  Forwarder ID: 0500BEF568216000
+  NRO: /switch/openprey/OpenPrey.nro
+  Launch: sdmc:/switch/openprey/OpenPrey.nro
+  Address-space type: 1
+  Whole folders: /switch/openprey
+  Standalone files: (none)
+
+Prototype 2
+  Package: Prototype 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0500354C25EC2000
+  Forwarder ID: 05005EEF049C2000
+  NRO: /switch/Prototype2/prototype2.nro
+  Launch: sdmc:/switch/Prototype2/prototype2.nro
+  Address-space type: 1
+  Whole folders: /switch/Prototype2
+  Standalone files: (none)
+
+Return to Castle Wolfenstein
+  Package: Return to Castle Wolfenstein.nsp
+  Format: installer + forwarder
+  Installed ID: 0500DC88A3FF8000
+  Forwarder ID: 0500BCC8F7F52000
+  NRO: /switch/iowolfsp/iowolfsp.nro
+  Launch: sdmc:/switch/iowolfsp/iowolfsp.nro
+  Address-space type: 1
+  Whole folders: /switch/iowolfsp
+  Standalone files: (none)
+
+Saint Seiya Soldiers Soul_[05C4B74C6E8CE000]
+  Package: Saint Seiya Soldiers Soul_[05C4B74C6E8CE000].nsp
+  Format: Carafe runtime bundle
+  Installed ID: 05C4B74C6E8CE000
+  Forwarder ID: 05C4B74C6E8CE000
+  NRO: /switch/wine/wine-nx-runtime.nro
+  Launch: sdmc:/switch/wine/wine-nx-runtime.nro "sdmc:/switch/wine/drive_c/Games/Saint Seiya Soldiers Soul/SSSS.exe"
+  Address-space type: 3
+  Whole folders: /switch/wine
+  Standalone files: (none)
+  Note: Shared /switch/wine runtime. Copy the complete folder; keep the source folder during a move so other Wine ports continue to work.
+  Note: Requires the bundle to have extracted its files onto the source first. USB compatibility still needs console testing.
+
+Ship of Harkinian
+  Package: Ship of Harkinian.nsp
+  Format: installer + forwarder
+  Installed ID: 0500707205E20000
+  Forwarder ID: 05004D333E6C2000
+  NRO: /switch/soh_debug/soh.nro
+  Launch: sdmc:/switch/soh_debug/soh.nro
+  Address-space type: 1
+  Whole folders: /switch/soh_debug
+  Standalone files: (none)
+
+Silent Hill 2
+  Package: Silent Hill 2.nsp
+  Format: installer + forwarder
+  Installed ID: 05008C97AA594000
+  Forwarder ID: 05009E526A9A4000
+  NRO: /switch/sh2-nx/sh2-nx.nro
+  Launch: sdmc:/switch/sh2-nx/sh2-nx.nro
+  Address-space type: 1
+  Whole folders: /switch/sh2-nx
+  Standalone files: (none)
+
+Silent Hill 3
+  Package: Silent Hill 3.nsp
+  Format: installer + forwarder
+  Installed ID: 0500F8C2F2422000
+  Forwarder ID: 0500303CCA40E000
+  NRO: /switch/sh3-nx/sh3-nx.nro
+  Launch: sdmc:/switch/sh3-nx/sh3-nx.nro
+  Address-space type: 1
+  Whole folders: /switch/sh3-nx
+  Standalone files: (none)
+
+Silent Hill Downpour
+  Package: Silent Hill Downpour.nsp
+  Format: installer + forwarder
+  Installed ID: 05007F3346DF2000
+  Forwarder ID: 050016085F1E4000
+  NRO: /switch/shd-nx/shd.nro
+  Launch: sdmc:/switch/shd-nx/shd.nro
+  Address-space type: 1
+  Whole folders: /switch/shd-nx
+  Standalone files: /switch/rex-start.nro
+
+Silent Hill
+  Package: Silent Hill.nsp
+  Format: installer + forwarder
+  Installed ID: 0500BEF5A51BA000
+  Forwarder ID: 0500021024AFC000
+  NRO: /switch/SilentHillPC.nro
+  Launch: sdmc:/switch/SilentHillPC.nro
+  Address-space type: 1
+  Whole folders: /switch/gamedata
+  Standalone files: /switch/SilentHillPC.nro
+
+Simpsons Hit & Run (Port)
+  Package: Simpsons Hit  Run Port.nsp
+  Format: installer + forwarder
+  Installed ID: 0100562A4AA86000
+  Forwarder ID: 0100843C2714A000
+  NRO: /switch/Simpsons/Simpsons.nro
+  Launch: sdmc:/switch/Simpsons/Simpsons.nro
+  Address-space type: 1
+  Whole folders: /switch/Simpsons
+  Standalone files: (none)
+
+Sly Cooper and the Thievius Raccoonus
+  Package: Sly Cooper and the Thievius Raccoonus.nsp
+  Format: installer + forwarder
+  Installed ID: 05007C5FB8D9C000
+  Forwarder ID: 0500B0350BD92000
+  NRO: /switch/ProjectCane/ProjectCane.nro
+  Launch: sdmc:/switch/ProjectCane/ProjectCane.nro
+  Address-space type: 1
+  Whole folders: /switch/ProjectCane
+  Standalone files: (none)
+
+Sonic Adventure 2 Battle
+  Package: Sonic Adventure 2 Battle.nsp
+  Format: installer + forwarder
+  Installed ID: 0500BE1F5D27C000
+  Forwarder ID: 05004585DB680000
+  NRO: /switch/sa2-nx/sa2.nro
+  Launch: sdmc:/switch/sa2-nx/sa2.nro
+  Address-space type: 1
+  Whole folders: /switch/sa2-nx
+  Standalone files: (none)
+
+Sonic Unleashed
+  Package: Sonic Unleashed.nsp
+  Format: forwarder only
+  Installed ID: 05008C849A654000
+  Forwarder ID: 05008C849A654000
+  NRO: /switch/UnleashedRecomp/UnleashedRecomp.nro
+  Launch: sdmc:/switch/UnleashedRecomp/UnleashedRecomp.nro
+  Address-space type: 1
+  Whole folders: /switch/UnleashedRecomp
+  Standalone files: (none)
+  Note: Only the forwarder is packaged. Its complete app folder is selected; no separate data-folder manifest was supplied.
+
+Space Channel 5 Part 2
+  Package: Space Channel 5 Part 2.nsp
+  Format: installer + forwarder
+  Installed ID: 050055BA66868000
+  Forwarder ID: 050028D1D81F4000
+  NRO: /switch/sc5p2-nx/sc5p2.nro
+  Launch: sdmc:/switch/sc5p2-nx/sc5p2.nro
+  Address-space type: 1
+  Whole folders: /switch/sc5p2-nx
+  Standalone files: (none)
+
+Team Fortress 2
+  Package: Team Fortress 2.nsp
+  Format: installer + forwarder
+  Installed ID: 0500446122EC0000
+  Forwarder ID: 050028BDBE7EA000
+  NRO: /switch/tf2_nx/tf2_nx.nro
+  Launch: sdmc:/switch/tf2_nx/tf2_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/tf2_nx
+  Standalone files: (none)
+
+The Dark Knight Rises
+  Package: The Dark Knight Rises.nsp
+  Format: installer + forwarder
+  Installed ID: 0500F6BCF0FD4000
+  Forwarder ID: 050058689A9F8000
+  NRO: /switch/tdkr_nx/tdkr_nx.nro
+  Launch: sdmc:/switch/tdkr_nx/tdkr_nx.nro
+  Address-space type: 1
+  Whole folders: /switch/tdkr_nx
+  Standalone files: (none)
+  Note: Bundled Atmosphere files stay on physical SD and are not moved or changed by the port transfer.
+
+The Legend of Zelda A Link to the Past
+  Package: The Legend of Zelda A Link to the Past.nsp
+  Format: installer + forwarder
+  Installed ID: 050062066A9AC000
+  Forwarder ID: 05008C04DA542000
+  NRO: /switch/zelda3/zelda3.nro
+  Launch: sdmc:/switch/zelda3/zelda3.nro
+  Address-space type: 1
+  Whole folders: /switch/zelda3
+  Standalone files: (none)
+
+The Legend Of Zelda The Wind Waker HD
+  Package: The Legend Of Zelda The Wind Waker HD.nsp
+  Format: installer + forwarder
+  Installed ID: 0500EE4E45BC0000
+  Forwarder ID: 05002974BF1A6000
+  NRO: /switch/wwhd/wwhd.nro
+  Launch: sdmc:/switch/wwhd/wwhd.nro
+  Address-space type: 1
+  Whole folders: /switch/wwhd
+  Standalone files: (none)
+
+The Legend of Zelda: Twilight Princess
+  Package: The Legend of Zelda Twilight Princess.nsp
+  Format: installer + forwarder
+  Installed ID: 050012510D0D8000
+  Forwarder ID: 050066E1577FC000
+  NRO: /switch/Dusk/dusk.nro
+  Launch: sdmc:/switch/Dusk/dusk.nro
+  Address-space type: 1
+  Whole folders: /game, /switch/Dusk
+  Standalone files: (none)
+
+The Simpsons Game
+  Package: The Simpsons Game.nsp
+  Format: installer + forwarder
+  Installed ID: 0500943437DBA000
+  Forwarder ID: 0500BA89E6A0A000
+  NRO: /switch/the_simpsons_game/the_simpsons_game.nro
+  Launch: sdmc:/switch/the_simpsons_game/the_simpsons_game.nro
+  Address-space type: 1
+  Whole folders: /switch/the_simpsons_game
+  Standalone files: (none)
+
+Torchlight
+  Package: Torchlight.nsp
+  Format: installer + forwarder
+  Installed ID: 050028F0B4CCE000
+  Forwarder ID: 0500801324AFE000
+  NRO: /switch/torchlight/torchlight.nro
+  Launch: sdmc:/switch/torchlight/torchlight.nro
+  Address-space type: 1
+  Whole folders: /switch/torchlight
+  Standalone files: (none)
+
+TRANSFORMERS Devastation
+  Package: TRANSFORMERS Devastation.nsp
+  Format: Carafe runtime bundle
+  Installed ID: 054CCE69A17B6000
+  Forwarder ID: 054CCE69A17B6000
+  NRO: /switch/wine/wine-nx-runtime.nro
+  Launch: sdmc:/switch/wine/wine-nx-runtime.nro "sdmc:/switch/wine/drive_c/Games/TRANSFORMERS - Devastation/TransformersDevastation.exe"
+  Address-space type: 3
+  Whole folders: /switch/wine
+  Standalone files: (none)
+  Note: Shared /switch/wine runtime. Copy the complete folder; keep the source folder during a move so other Wine ports continue to work.
+  Note: Requires the bundle to have extracted its files onto the source first. USB compatibility still needs console testing.
+
+Ultra Street Fighter IV
+  Package: Ultra Street Fighter IV.nsp
+  Format: installer + forwarder
+  Installed ID: 0500DFFB9AE7A000
+  Forwarder ID: 050064D701EC6000
+  NRO: /switch/usf4-nx/usf4.nro
+  Launch: sdmc:/switch/usf4-nx/usf4.nro
+  Address-space type: 1
+  Whole folders: /switch/usf4-nx
+  Standalone files: (none)
+
+Zuma Deluxe
+  Package: Zuma Deluxe.nsp
+  Format: installer + forwarder
+  Installed ID: 0500161720C24000
+  Forwarder ID: 0500FE7C6807A000
+  NRO: /switch/zumaportable/dbc17o.nro
+  Launch: sdmc:/switch/zumaportable/dbc17o.nro
+  Address-space type: 1
+  Whole folders: /switch/zumaportable
+  Standalone files: (none)

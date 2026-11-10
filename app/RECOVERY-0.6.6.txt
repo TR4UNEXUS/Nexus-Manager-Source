@@ -1,0 +1,73 @@
+USB Loader 0.6.6-preview -- app/embedded-forwarder recovery test
+
+This is NOT a confirmed console fix. Built and tested on the PC; the reported
+Magic Monkei/USB Loader sequence and NFS shortcut still require console checks.
+Keep the working Nexus firmware, HOC, Magic Monkei and installed games unchanged.
+There is no package3, global hbl.nsp or boot configuration in this package.
+
+What changed
+------------
+* A fresh launch of USB Loader's HOME NSP loads the physical-SD NRO without first
+  waiting for ams:usb. Registration happens on the worker when USB homebrew is
+  explicitly launched. Existing VSD chainloads still consume/clear their lease.
+* New USB homebrew forwarders read the executable from the shared USB owner in
+  <=1 MiB generation-pinned requests. They activate the process-local sdmc view
+  only after the executable hash matches. Missing/changed media or short reads
+  stop loading; no same-named SD fallback, no second raw USB driver, no retry of
+  writes, no forced device reset. The initial executable no longer goes through
+  a single ~63 MB redirected-FS request (the user's NFS executable size).
+* 39-bit address space and all four CPU cores remain configured in both NPDM
+  capability tables. Existing shortcut title IDs and executable binding remain.
+* Incremental builds explicitly rebuild the app's embedded forwarder when its
+  loader or permissions change. Packaging verifies the exact embedded bytes.
+* Physical-SD free/total-space queries now use full FS_MAX_PATH buffers instead
+  of a short string literal. The confirmed fresh-SD bootstrap does not query
+  USB just to display SD space.
+* VsdProbe is NOT embedded or offered in this recovery build. The source audit
+  found it was only run through the explicitly selected diagnostics action;
+  it was not a background service. Excluding it removes it as a variable here,
+  but other changes mean this is not an isolated A/B proof about the probe.
+* Existing read-only busy/close and protected-write safeguards remain. They
+  cannot guarantee recovery from a firmware/kernel/service stall.
+
+Install
+-------
+1. Close USB Loader and back up the existing switch/usbloader/USBLoader.nro.
+2. Copy this package's switch folder to the physical microSD. Keep the same
+   SD:/switch/usbloader/USBLoader.nro path. Do not put it on the USB game drive.
+3. Install the included USB-Loader-HOME-0.6.6.nsp to INTERNAL STORAGE using your
+   working installer. This replaces USB Loader's HOME launcher, not your games.
+   Its title ID is unchanged: 05005553424C0000. Updating only the NRO does NOT
+   update the loader inside the installed HOME shortcut.
+4. Fully reboot once to clear the previous frozen session. Open USB Loader's
+   HOME app and confirm 0.6.6-preview. No USB diagnostics/probe run is needed.
+5. Test Magic Monkei -> HOME/X/Close -> USB Loader, then the reverse order.
+   Report whether USB Loader reaches its menu, shows a busy state, or freezes.
+6. If the app-switch check works, recreate ONE affected NFS HOME shortcut in
+   0.6.6. Existing shortcuts contain the old embedded loader. The app refuses
+   to overwrite an existing title: remove only that old homebrew shortcut via
+   normal software management first, then create it again. Do not delete the
+   USB /switch/nfsmw-nx folder, port data or saves. Do not reinstall other games.
+
+Logs, if any
+------------
+SD:/switch/usbloader/startup-debug/   (APP-0.6.6)
+SD:/switch/usbloader/forwarder-debug/ (HBL-0.6.6 and exact generated NSP)
+SD:/switch/usbloader/nexus.log
+Missing logs do not prove the app or a particular hook was reached. Do not
+repeat a frozen launch solely to obtain them. If no logs appear, report the
+visible result, which launch step failed, and whether HOME still responds.
+
+Rollback
+--------
+Restore the previous NRO and reinstall USB-Loader-HOME-0.6.5.nsp from the retained
+0.6.5 package. Forwarders need recreation with the corresponding app version.
+No firmware/USB content rollback is required for this app-only package.
+
+Source / build
+--------------
+The source archive is an isolated copy, with original licenses and pinned
+vendor dependencies. build-nexus.ps1 builds with two low-priority jobs and a
+free-RAM guard. NEXUS_BUNDLED_PROBE is OFF. If enabling it intentionally, first
+run tools/build-bundled-probe.ps1; the existing standalone probe source remains.
+Older general notes describe previous releases; this file describes 0.6.6.

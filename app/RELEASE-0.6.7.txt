@@ -1,0 +1,74 @@
+USB Loader 0.6.7 -- HOME forwarder startup fix
+2026-09-30
+
+This release integrates the startup code from the NFS forwarder-only 0.6.7
+test that the user confirmed working. Its trace showed a successful monitor,
+USB executable read/hash verification, USB view activation and NRO handoff.
+The general app package still needs console verification. Other homebrew ports
+are not proven compatible merely because NFS now works.
+
+Install
+-------
+1. Close USB Loader. Back up SD:/switch/usbloader/USBLoader.nro and keep your
+   previous USB Loader package for rollback.
+2. Copy this ZIP's switch folder to the physical microSD, merging folders and
+   replacing switch/usbloader/USBLoader.nro. Keep it on SD, not the USB drive.
+3. Install USB-Loader-HOME-0.6.7.nsp to INTERNAL STORAGE with a working installer.
+   This updates USB Loader's HOME launcher (title ID 05005553424C0000). Updating
+   the NRO alone cannot replace the loader inside an already installed NSP.
+4. Fully reboot and open USB Loader. Check the app shows version 0.6.7.
+5. New HOME homebrew shortcuts created by this version use the corrected loader.
+   Existing shortcuts do not automatically change. For an affected shortcut,
+   remove ONLY that HOME homebrew shortcut through normal software management,
+   then create it again in USB Loader 0.6.7. The app intentionally refuses to
+   overwrite an existing title. Do not remove USB port data or saves.
+6. Your already-working NFS 0.6.7 test shortcut can remain installed; recreating
+   it is optional. No commercial games, updates or DLC need reinstalling.
+
+What changed
+------------
+The embedded HOME loader now starts its timeout monitor after the first physical
+SD logger setup instead of before basic services initialize. Monitor start is
+logged; failure does not silently terminate the launcher and is not repeatedly
+retried. A successful monitor is stopped before passing control to the NRO.
+This is the same startup logic that worked for NFS; no NFS-specific paths or
+title IDs were added. It is shared by newly generated homebrew shortcuts and
+USB Loader's included HOME launcher.
+
+USB executable hash binding, generation-pinned reads (up to 1 MiB per request),
+39-bit address space, four CPU cores, and process-local sdmc compatibility are
+preserved. Changed/missing media and changed executables do not silently fall
+back to SD. A port's own requirements and its behavior after launch still apply.
+If you replace a homebrew NRO with a new version, recreate its hash-bound shortcut.
+
+Limits / what was NOT changed
+----------------------------
+No firmware, package3, HOC, global hbl.nsp, USB driver, Magic Monkei, installed
+game data or boot configuration is included or modified. VsdProbe remains OFF.
+App-switching freezes are not claimed fixed or tested by the NFS result.
+Initialization before the first logger setup is not covered by the monitor;
+if monitor creation fails, timeout protection is unavailable for that launch.
+Existing content/write protections remain; this cannot recover a kernel stall.
+
+Logs
+----
+SD:/switch/usbloader/forwarder-debug/ (HBL-0.6.7, plus exported generated NSP)
+SD:/switch/usbloader/startup-debug/   (APP-0.6.7)
+SD:/switch/usbloader/nexus.log
+Do not repeat a frozen launch just to obtain logs. Report its visible outcome.
+
+Rollback
+--------
+Restore the previous USBLoader.nro and reinstall the matching old HOME NSP from
+your retained package. This does not replace existing individual shortcuts.
+The known-working NFS test shortcut can be retained. Firmware rollback is not
+required for this app-only update.
+
+Build / source
+--------------
+The companion source ZIP includes license notices and pinned dependencies.
+build-nexus.ps1 uses two low-priority build workers with a free-memory guard.
+tests/check_focused_build.ps1 checks loader sequencing and embed dependencies.
+tests/run_homebrew_tests.ps1 exercises USB reads, paths, permissions, RomFS,
+logger failures and watchdog/worker safeguards on the host. These are not a
+substitute for console tests. Older recovery notes describe earlier versions.

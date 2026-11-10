@@ -1,0 +1,57 @@
+Nexus Manager 0.2.0-test3 - local test source
+
+Test3 adds File manager with a clipboard for files and folders, SD/USB transfers,
+verified cut-and-paste, and reviewed deletion. All four home actions have new
+larger icons. More now has six icon cards with plain descriptions. The Nexus
+purple/neon artwork, white text, native Switch footer
+icons, simpler navigation and installed-game move fix remain.
+
+This build simplifies the home screen to My games, Install games, File manager and
+More, with a six-row library and reviewed move action. Existing port shortcuts,
+installs, PC transfer, saves, mods and recovery remain available.
+
+Installed-game move cleanup now reads bounded file references from unrelated
+metadata. Valid legacy forwarder references no longer fail because of an unused
+missing dependency tail. The moved game's own metadata, destination verification
+and source-deletion guards remain strict. Errors show the stopped cleanup step.
+Automatic recovery after partially deleted originals is not provided.
+
+On this PC build with build-nexus.ps1 (WSL fallback), or run
+NEXUS_VERSION=0.2.0-test3 sh build-nexus-wsl.sh in MM-HATS-Build WSL.
+Output: build/NexusPorts/switch/nexusmanager/NexusManager.nro (WSL path).
+The private fallback-key include is disabled. No firmware rebuild is required.
+
+Host regressions:
+  python3 tests/run_file_manager_tests.py
+  python3 tests/run_installed_move_tests.py
+  python3 tests/run_installed_cleanup_tests.py
+  python3 tests/run_port_progress_ui_tests.py
+Compile tests/manager_layout_tests.cpp and tests/nexus_ui_tests.cpp with C++20,
+-Isphaira/include and assertions enabled. The latter exports SVG layout previews.
+tests/check_focused_build.ps1 checks the existing source safety contracts.
+Host tests and build success do not replace a real Switch move test.
+
+Public publishing remains subject to ../AGENTS.md: release files only.
+The earlier D1 source notes below are retained as historical context.
+----------------------------------------------------------------------
+
+This directory is a separate GPL-3.0-or-later app derived from the sealed Nexus
+USB Loader R1 / Sphaira source. It is not DBI source or a modified DBI binary.
+The original upstream notices/license are retained. Older source documents
+describe inherited components, not current Nexus Manager feature coverage.
+
+Build with build-nexus.ps1 (devkitA64 + local libnx/graphics dependencies).
+The default build contains no embedded private fallback keys. It outputs
+build/NexusD1/switch/nexusmanager/NexusManager.nro.
+Use the workspace tools/nexus-manager-d1 scripts for tests and packaging.
+The source has no Git metadata; the build may emit harmless rev-parse warnings.
+
+D1 includes the existing install/move/dump/repair workflows plus file inspection
+and verified read-only-source save exports. It does not yet provide DBI parity:
+MTP/network install, cartridge export, save restore and advanced system tools
+are pending. See the packaged README.txt and FEATURES.txt for full limitations.
+
+Only Nexus Manager's identity/config/diagnostics are separated. Existing USB
+completion, index-recovery and mod journals remain shared intentionally.
+No new raw USB host driver, firmware payload or auto-updater is enabled.
+Run one manager/installer at a time. Console testing is still required.

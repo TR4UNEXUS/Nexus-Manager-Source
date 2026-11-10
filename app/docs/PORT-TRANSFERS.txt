@@ -1,0 +1,62 @@
+NEXUS MANAGER: COMPLETE PORT FOLDER TRANSFERS
+Nexus Manager 0.1.10 / PORTS1 test build, 26 October 2026
+
+Select a port in My games, choose Copy game or Move game, and confirm.
+Nexus reads the forwarder's target and automatically selects the complete
+port folder. There is no file-selection or extra-folder setup screen.
+
+Example:
+  sdmc:/switch/left4dead -> usb:/switch/left4dead
+Every file and subfolder is included: game data, runtime, configuration,
+hidden files, local saves and files added since the original installation.
+USB-to-SD uses the same process in reverse. Known separate data folders
+from the inspected Ports catalogue are included automatically, in full.
+
+Files are read back and verified before creating the destination HOME
+shortcut. The shortcut preserves launch arguments and address-space type;
+USB shortcuts use the project's existing Nexus Virtual SD loader.
+Copy keeps both copies. Move removes source files only after destination
+verification and shortcut creation. Existing different destination files
+stop the transfer; identical files can be reused. Cancellation or errors
+leave the verified destination available if source removal has begun.
+
+The old HOME shortcut is retained. Remove it in System Settings after
+testing the new shortcut. Empty source directories may remain after a move.
+Shared Wine runtime folders are copied completely and retained at source
+so other ports continue to have their files. Atmosphere/firmware files stay
+on physical SD. Console-managed save data is not part of folder transfers.
+
+Catalogue: all 72 NSP packages in B2 Ports were inspected through read-only
+listing and metadata reads. The 45 NSZ packages were listed, not inspected.
+Mass Effect and NOVA 3 have mismatched packaged launch targets; automatic
+transfer is refused for those original shortcuts until corrected.
+PORT-FOLDER-CATALOG.txt records all application names and folder locations.
+
+Verification completed:
+- Production transfer-engine tests: both directions, copy and move, with
+  718 injected failure points, conflicts, identical-file reuse, corruption,
+  short reads, insufficient space and changing source/destination files.
+- Read-only Left 4 Dead inventory: all 16,728 files and 490 directories
+  selected, totalling 6,345,408,988 bytes. No D: files were changed.
+- Forwarder argument preservation and malformed metadata tests; 20,000
+  malformed library inputs; 2,000 production builder/loader round trips.
+- Production NPDM patch checked for both 36-bit and 39-bit address spaces.
+- Complete Switch NRO build passed with the project-local official libnx.
+- Built NRO identity, version, asset bounds and embedded forwarder loader
+  checked. Known local secret-value scan found no credentials in the build.
+- Startup/exit logger and update-policy/built-NRO regression tests passed.
+
+SDK issue resolved: official libnx was built into dependencies/sdk/libnx,
+with graphics headers isolated from the older shared SDK. Missing vendored
+Zstandard CMake files were restored from the project's recorded revision.
+build-nexus.ps1 now uses the available WSL compiler and build-nexus-wsl.sh.
+The new NRO and SD-layout ZIP are ready for local console testing. No files
+were installed on the game drives, and no release was published.
+Console launch testing remains necessary.
+The existing focused-build source checker also fails on a pre-existing
+Cleanup icon assertion; the original source has the same mismatch.
+
+Repeat host tests with:
+  python tests/run_port_transfer_tests.py --compiler clang++
+For the optional read-only folder inventory:
+  add --inventory-root D:/ --nro /switch/left4dead/wine-nx-runtime.nro

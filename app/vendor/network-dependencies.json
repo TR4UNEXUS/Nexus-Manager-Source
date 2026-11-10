@@ -1,0 +1,21 @@
+{
+  "downloaded_utc": "2026-11-05T02:50:42.549494+00:00",
+  "dependencies": [
+    {
+      "name": "libsmb2",
+      "repository": "https://github.com/ITotalJustice/libsmb2",
+      "pinned_ref": "867beea",
+      "commit": "867beea093f2863dfddea01945204f724afd6c45",
+      "archive_url": "https://codeload.github.com/ITotalJustice/libsmb2/tar.gz/867beea093f2863dfddea01945204f724afd6c45",
+      "archive_sha256": "85ebec2132fceba280a92225fc4990e5f03134c3094c14e7d4e88e04c9c5e8ec"
+    },
+    {
+      "name": "libnfs",
+      "repository": "https://github.com/ITotalJustice/libnfs",
+      "pinned_ref": "65f3e11",
+      "commit": "65f3e115973d724971e8d85e021083259245962f",
+      "archive_url": "https://codeload.github.com/ITotalJustice/libnfs/tar.gz/65f3e115973d724971e8d85e021083259245962f",
+      "archive_sha256": "9c2d23be2399a1ecd9e3d0ac942e6ebfbfcefbbfc80d2129451ebef357249b1b"
+    }
+  ]
+}

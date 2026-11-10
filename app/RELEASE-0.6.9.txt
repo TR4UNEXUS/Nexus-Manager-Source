@@ -1,0 +1,18 @@
+USB Loader 0.6.9 - Stability T1
+
+USB installs and moves now open a private, generation-pinned NCM storage
+handle (65031). File creation, registration and cleanup cannot fall back to
+SD or continue on a replacement/reconnected USB drive. This USB endpoint
+requires the paired Nexus USB Stability T1 firmware. Missing support gives
+an error, never a legacy USB fallback. Native SD/internal routes remain.
+
+The working forwarder/HBL and USB Mods features are preserved. Existing
+USB Loader HOME-menu NSPs and game/homebrew forwarders need no reinstall.
+Replace switch/usbloader/USBLoader.nro, or use Apply-App.ps1 from the
+extracted runtime package. The script checks firmware and NRO hashes,
+saves a verified previous NRO and confirms the final copy.
+
+Fully reboot after the companion firmware update. Hardware testing is
+still required; successful compilation and host tests are not proof of
+console compatibility. Physical disconnection/power loss still stops an
+install. No games, tickets, mods or USB contents are deleted by this update.

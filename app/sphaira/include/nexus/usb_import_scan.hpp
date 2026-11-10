@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+#include "yati/yati.hpp"
+#include <string>
+#include <vector>
+#include <atomic>
+namespace sphaira::nexusapp {
+enum class UsbImportStatus { Ready, AlreadyRegistered, Incomplete, TicketMissing };
+enum class UsbImportRegistration { Unknown, Usb, Native, Superseded };
+struct UsbImportTitle {
+    yati::ExistingUsbRecord record;
+    UsbImportStatus status{UsbImportStatus::Incomplete};
+    std::string name,reason,meta_path;
+    std::vector<FsRightsId> required_tickets,archived_tickets;
+    UsbImportRegistration registration{UsbImportRegistration::Unknown};
+    bool missing_tickets{};
+};
+struct UsbImportScan {
+    u64 generation{};
+    std::vector<UsbImportTitle> titles;
+    size_t nca_files{},unreadable_ncas{},ignored_meta{};
+    bool complete{};
+    std::string detail;
+};
+struct UsbLibrarySummary {
+    size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{},selected_items{};
+};
+struct UsbLibraryPlan {
+    UsbLibrarySummary summary;
+    std::vector<bool> selected;
+    // Empty for unaffected/repairable families; otherwise explains why no
+    // member of this family may be changed by this plan.
+    std::vector<std::string> family_reason;
+};
+UsbLibraryPlan PlanUsbLibrary(const UsbImportScan&);
+UsbLibrarySummary SummarizeUsbLibrary(const UsbImportScan&);
+// No placeholder, ticket, metadata, routing or game-file writes are performed.
+// Background callers supply cancellation and names=false: no UI or shared
+// title-name cache is accessed. The caller must stop/join before mutations.
+Result ScanUsbImports(ui::ProgressBox*,UsbImportScan&,u64 expected_generation=0,
+    const std::atomic_bool* cancel=nullptr,bool names=true);
+std::string CanonicalUsbContentPath(const NcmContentId&);
+const char* UsbImportStatusText(UsbImportStatus);
+std::string UsbImportPreview(const UsbImportScan&);
+}
