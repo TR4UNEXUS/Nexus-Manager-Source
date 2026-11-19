@@ -16,7 +16,12 @@ int main(int argc,char** argv){
         Text(s,62,114,27,"File manager / USB");
         s<<"<defs><clipPath id='folder-path'><rect x='62' y='147' width='1150' height='23'/></clipPath><clipPath id='clipboard'><rect x='64' y='608' width='1150' height='24'/></clipPath></defs><g clip-path='url(#folder-path)'>";
         Text(s,62,147,15,empty?"USB:/New folder":"USB:/Games/Collection with a very long descriptive folder name/Extra content and game assets/An additional deeply nested destination with descriptive names to check clipping/Current folder");s<<"</g>";
-        if(empty)Text(s,72,205,20,"This folder is empty. Paste adds your selected item here.");
+        const char* buttons[]={"X   Copy","Y   Move","ZR   Delete","L   Paste here"};
+        for(size_t i=0;i<sphaira::ui::fileview::ActionCount;++i){
+            const auto r=sphaira::ui::fileview::ActionButton(i);DrawCard(s,{r.x,r.y,r.w,r.h},i==3,true);
+            s<<"<text x='"<<r.x+r.w/2<<"' y='"<<r.y+r.h/2<<"' text-anchor='middle' dominant-baseline='central' font-size='22' fill='#ffffff'>"<<buttons[i]<<"</text>";
+        }
+        if(empty)Text(s,72,262,20,"This folder is empty. Paste here adds your selected item.");
         else for(size_t i=0;i<sphaira::ui::fileview::Rows;++i){
             const auto r=sphaira::ui::fileview::Row(i);DrawCard(s,{r.x,r.y,r.w,r.h},i==0,true);
             if(i<3)Icon(s,MenuIcon::Folder,72,r.y+10,32);
@@ -26,7 +31,7 @@ int main(int argc,char** argv){
         }
         const auto line=sphaira::ui::fileview::ClipboardLine();s<<"<g clip-path='url(#clipboard)'>";Text(s,line.x,line.y+3,17,"Ready to move: SD:/switch/Example game");s<<"</g>";
         Text(s,55,674,17,empty?"0 / 0":"1 / 7");
-        Footer(s,{{"A","Open",48},{"B","Up",26},{"X","Actions",66},{"Y","Paste",52},{"+","Exit",34},{"&#8722;","Storage",72}});
+        Footer(s,{{"A","Open",48},{"B","Up",26},{"R","Storage",72},{"+","Exit",34},{"&#8722;","More",48}});
         s<<"</g></svg>";
         std::ofstream output(std::string(argv[1])+(empty?".library.svg":""));output<<s.str();assert(output.good());
     }

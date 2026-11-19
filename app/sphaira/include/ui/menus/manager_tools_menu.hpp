@@ -3,6 +3,7 @@
 #include "ui/menus/menu_base.hpp"
 #include "nexus/manager_tools.hpp"
 #include "nexus/file_manager.hpp"
+#include "ui/file_manager_layout.hpp"
 #include <optional>
 namespace sphaira::ui::menu::managertools {
 enum class Mode { Volumes, Files, Saves };
@@ -22,6 +23,8 @@ private:
     size_t Count() const;
     void Refresh();void Open();void Back();void Inspect(const nexusapp::Item&,bool);
     void SetupActions();void Storage();void FileActions();
+    bool FileActionEnabled(fileview::FileAction) const;
+    void RunFileAction(fileview::FileAction);
     void SelectClipboard(const nexusapp::Item&,bool move);void ClearClipboard();
     void Paste();void Remove(const nexusapp::Item&);
 };

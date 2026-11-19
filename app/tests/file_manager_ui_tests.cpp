@@ -4,13 +4,19 @@
 #include <iostream>
 using namespace sphaira::ui::fileview;
 int main(){
-    static_assert(Rows==7);
+    static_assert(Rows==6);
     const auto clipboard=ClipboardLine();
-    for(std::size_t i=0;i<70;++i){
-        const auto row=Row(i);assert(row.x>=42 && row.x+row.w<=1238);
+    for(bool browser:{false,true})for(std::size_t i=0;i<70;++i){
+        const auto count=PageRows(browser);const auto row=Row(i,browser);assert(row.x>=42 && row.x+row.w<=1238);
         assert(row.y>=174 && row.y+row.h<clipboard.y);
-        assert(row.y==Row(i%Rows).y);
-        if(i%Rows<Rows-1)assert(row.y+row.h<Row(i+1).y);
+        assert(row.y==Row(i%count,browser).y);
+        if(i%count<count-1)assert(row.y+row.h<Row(i+1,browser).y);
+    }
+    for(std::size_t i=0;i<ActionCount;++i){
+        const auto button=ActionButton(i);
+        assert(button.x>=54 && button.x+button.w<=1226);
+        assert(button.y>=174 && button.y+button.h<Row(0).y);
+        if(i+1<ActionCount)assert(button.x+button.w<ActionButton(i+1).x);
     }
     assert(clipboard.y+clipboard.h<653);
     for(bool cut:{false,true})for(bool success:{false,true})for(bool complete:{false,true})for(std::size_t removed:{0u,1u,100u})for(bool started:{false,true}){
@@ -30,5 +36,5 @@ int main(){
     assert(!IsSameOrChild("/ports/game",""));
     assert(!IsSameOrChild("","/ports/game"));
     assert(IsSameOrChild("/ports/game","/"));
-    std::cout<<"PASS file-manager row/clipboard separation, clipboard completion/failure states and deleted-subtree matching\n";
+    std::cout<<"PASS toolbar/row/clipboard separation, six-row file pages, seven-row save pages, clipboard completion/failure states and deleted-subtree matching\n";
 }

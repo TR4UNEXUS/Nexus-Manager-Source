@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/menus/manager_tools_menu.hpp"
 #include "ui/nexus_violet.hpp"
+#include "ui/nexus_dialog.hpp"
 #include "ui/nvg_util.hpp"
 #include "ui/option_box.hpp"
 #include "ui/sidebar.hpp"
@@ -12,6 +13,14 @@
 namespace sphaira::ui::menu::managertools {
 namespace {
 namespace view=fileview;
+struct FileControl {view::FileAction action;Button button;const char* label;};
+constexpr FileControl FileControls[]={
+    {view::FileAction::Copy,Button::X,"Copy"},
+    {view::FileAction::Move,Button::Y,"Move"},
+    {view::FileAction::Delete,Button::R2,"Delete"},
+    {view::FileAction::Paste,Button::L,"Paste here"},
+};
+static_assert(std::size(FileControls)==view::ActionCount);
 void Text(NVGcontext* vg,float x,float y,float size,NVGcolor c,const std::string& text,int align=NVG_ALIGN_LEFT|NVG_ALIGN_TOP){gfx::drawText(vg,x,y,size,c,text.c_str(),align);}
 bool FullMemory(){
     if(!App::IsApplet())return true;
@@ -37,19 +46,46 @@ Menu::Menu(Mode initial,const std::string& folder):MenuBase("Nexus Manager",Menu
     SetupActions();
     SetAction(Button::UP,Action{[this]{if(selected)--selected;}});
     SetAction(Button::DOWN,Action{[this]{if(selected+1<Count())++selected;}});
-    SetAction(Button::LEFT,Action{[this]{selected=selected>=view::Rows?selected-view::Rows:0;}});
-    SetAction(Button::RIGHT,Action{[this]{if(Count())selected=std::min(selected+view::Rows,Count()-1);}});
+    SetAction(Button::LEFT,Action{[this]{const auto rows=view::PageRows(mode==Mode::Files);selected=selected>=rows?selected-rows:0;}});
+    SetAction(Button::RIGHT,Action{[this]{if(Count())selected=std::min(selected+view::PageRows(mode==Mode::Files),Count()-1);}});
 }
 void Menu::SetupActions(){
     actions_dirty=false;
-    for(auto button:{Button::X,Button::Y,Button::SELECT})RemoveAction(button);
+    for(auto button:{Button::X,Button::Y,Button::R2,Button::L,Button::R,Button::SELECT})RemoveAction(button);
     SetAction(Button::A,Action{"Open",[this]{Open();}});
     SetAction(Button::B,Action{mode==Mode::Files?"Up":"Back",[this]{Back();}});
     SetAction(Button::START,Action{"Exit",App::Exit});
     if(mode==Mode::Saves){SetAction(Button::X,Action{"Refresh",[this]{Refresh();}});return;}
-    SetAction(Button::X,Action{"Actions",[this]{FileActions();}});
-    SetAction(Button::SELECT,Action{"Storage",[this]{Storage();}});
-    if(mode==Mode::Files && clipboard && nexus::files::SafeDirectory(path))SetAction(Button::Y,Action{"Paste",[this]{Paste();}});
+    SetAction(Button::R,Action{"Storage",[this]{Storage();}});
+    SetAction(Button::SELECT,Action{"More",[this]{FileActions();}});
+    if(mode==Mode::Files){
+        // These shortcuts are labelled on the touch toolbar, leaving room in
+        // the footer for navigation. Both input methods use the same handler.
+        for(const auto& control:FileControls)SetAction(control.button,Action{[this,action=control.action]{RunFileAction(action);}});
+    }
+}
+bool Menu::FileActionEnabled(view::FileAction action) const {
+    if(mode!=Mode::Files)return false;
+    if(action==view::FileAction::Paste)return clipboard && nexus::files::SafeDirectory(path);
+    if(selected>=files.size())return false;
+    return nexus::files::Safe(files[selected].path) ||
+        (action==view::FileAction::Delete && nexus::files::StagePath(files[selected].path));
+}
+void Menu::RunFileAction(view::FileAction action){
+    if(mode!=Mode::Files || !FullMemory())return;
+    if(!FileActionEnabled(action)){
+        const char* reason=action==view::FileAction::Paste && !clipboard?
+            "Select a file or folder, then choose Copy or Move. Open the destination folder and choose Paste here. Use R Storage to switch between SD card and USB.":
+            action!=view::FileAction::Paste && selected>=files.size()?"Select a file or folder first.":
+            "This item or folder is managed game or system data and is read only here. Use Installed games to move or delete installed games. Choose an ordinary file or folder for File manager actions.";
+        App::Push<OptionBox>(reason,"Close",[](auto){});return;
+    }
+    switch(action){
+        case view::FileAction::Copy:SelectClipboard(files[selected],false);break;
+        case view::FileAction::Move:SelectClipboard(files[selected],true);break;
+        case view::FileAction::Delete:Remove(files[selected]);break;
+        case view::FileAction::Paste:Paste();break;
+    }
 }
 size_t Menu::Count() const {return mode==Mode::Volumes?3:mode==Mode::Saves?saves.size():files.size();}
 void Menu::Back(){
@@ -100,7 +136,7 @@ void Menu::Storage(){
 void Menu::ClearClipboard(){clipboard.reset();cut=false;actions_dirty=true;App::Notify("Clipboard cleared. No files were changed.");}
 void Menu::SelectClipboard(const nexusapp::Item& item,bool move){
     clipboard=nexusfiles::Selection{usb,generation,item};cut=move;actions_dirty=true;
-    App::Notify(std::string(move?"Ready to move: ":"Ready to copy: ")+nexusmanager::Display(item.name)+". Choose a destination folder, then Paste.");
+    App::Notify(std::string(move?"Ready to move: ":"Ready to copy: ")+nexusmanager::Display(item.name)+". Open the destination, then Paste here. R Storage changes drive.");
 }
 void Menu::FileActions(){
     if(mode==Mode::Saves || !FullMemory())return;
@@ -113,15 +149,15 @@ void Menu::FileActions(){
     if(item_selected){
         if(editable){
             choices->Add<SidebarEntryCallback>("Copy",[this,item]{SelectClipboard(item,false);});
-            choices->Add<SidebarEntryCallback>("Cut",[this,item]{SelectClipboard(item,true);});
+            choices->Add<SidebarEntryCallback>("Move",[this,item]{SelectClipboard(item,true);});
         }
         if(editable || retained_stage)choices->Add<SidebarEntryCallback>("Delete",[this,item]{Remove(item);});
         const auto source=usb;
         choices->Add<SidebarEntryCallback>("Details",[item,source,editable,retained_stage]{
             const auto detail=std::string(source?"USB:":"SD:")+nexusmanager::Display(item.path)+"\n\n"+
                 (item.directory?std::string("Folder."):"Size: "+utils::formatSizeStorage(item.size))+"\n\n"+
-                (retained_stage?"Incomplete transfer item. Delete reviews its exact contents before removal. It cannot be copied or cut.":
-                    editable?"Files and subfolders are counted before copying, moving or deleting.":"Managed game or system data is read only here. Use My games to manage installed games.");
+                (retained_stage?"Incomplete transfer item. Delete reviews its exact contents before removal. It cannot be copied or moved.":
+                    editable?"Files and subfolders are counted before copying, moving or deleting.":"Managed game or system data is read only here. Use Installed games to manage installed games.");
             App::Push<OptionBox>(detail,"Close",[](auto){});
         });
         if(!item.directory){
@@ -136,7 +172,7 @@ void Menu::FileActions(){
 }
 void Menu::Paste(){
     if(mode!=Mode::Files || !clipboard || !FullMemory())return;
-    if(!nexus::files::SafeDirectory(path)){App::Push<OptionBox>("This folder contains managed game or system data and is read only here. Choose another destination, or use My games for installed games.","Close",[](auto){});return;}
+    if(!nexus::files::SafeDirectory(path)){App::Push<OptionBox>("This folder contains managed game or system data and is read only here. Choose another destination, or use Installed games for installed games.","Close",[](auto){});return;}
     const auto source=*clipboard;const auto destination_usb=usb;const auto destination_generation=generation;
     const auto folder=path;const bool move=cut;
     auto plan=std::make_shared<nexusfiles::Plan>();auto detail=std::make_shared<std::string>();
@@ -211,8 +247,12 @@ void Menu::Update(Controller* c,TouchInfo* touch){
     MenuBase::Update(c,touch);
     if(pending && HasFocus()){pending=false;if(!App::IsApplet())Refresh();}
     if(HasFocus() && touch->is_clicked){
-        const auto begin=selected/view::Rows*view::Rows;
-        for(size_t i=begin;i<std::min(Count(),begin+view::Rows);++i){const auto row=view::Row(i);if(touch->in_range({row.x,row.y,row.w,row.h})){
+        if(mode==Mode::Files)for(size_t i=0;i<view::ActionCount;++i){
+            const auto button=view::ActionButton(i);
+            if(touch->in_range({button.x,button.y,button.w,button.h})){RunFileAction(FileControls[i].action);break;}
+        }
+        const auto rows=view::PageRows(mode==Mode::Files),begin=selected/rows*rows;
+        for(size_t i=begin;HasFocus() && i<std::min(Count(),begin+rows);++i){const auto row=view::Row(i,mode==Mode::Files);if(touch->in_range({row.x,row.y,row.w,row.h})){
             if(selected==i)Open();else selected=i;break;
         }}
     }
@@ -220,14 +260,22 @@ void Menu::Update(Controller* c,TouchInfo* touch){
 }
 void Menu::Draw(NVGcontext* vg,Theme* theme){
     MenuBase::Draw(vg,theme);violet::Card(vg,{42,106,1196,533},false);
-    const auto fg=theme->GetColour(ThemeEntryID_TEXT),muted=violet::Lilac(),accent=violet::Accent();
+    const auto fg=nexusdialog::Text(),muted=nexusdialog::Text(),accent=violet::Accent();
     const std::string heading=mode==Mode::Volumes?"File manager":mode==Mode::Saves?"Save backups":(usb?"File manager / USB":"File manager / SD card");
     Text(vg,62,114,27,fg,heading);
     nvgSave(vg);nvgScissor(vg,62,147,1150,23);
-    Text(vg,62,147,15,muted,mode==Mode::Files?std::string(usb?"USB:":"SD:")+nexusmanager::Display(path)+(nexus::files::SafeDirectory(path)?"":"  /  Managed data: read only"):mode==Mode::Saves?"Choose a game and user / back up or restore with confirmation":"Copy or cut an item, choose its destination, then Paste. Folders include all their contents.");nvgRestore(vg);
-    const auto begin=selected/view::Rows*view::Rows;
-    for(size_t i=begin;i<std::min(Count(),begin+view::Rows);++i){
-        const auto row=view::Row(i);const float y=row.y;violet::Card(vg,{row.x,row.y,row.w,row.h},i==selected,true);
+    Text(vg,62,147,15,muted,mode==Mode::Files?std::string(usb?"USB:":"SD:")+nexusmanager::Display(path)+(nexus::files::SafeDirectory(path)?"":"  /  Managed data: read only"):mode==Mode::Saves?"Choose a game and user / back up or restore with confirmation":"Copy or Move an item, choose its destination, then Paste here. Folders include all their contents.");nvgRestore(vg);
+    if(mode==Mode::Files)for(size_t i=0;i<view::ActionCount;++i){
+        const auto& control=FileControls[i];const auto button=view::ActionButton(i);
+        const auto label=std::string(gfx::getButton(control.button))+"  "+control.label;
+        const bool enabled=FileActionEnabled(control.action);
+        // Keep labels white even when an action is unavailable; pressing it
+        // explains what is needed. A ready clipboard highlights Paste here.
+        nexusdialog::Button(vg,{button.x,button.y,button.w,button.h},label.c_str(),enabled && control.action==view::FileAction::Paste);
+    }
+    const auto rows=view::PageRows(mode==Mode::Files),begin=selected/rows*rows;
+    for(size_t i=begin;i<std::min(Count(),begin+rows);++i){
+        const auto row=view::Row(i,mode==Mode::Files);const float y=row.y;violet::Card(vg,{row.x,row.y,row.w,row.h},i==selected,true);
         std::string label,right;
         if(mode==Mode::Volumes){label=i==2?"Network locations":i?"USB drive":"SD card";right=i==2?"SMB / NFS":"Open";}
         else if(mode==Mode::Saves){label=saves[i].name;right=saves[i].info.save_data_type==FsSaveDataType_Account?"User save":"Device save";}
@@ -237,13 +285,13 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
             gfx::drawRect(vg,72,y+14,14,9,accent,2);
         }
         nvgSave(vg);nvgScissor(vg,114,y+4,820,50);Text(vg,114,y+17,20,fg,label);nvgRestore(vg);
-        Text(vg,1208,y+19,16,accent,right,NVG_ALIGN_RIGHT|NVG_ALIGN_TOP);
+        Text(vg,1208,y+19,16,fg,right,NVG_ALIGN_RIGHT|NVG_ALIGN_TOP);
     }
-    if(!Count())Text(vg,72,205,20,muted,App::IsApplet()?"Use full-memory mode to access these tools.":mode==Mode::Saves?"No supported primary user/device saves found.":!nexus::files::SafeDirectory(path)?"Managed game or system data is read only here.":clipboard?"This folder is empty. Paste adds your selected item here.":"This folder is empty. Use Storage to choose another drive.");
+    if(!Count())Text(vg,72,mode==Mode::Files?262:205,20,muted,App::IsApplet()?"Use full-memory mode to access these tools.":mode==Mode::Saves?"No supported primary user/device saves found.":!nexus::files::SafeDirectory(path)?"Managed game or system data is read only here.":clipboard?"This folder is empty. Paste here adds your selected item.":"This folder is empty. Use Storage to choose another drive.");
     const auto footer=view::ClipboardLine();nvgSave(vg);nvgScissor(vg,footer.x,footer.y,footer.w,footer.h);
     const auto hint=mode==Mode::Saves?std::string("Backups stay on SD. Keep a separate copy on your PC."):
         clipboard?std::string(cut?"Ready to move: ":"Ready to copy: ")+(clipboard->usb?"USB:":"SD:")+nexusmanager::Display(clipboard->item.path):
-        "X: item actions   /   Storage: change drive   /   Left or right: page";
+        "Select an item, then choose Copy, Move or Delete. R Storage changes drive. Left / right: page.";
     Text(vg,footer.x,footer.y+3,17,muted,hint);nvgRestore(vg);
 }
 }

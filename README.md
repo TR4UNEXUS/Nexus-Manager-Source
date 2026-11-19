@@ -2,10 +2,12 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.17 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.17).
+This repository contains the 0.2.18 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.18).
 
 ## What's new
 
+- Visible Copy, Move, Delete and Paste here controls in File manager, with Switch shortcuts and touch buttons.
+- Copy and move files or folders between SD and USB; switching drives keeps the clipboard selection. Moves verify the copy first, and deletion requires confirmation.
 - A cleaner blue and purple interface with dedicated Cleanup and SMB/NFS pages.
 - Installed games shows each game's title ID, version, update revision, DLC count and size on SD, internal storage and USB. Move and delete are available through Manage.
 - Delete a chosen storage copy, including its base game, updates and DLC, while keeping saves and copies on other storage.
@@ -14,7 +16,7 @@ This repository contains the 0.2.17 application source, assets, dependencies, bu
 - Successful USB-cable installs remove their temporary package. Failed, cancelled or skipped installs keep it for retry; original PC/NAS files are untouched.
 - Saved SMB/NFS locations, network discovery and direct streamed installs from a NAS.
 
-The 0.2.17 build and PC regression checks passed. This version still needs testing on a Switch.
+The 0.2.18 build and PC regression checks passed. This version still needs testing on a Switch.
 
 ## Getting started
 
