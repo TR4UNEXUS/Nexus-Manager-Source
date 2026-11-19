@@ -38,7 +38,7 @@ Result InstallStream(sphaira::ui::ProgressBox* p,const InstallJob& job,nexus::in
     config.nexus_destination_generation=job.usb?job.generation:0;config.diagnostic=&diagnostic;
     config.quick_usb_final_verify=job.usb;
     config.ticket_only=false;config.skip_base=false;config.skip_patch=false;config.skip_addon=false;config.skip_data_patch=false;config.skip_ticket=false;
-    config.skip_nca_hash_verify=false;config.convert_to_standard_crypto=false;config.lower_master_key=false;config.lower_system_version=false;config.ignore_distribution_bit=true;
+    config.skip_nca_hash_verify=false;config.convert_to_standard_crypto=false;config.lower_master_key=false;config.lower_system_version=false;config.ignore_distribution_bit=false;
     p->SetProgressNote("Streaming from PC. Keep the connection and storage connected.");
     return sphaira::yati::InstallFromSource(p,&source,fs::FsPath(job.path),config,-1);
 }

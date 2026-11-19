@@ -68,7 +68,10 @@ constexpr size_t MaxFiles=262144;
 Id Identity(const NcmContentId& c){Id i;memcpy(i.data(),&c,16);return i;}
 NcmContentId Content(const Id& i){NcmContentId c;memcpy(&c,i.data(),16);return c;}
 std::string HexId(const void* p){char out[33]{};const auto* b=static_cast<const u8*>(p);for(int i=0;i<16;++i)snprintf(out+i*2,3,"%02x",b[i]);return out;}
-struct Game{u64 id{};bool location_checked{};std::string location_hint;};
+constexpr int NcmContentMetaType_Application=0x80,NcmContentMetaType_Patch=0x81,NcmContentMetaType_AddOnContent=0x82;
+struct Game{u64 id{};bool location_checked{};std::string location_hint;
+    std::array<u64,3> installed_bytes{};std::array<bool,3> size_known{};
+    u32 base_version{},update_version{},dlc_count{};bool has_base{},has_update{};};
 // API_PRODUCTION
 // MODEL_PRODUCTION
 static std::array<Inventory,3> stores;
@@ -88,7 +91,7 @@ Result FileMatches(Session&,const File&);
 Result ReadContent(Target t,Target storage,const NcmContentId& id,u64 generation,u64 offset,void* data,size_t size){
  assert(t==storage&&generation==stores[size_t(t)].generation&&offset==0&&size==sizeof(nca::Header));R_TRY(read_error);++header_reads;auto h=headers[size_t(t)].at(Identity(id));if(changed_header)h.magic=0;memcpy(data,&h,size);return 0;}
 Result Database(Session& s,Inventory& out){out.records=stores[size_t(s.storage)].records;return inventory_error;}
-Result PhysicalFiles(Session& s,Inventory& out,bool sizes){assert(!sizes);out.files=stores[size_t(s.storage)].files;return inventory_error;}
+Result PhysicalFiles(Session& s,Inventory& out,bool sizes=true){assert(sizes);out.files=stores[size_t(s.storage)].files;return inventory_error;}
 Result UsbRoutingReferences(const std::set<Id>& ids,bool& found){R_TRY(route_error);found=std::any_of(ids.begin(),ids.end(),[](auto id){return routes.contains(id);});return 0;}
 Result OpenStorage(Target t,NcmContentStorage& s){s=t;return inventory_error;}
 void ncmContentStorageClose(NcmContentStorage*){}

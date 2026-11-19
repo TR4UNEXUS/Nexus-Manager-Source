@@ -620,9 +620,9 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
         for(const auto& entry:entries){
             if(entry.directory)continue;
             Id id{};if(!core::ContentName(entry.name,id))continue;
-            R_UNLESS(files.size()<MaxFiles,nexus::Invalid);File file{};std::memcpy(&file.id,id.data(),id.size());file.path=CanonicalUsbContentPath(file.id);file.size=entry.size;
+            R_UNLESS(files.size()+scan.unresolved_ownership.size()<MaxFiles,nexus::Invalid);File file{};std::memcpy(&file.id,id.data(),id.size());file.path=CanonicalUsbContentPath(file.id);file.size=entry.size;
             u8 hash[32]{};sha256CalculateHash(hash,&file.id,sizeof(file.id));
-            if(hash[0]!=bucket||!seen_files.insert(id).second){++scan.unreadable_ncas;continue;}
+            if(hash[0]!=bucket||!seen_files.insert(id).second){++scan.unreadable_ncas;scan.unresolved_ownership.push_back(file.id);continue;}
             files.push_back(std::move(file));
         }
     }
@@ -632,7 +632,7 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
     for(size_t i=0;i<files.size();++i){
         const auto& file=files[i];nca::Header header{};bool valid{};R_TRY(s.Header(file,header,valid));
         s.headers[ContentId(file.id)]={header.rights_id,file.size,header.content_type,valid};
-        if(!valid)++scan.unreadable_ncas;
+        if(!valid){++scan.unreadable_ncas;scan.unresolved_ownership.push_back(file.id);}
         else if(header.content_type==nca::ContentType_Meta)metas.push_back(file);
         if(progress)progress->UpdateTransfer(i+1,files.size());
     }
@@ -641,14 +641,15 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
     for(size_t i=0;i<metas.size();++i){
         const auto& file=metas[i];UsbImportTitle row{};row.meta_path=file.path;row.name="Metadata "+HexId(&file.id);
         nca::Header header{};bool valid{};R_TRY(s.Header(file,header,valid));
-        if(!valid){row.reason="The metadata file changed or is unreadable. Scan the drive again.";scan.titles.push_back(std::move(row));continue;}
+        if(!valid){scan.unresolved_ownership.push_back(file.id);row.reason="The metadata file changed or is unreadable. Scan the drive again.";scan.titles.push_back(std::move(row));continue;}
         s.stage="reading and validating USB game metadata";
         std::vector<u8> raw;R_TRY(ReadCnmt(s,file,header,raw,row.reason));
-        if(!row.reason.empty()){scan.titles.push_back(std::move(row));continue;}
-        if(raw.size()>=13&&!core::SupportedType(raw[12])){++scan.ignored_meta;continue;}
+        if(!row.reason.empty()){scan.unresolved_ownership.push_back(file.id);scan.titles.push_back(std::move(row));continue;}
+        if(raw.size()>=13&&!core::SupportedType(raw[12])){++scan.ignored_meta;scan.unresolved_ownership.push_back(file.id);continue;}
         PreviewIdentity(row,header,raw,names);
         core::Meta parsed;
         if(!core::ParseCnmt(raw,parsed,row.reason,ownership_only)||parsed.id!=header.program_id||!MakeRecord(parsed,file,row.record)){
+            scan.unresolved_ownership.push_back(file.id);
             if(row.reason.empty())row.reason="This metadata is unsupported, too large for recovery, or contains an inconsistent NCA reference.";
             scan.titles.push_back(std::move(row));continue;
         }

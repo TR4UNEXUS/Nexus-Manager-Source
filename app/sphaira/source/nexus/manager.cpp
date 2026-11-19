@@ -400,9 +400,10 @@ Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& pat
     if(outcome){cfg.ticket_only=false;cfg.skip_base=false;cfg.skip_patch=false;cfg.skip_addon=false;cfg.skip_data_patch=false;cfg.skip_ticket=false;}
     if(diagnostic){diagnostic->Clear();diagnostic->completion.clear();}
     cfg.nexus_destination_generation=destination_generation;
-    // Keep original hashes/crypto. The package remains untouched on the source.
+    // Verify original bytes and retain crypto. Installed content needs the
+    // System distribution flag; the original package is never modified.
     cfg.convert_to_standard_crypto=false; cfg.lower_master_key=false; cfg.lower_system_version=false;
-    cfg.ignore_distribution_bit=true;
+    cfg.skip_nca_hash_verify=false;cfg.ignore_distribution_bit=false;
     InstallReceipt receipt;receipt.path=path;receipt.usb_source=usb;
     const auto run=[&](yati::source::Base& source,u64 size)->Result {
         if(target==Target::Usb){receipt.source_size=size;R_TRY(SaveInstallReceipt(receipt));cfg.receipt=&receipt;}

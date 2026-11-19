@@ -48,7 +48,7 @@ struct Client {Result DeleteRegistered(u64,const std::string&,u64);};
 }
 namespace sphaira::nexusapp {
 namespace core=nexus::cleanup;using Id=core::Id;using Digest=std::array<u8,32>;using nexus::Target;
-void CleanupStage(const char*){}
+const char* cleanup_stage="test";void CleanupStage(const char* stage){cleanup_stage=stage;}
 std::string CleanupFailure(Result){return "Stopped while checking test storage. No files removed.";}
 Id Identity(const NcmContentId& c){Id i;memcpy(i.data(),&c,16);return i;}
 NcmContentId Content(const Id& i){NcmContentId c;memcpy(&c,i.data(),16);return c;}
@@ -62,12 +62,18 @@ struct Sha256Context{std::vector<u8> bytes;};
 void sha256ContextCreate(Sha256Context* c){c->bytes.clear();}
 void sha256ContextUpdate(Sha256Context* c,const void* p,size_t n){const auto* b=static_cast<const u8*>(p);c->bytes.insert(c->bytes.end(),b,b+n);}
 void sha256ContextGetHash(Sha256Context* c,void* out){SHA256(c->bytes.data(),c->bytes.size(),static_cast<u8*>(out));}
+struct UsbImportScan {
+    struct Ref {struct {NcmContentId content_id;} info;};
+    struct Row {struct {u64 application_id{};std::vector<Ref> content;} record;std::string name;};
+    std::vector<NcmContentId> unresolved_ownership;std::vector<Row> titles;
+};
 // STATE_PRODUCTION
 static Inventory live;
 static std::vector<ncm::ContentStorageRecord> home;
 static std::set<u64> keep;
 static unsigned deletes{},route_calls{},db_removes{},home_changes{},snapshots{};
 static Result inventory_error{},preflight_error{},route_error{},gate_error{},home_error{};
+static Result placeholder_error{};
 static unsigned fail_delete{};static bool change_stamp{},change_generation{};
 static std::set<u64> missing_tickets;
 static Result ticket_error{},absence_error{};
@@ -76,10 +82,10 @@ Result PreviewTicketRemoval(ui::ProgressBox*,const CleanupItem&,GameRemovalPlan&
 Result ApplyTicketRemoval(ui::ProgressBox*,const GameRemovalPlan&,GameRemovalReport&){return Invalid;}
 static constexpr u64 app=0x0100123400000000,other=0x0100123500000000;
 Id I(u8 n){Id i{};i[0]=n;return i;}
-Result ReadInventory(ui::ProgressBox* p,Target target,Inventory& out){R_TRY(p->ShouldExitResult());R_TRY(inventory_error);assert(target==live.target);out=live;++snapshots;
+Result ReadInventory(ui::ProgressBox* p,Target target,Inventory& out,bool placeholders=true){if(placeholders)R_TRY(placeholder_error);R_TRY(p->ShouldExitResult());R_TRY(inventory_error);assert(target==live.target);out=live;++snapshots;
     if(change_stamp)++out.stamp[0];if(change_generation)++out.generation;return 0;}
 struct Session {ui::ProgressBox* p;NcmContentStorage storage;NcmContentMetaDatabase db;u64 generation{};
-    explicit Session(ui::ProgressBox* x):p(x){}Result Open(Target t){storage.target=t;generation=live.generation;return 0;}Result Check(){return p->ShouldExitResult();}};
+    explicit Session(ui::ProgressBox* x):p(x){}Result Open(Target t,bool placeholders=true){if(placeholders)R_TRY(placeholder_error);storage.target=t;generation=live.generation;return 0;}Result Check(){return p->ShouldExitResult();}};
 Result RemovedFileAbsent(Session&,const File& f){R_TRY(absence_error);return live.files.contains(Identity(f.id))?Invalid:0;}
 Result FileMatches(Session& s,const File& f){R_TRY(s.Check());R_TRY(preflight_error);const auto it=live.files.find(Identity(f.id));R_UNLESS(it!=live.files.end()&&it->second.size==f.size,Invalid);return 0;}
 Result KeepSharedRecord(ui::ProgressBox*,Target,const Record& r,bool& result){result=keep.contains(r.key.id);return 0;}
@@ -91,7 +97,7 @@ Result RemovePlaceholder(const Placeholder& p){assert(live.target==p.target&&liv
 Result Delete(const NcmContentId& id){++deletes;if(fail_delete&&deletes==fail_delete)return Fault;assert(live.files.erase(Identity(id)));++live.stamp[0];return 0;}
 FILE* OpenLog(const char* path,const char* mode){assert((std::string(path)=="sdmc:/switch/nexusmanager/cleanup-last.log"||std::string(path)=="sdmc:/switch/nexusmanager/cleanup-all-last.log")&&std::string(mode)=="wb");return tmpfile();}
 void Reset(Target target=Target::Sd){
-    missing_tickets.clear();ticket_error=absence_error=0;
+    missing_tickets.clear();ticket_error=absence_error=placeholder_error=0;
     live={};home.clear();keep.clear();deletes=route_calls=db_removes=home_changes=snapshots=0;inventory_error=preflight_error=route_error=gate_error=home_error=0;fail_delete=0;change_stamp=change_generation=false;
     live.target=target;live.generation=target==Target::Usb?7:0;live.home={app,other};
     for(u8 id=1;id<=5;++id)live.files.emplace(I(id),File{Content(I(id)),u64(id)*100,"/registered/"+std::to_string(id)});
@@ -125,6 +131,38 @@ int main(){using namespace sphaira::nexusapp;sphaira::ui::ProgressBox p;
         GameRemovalReport report;assert(!ApplyGameRemoval(&p,plan,report));assert(report.complete&&report.removed==3&&deletes==3&&db_removes==3&&home.empty());
         assert(live.files.size()==2&&live.files.contains(I(4))&&live.files.contains(I(5))&&live.placeholders.contains(I(8)));
         assert(route_calls==(t==Target::Usb?1u:0u));
+    }
+    // Regression for the reported ownership rejection: a damaged known NCA
+    // uses its installed database reference; genuinely unknown metadata blocks.
+    for(auto target:{Target::Sd,Target::Internal,Target::Usb}){
+        Reset(target);placeholder_error=Fault;GameRemovalPlan plan;GameRemovalReport report;
+        assert(!PreviewGameRemoval(&p,Item(),plan)&&!ApplyGameRemoval(&p,plan,report)&&report.complete);
+        CleanupScan scan;assert(ScanCleanup(&p,target,scan)==Fault); // full cleanup still requires that inventory
+    }
+    for(auto target:{Target::Sd,Target::Usb}){
+        Reset(target);UsbImportScan scan;scan.unresolved_ownership={Content(I(1)),Content(I(1))};
+        MergeUsbOwnership(scan,live);assert(!live.usb_unknown);
+        GameRemovalPlan plan;GameRemovalReport report;assert(!PreviewGameRemoval(&p,Item(),plan));
+        assert(!ApplyGameRemoval(&p,plan,report)&&report.complete&&report.removed==3);
+    }
+    {
+        Reset(Target::Usb);UsbImportScan scan;scan.unresolved_ownership={Content(I(90))};
+        MergeUsbOwnership(scan,live);assert(live.usb_unknown&&live.unresolved_usb.size()==1);
+        GameRemovalPlan plan;assert(PreviewGameRemoval(&p,Item(),plan));
+        assert(plan.detail.find("1 USB content file")!=std::string::npos&&!deletes&&!db_removes);
+    }
+    {
+        Reset(Target::Usb);GameRemovalPlan plan;GameRemovalReport report;
+        assert(!PreviewGameRemoval(&p,Item(),plan));UsbImportScan scan;scan.unresolved_ownership={Content(I(90))};
+        MergeUsbOwnership(scan,live);assert(ApplyGameRemoval(&p,plan,report));
+        assert(report.detail.find("1 USB content file")!=std::string::npos&&!deletes&&!db_removes&&!home_changes);
+    }
+    {
+        Reset(Target::Usb);UsbImportScan scan;
+        UsbImportScan::Row row;row.record.application_id=other;row.record.content.push_back({{Content(I(1))}});
+        scan.titles.push_back(row);MergeUsbOwnership(scan,live);
+        GameRemovalPlan plan;GameRemovalReport report;assert(!PreviewGameRemoval(&p,Item(),plan));
+        assert(plan.shared==2&&!ApplyGameRemoval(&p,plan,report)&&live.files.contains(I(1)));
     }
     // Changed ownership/database, replacement USB, I/O failure or cancellation
     // before the first delete cannot mutate any content or registration.

@@ -62,7 +62,7 @@ std::ostringstream Base(const std::string& background){
     std::ostringstream s;s<<"<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'><defs><linearGradient id='page' x2='1' y2='1'><stop stop-color='#060c1a'/><stop offset='1' stop-color='#101124'/></linearGradient></defs><rect width='1280' height='720' fill='url(#page)'/>";
     s<<"<rect width='1280' height='100' fill='#09101f' fill-opacity='.957'/><path d='M54 98H1226' stroke='#2c3a54'/><g font-family='Arial,sans-serif'>";
     s<<"<image x='54' y='24' width='48' height='48' href='data:image/jpeg;base64,"<<background<<"'/>";
-    Text(s,118,26,26,"NEXUS MANAGER");Text(s,119,65,15,"v0.2.18");
+    Text(s,118,26,26,"NEXUS MANAGER");Text(s,119,65,15,"v0.2.19");
     const char* names[]={"SD card","Console","USB"};const char* sizes[]={"32.4 GB free","18.6 GB free","402.1 GB free"};
     const char* accents[]={"#6e9df4","#9a83e3","#6e9df4"};
     for(unsigned i=0;i<3;++i){const float x=600+210*i;Text(s,x+14,25,15,names[i]);Text(s,x+14,47,17,sizes[i]);s<<"<rect x='"<<x+14<<"' y='74' width='170' height='4' rx='2' fill='#2c3a54'/><rect x='"<<x+14<<"' y='74' width='"<<(i==0?118:i==1?71:34)<<"' height='4' rx='2' fill='"<<accents[i]<<"'/>";}

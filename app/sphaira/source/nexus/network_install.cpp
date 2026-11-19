@@ -135,7 +135,7 @@ Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,
         // installer filters must not turn it into ticket-only or a no-op.
         config.ticket_only=false;config.skip_base=false;config.skip_patch=false;
         config.skip_addon=false;config.skip_data_patch=false;config.skip_ticket=false;
-        config.skip_nca_hash_verify=false;config.convert_to_standard_crypto=false;config.lower_master_key=false;config.lower_system_version=false;config.ignore_distribution_bit=true;
+        config.skip_nca_hash_verify=false;config.convert_to_standard_crypto=false;config.lower_master_key=false;config.lower_system_version=false;config.ignore_distribution_bit=false;
         // A local InstallReceipt cannot represent a NAS source. Never encode
         // this path as an SD source or store credentials for automatic resume.
         config.receipt=nullptr;attempted=true;

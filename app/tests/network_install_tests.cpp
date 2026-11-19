@@ -83,7 +83,7 @@ int main(){
         assert(!InstallNetworkPackage(&p,"nexusnet1:/","/game.NSP",size(),target,target==nexus::Target::Usb?42:0,detail));
         const auto& c=yati::observed_config;assert(c.nexus_target==target&&c.nexus_destination_generation==(target==nexus::Target::Usb?42:0));
         assert(c.quick_usb_final_verify==(target==nexus::Target::Usb));
-        assert(c.skip_nca_hash_verify==false&&c.convert_to_standard_crypto==false&&c.lower_master_key==false&&c.lower_system_version==false&&c.ignore_distribution_bit==true&&c.receipt==nullptr);
+        assert(c.skip_nca_hash_verify==false&&c.convert_to_standard_crypto==false&&c.lower_master_key==false&&c.lower_system_version==false&&c.ignore_distribution_bit==false&&c.receipt==nullptr);
         assert(c.ticket_only==false&&c.skip_base==false&&c.skip_patch==false&&c.skip_addon==false&&c.skip_data_patch==false&&c.skip_ticket==false);
         assert(state.installs==1&&state.destination==target&&state.opened==1&&state.closed==1);assert(p.network_received==300000&&!p.network_active);
         assert(detail.completion.find(target==nexus::Target::Sd?"SD card":"USB drive")!=std::string::npos);

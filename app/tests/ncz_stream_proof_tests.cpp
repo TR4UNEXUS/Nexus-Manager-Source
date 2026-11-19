@@ -27,7 +27,14 @@ bool Run(const Bytes& source,const Bytes& expected,const u8* key,size_t chunk,bo
     u8 expected_hash[32],output_hash[32],header_hash[32];sha256CalculateHash(expected_hash,expected.data(),expected.size());
     sha256CalculateHash(output_hash,t.output.data(),t.output.size());sha256CalculateHash(header_hash,t.output.data(),sizeof(nca::Header));
     assert(!memcmp(output_hash,t.entry.hash,32));assert(t.entry.usb_written.header_known&&!memcmp(header_hash,t.entry.usb_written.header.data(),32));
-    if(edit||alias){assert(memcmp(t.output.data(),source.data(),sizeof(nca::Header)));assert(!memcmp(t.output.data()+sizeof(nca::Header),expected.data()+sizeof(nca::Header),expected.size()-sizeof(nca::Header)));}
+    if(edit||alias){assert(memcmp(t.output.data(),source.data(),sizeof(nca::Header)));assert(!memcmp(t.output.data()+sizeof(nca::Header),expected.data()+sizeof(nca::Header),expected.size()-sizeof(nca::Header)));
+        nca::Header installed{};crypto::cryptoAes128Xts(t.output.data(),&installed,key,0,0x200,sizeof(installed),false);
+        assert(installed.distribution_type==nca::DistributionType_System);
+        // Stored-byte verification still accepts the original CNMT hash only
+        // via the exact distribution-byte normalization, never body changes.
+        if(edit){sphaira::nca::ContentHash stored;stored.Update(t.output.data(),t.output.size(),key);assert(stored.Matches(expected_hash,32));
+            auto broken=t.output;broken.back()^=1;sphaira::nca::ContentHash damaged;damaged.Update(broken.data(),broken.size(),key);assert(!damaged.Matches(expected_hash,32));}
+    }
     else assert(t.output==expected);
     u8 matched[32];assert(t.source_hash.Matches(expected_hash,16,nullptr,nullptr,matched));
     assert(!memcmp(matched,expected_hash,32));
@@ -39,6 +46,7 @@ int main(){
     for(const auto chunk:{size_t(65536),size_t(1024*1024),size_t(4*1024*1024)}){assert(Run(raw,raw,key,chunk));assert(Run(compressed,expected,key,chunk));}
     const auto encrypted=Compress(raw,true,expected);assert(Run(encrypted,expected,key,1024*1024));
     const auto card=Original(key,true);assert(Run(card,card,key,1024*1024,true));
+    const auto compressed_card=Compress(card,false,expected);assert(Run(compressed_card,expected,key,1024*1024,true));
     const auto alias=Original(key,false,true);assert(Run(alias,alias,key,1024*1024,false,true));
     // Body corruption cannot pass the original complete source digest even
     // though all bytes were reconstructed/written and header proof exists.

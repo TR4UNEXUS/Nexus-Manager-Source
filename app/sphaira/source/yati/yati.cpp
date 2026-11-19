@@ -1136,6 +1136,14 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
             R_TRY(nca::DecryptHeader(&nca.header,keys,nca.header));
             R_UNLESS(info.size==nca.header.size,nexus::Invalid);
             R_TRY(VerifyReusedNca(nca));R_TRY(HasRequiredTicket(nca.header,tickets));
+            if(!config.ignore_distribution_bit && nca.header.distribution_type==nca::DistributionType_GameCard){
+                // A correct original hash does not make cartridge-only data
+                // suitable for installed use. Do not report a successful fix
+                // while silently reusing the old broken copy.
+                if(diagnostic)diagnostic->text="This USB copy still has cartridge-only content from an earlier install. Delete this game's USB copy in Installed games, then install it again from your original XCI. Saved progress is kept. The original XCI has not been changed.";
+                nexus::Log("install-existing-cartridge-header",nexus::Invalid);
+                return nexus::Invalid;
+            }
             nca.skipped=true;return 0;
         }
         R_UNLESS(stat==MAKERESULT(140,205),stat); // only an explicit missing file permits creation

@@ -19,6 +19,10 @@ struct UsbImportScan {
     u64 generation{};
     std::vector<UsbImportTitle> titles;
     size_t nca_files{},unreadable_ncas{},ignored_meta{};
+    // Content whose on-drive metadata could not establish ownership. Keep
+    // identities so deletion can consult the installed database without
+    // treating an unreadable unrelated file as permission to delete anything.
+    std::vector<NcmContentId> unresolved_ownership;
     bool complete{};
     std::string detail;
 };
