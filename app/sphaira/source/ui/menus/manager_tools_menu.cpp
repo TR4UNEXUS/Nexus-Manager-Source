@@ -233,7 +233,7 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
         else if(mode==Mode::Saves){label=saves[i].name;right=saves[i].info.save_data_type==FsSaveDataType_Account?"User save":"Device save";}
         else {label=nexusmanager::Display(files[i].name);right=files[i].directory?"Folder":utils::formatSizeStorage(files[i].size);}
         if(mode==Mode::Files && files[i].directory){
-            gfx::drawRect(vg,72,y+19,29,21,nvgRGBA(245,64,231,100),3);
+            gfx::drawRect(vg,72,y+19,29,21,nvgRGBA(110,157,244,100),3);
             gfx::drawRect(vg,72,y+14,14,9,accent,2);
         }
         nvgSave(vg);nvgScissor(vg,114,y+4,820,50);Text(vg,114,y+17,20,fg,label);nvgRestore(vg);

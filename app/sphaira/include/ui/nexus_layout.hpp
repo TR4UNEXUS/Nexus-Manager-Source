@@ -7,14 +7,14 @@ namespace sphaira::ui::nexusview {
 inline constexpr std::size_t Columns=1, Rows=6, PageSize=Columns*Rows;
 struct Rect { float x,y,w,h; };
 inline constexpr Rect HomeCard(std::size_t index) {
-    return {54.f+(index%4)*300.f,228.f,276.f,312.f};
+    return {54.f+(index%3)*394.f,204.f+(index/3)*194.f,374.f,174.f};
 }
-inline constexpr std::size_t HomeCount=4;
+inline constexpr std::size_t HomeCount=6;
 inline constexpr std::size_t HomeVertical(std::size_t index,bool down) {
-    return down?std::min(index+1,HomeCount-1):(index?index-1:0);
+    return down?(index+3<HomeCount?index+3:index):(index>=3?index-3:index);
 }
 inline constexpr std::size_t MoreCount=6,MoreColumns=3;
-inline constexpr Rect MoreCard(std::size_t index){return {54.f+(index%MoreColumns)*394.f,174.f+(index/MoreColumns)*210.f,374.f,192.f};}
+inline constexpr Rect MoreCard(std::size_t index){return {54.f+(index%MoreColumns)*394.f,184.f+(index/MoreColumns)*204.f,374.f,188.f};}
 inline constexpr std::size_t MoreVertical(std::size_t index,bool down){
     return down?(index+MoreColumns<MoreCount?index+MoreColumns:index):(index>=MoreColumns?index-MoreColumns:index);
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <nexus/nx_Client.hpp>
+#include "nexus/transfer_policy.hpp"
 #include "nexus/port_transfer_core.hpp"
 #include "nexus/file_manager_core.hpp"
 #include <nexus/startup_trace.hpp>
@@ -335,6 +336,16 @@ Result Destination::Open(NcmContentStorage &storage) {
         End();
     } else active = true;
     return rc;
+}
+Result Client::DeleteInstallTemporary(u64 generation,const std::string& path,u64 expected_size) {
+    if(!transfer::TemporaryInstallPath(path)||!expected_size)return Invalid;
+    auto rc=CheckUsbMutationAllowed();if(R_FAILED(rc))return rc;
+    rc=Check(generation);if(R_FAILED(rc))return rc;
+    Info info{};rc=Stat(generation,path,info);if(R_FAILED(rc))return rc;
+    if(info.directory||info.size!=expected_size)return Invalid;
+    return serviceDispatchIn(&service,12,generation,
+        .buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_In},
+        .buffers={{path.c_str(),path.size()+1}});
 }
 Result Client::DeletePortFile(u64 generation,const std::string& path,u64 expected_size) {
     if(!nexus::port::Safe(path))return Invalid;

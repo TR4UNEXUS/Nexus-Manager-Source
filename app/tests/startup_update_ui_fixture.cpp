@@ -20,6 +20,7 @@ constexpr Result Fault=123,Cancelled=456;
 #define R_FAILED(rc) ((rc)!=0)
 static bool standalone{};
 bool envIsNso(){return standalone;}
+namespace nexus {enum class Target{Sd};const char* TargetName(Target){return "SD";}}
 namespace nexus::safety {enum class Operation{ReadOnly,MayWrite};}
 namespace sphaira::ui {
 enum class ProgressBoxOption{None};
@@ -120,11 +121,11 @@ Rect Card(size_t){return {};}
 Rect PrimaryAction(){return {};}
 }
 struct File{bool directory{};};
-struct Game{u64 id{};std::string homebrew_path,name;int badge_state{};std::string CacheKey()const{return name;}};
+struct Game{u64 id{};std::string homebrew_path,name,display_version;int badge_state{};std::string CacheKey()const{return name;}};
 struct Packages{std::vector<int> Entries()const{return {};}};
 namespace title {
 enum class NacpLoadStatus{Loaded};
-struct Data{NacpLoadStatus status;struct{char name[1]{};}lang;std::vector<u8> icon;};
+struct Data{std::string display_version;NacpLoadStatus status;struct{char name[1]{};}lang;std::vector<u8> icon;};
 void PushAsync(u64){}
 const Data* GetAsync(u64){return nullptr;}
 }
@@ -137,7 +138,7 @@ void nvgDeleteImage(void*,int){}
 namespace nexusapp{void DisplayUsbImport(){}}
 struct Menu:MenuBase {
     enum class Page{Home,More,Installed,Files,Homebrew,Cleanup,Queue,Results,Mods,ModFolders};
-    Page page=Page::Home;size_t selected{};bool actions_dirty{true},refresh_pending{},usb_source{};
+    Page page=Page::Home;bool cleanup_tickets{};nexus::Target cleanup_target{};size_t selected{};bool actions_dirty{true},refresh_pending{},usb_source{};
     // STARTUP_UPDATE_UI_STATE
     std::string path="/",mod_folder;std::vector<File> files;std::vector<Game> games;Packages packages;
     std::set<u64> title_requested;std::map<std::string,int> icons;std::set<std::string> icon_checked;

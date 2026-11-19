@@ -105,7 +105,7 @@ struct Session{
     Session(ui::ProgressBox* p,UsbImportScan& value,const std::atomic_bool* c=nullptr):progress(p),scan(value),cancel(c),routes(world.routes),tickets(world.tickets),installed(world.installed),applications(world.apps),home_applications(world.home){for(const auto& [id,h]:world.usb_headers)headers[id]={h.rights_id,h.size,h.content_type,h.valid};}
     // PRODUCTION_CANCEL
     // PRODUCTION_CHECK
-    Result Open(u64 expected){R_TRY(Cancelled());scan.generation=expected?expected:7;return Check();}
+    Result Open(u64 expected,bool=false){R_TRY(Cancelled());scan.generation=expected?expected:7;return Check();}
     Result ReadSd(const std::string& path,nexus::repair::Image& out,size_t limit){++world.reads;R_TRY(Check());R_TRY(world.read_rc);out=world.files.contains(path)?world.files.at(path):nexus::repair::Image{};R_UNLESS(out.data.size()<=limit,nexus::Invalid);return 0;}
     Result RawFrom(NcmContentMetaDatabase& database,const NcmContentMetaKey& key,Bytes& out){R_TRY(world.read_rc);const auto it=world.metadata.find({database.location,MetaKey(key)});if(it==world.metadata.end())return Fault;out=it->second;return Check();}
     Result Raw(const NcmContentMetaKey& key,Bytes& out){return RawFrom(db,key,out);}
@@ -201,6 +201,11 @@ int Main(){
     Reset();row=Row();row.record.content={row.record.content[1]};row.record.installed_meta=Raw(row.record);Native(row,5);scan={};scan.generation=7;{Session session(nullptr,scan);bool healthy=true;REQUIRE(NativeRecord(session,row.record,NcmStorageId_SdCard,healthy)==0&&!healthy);}
     // Actual public scanner: no progress pointer and names=false must avoid every UI/cache call.
     Reset();row=Row();world.cnmts[row.record.content.front().info.content_id]=Cnmt(row);UsbFiles();std::atomic_bool cancel{false};REQUIRE(ScanUsbImports(nullptr,scan,7,&cancel,false)==0&&scan.complete&&scan.titles.size()==1);REQUIRE(world.cache_reads==0&&world.name_reads==0&&SummarizeUsbLibrary(scan).repairable_games==1);
+    // Cleanup reads physical ownership even when current-system permissions,
+    // HOME registrations and import reconciliation are not available.
+    Reset();row=Row();RetailUsb(row);world.read_rc=Fault;const auto ownership_before=StateSnapshot();
+    REQUIRE(ScanUsbImports(nullptr,scan,7,nullptr,false,true)==0&&scan.complete&&scan.titles.size()==1);
+    REQUIRE(!scan.titles[0].record.content.empty()&&scan.titles[0].status==UsbImportStatus::Incomplete&&StateSnapshot()==ownership_before);
     Reset();cancel=true;REQUIRE(ScanUsbImports(nullptr,scan,7,&cancel,false)==Result_TransferCancelled&&!scan.complete&&world.checks==0);
     Reset();row=Row();world.cnmts[row.record.content.front().info.content_id]=Cnmt(row);UsbFiles();cancel=false;world.cancel=&cancel;world.cancel_on_list=true;REQUIRE(ScanUsbImports(nullptr,scan,7,&cancel,false)==Result_TransferCancelled&&!scan.complete&&world.cache_reads==0);
     Reset();row=Row();world.cnmts[row.record.content.front().info.content_id]=Cnmt(row);UsbFiles();ui::ProgressBox progress;REQUIRE(ScanUsbImports(&progress,scan,7)==0&&scan.complete&&progress.calls>0&&world.cache_reads>0&&world.name_reads==1);

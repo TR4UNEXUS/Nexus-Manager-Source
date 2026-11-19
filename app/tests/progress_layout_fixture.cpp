@@ -2,6 +2,7 @@
 #include "nexus/progress_layout.hpp"
 #include "nexus/network_rate.hpp"
 #include "nexus/progress_safety.hpp"
+#include "nexus/transfer_activity.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -20,6 +21,10 @@ struct Theme{NVGcolor GetColour(ThemeEntryID id){return {id==ThemeEntryID_TEXT?"
 struct DrawItem{std::string kind,text,colour;Vec4 rect,clip;float font{};};
 struct State{float font=18,line_height=1.2f;int align=NVG_ALIGN_LEFT|NVG_ALIGN_TOP;Vec4 clip{0,0,1280,720};};
 struct NVGcontext{State state;std::vector<State> saved;std::vector<DrawItem> draws;};
+namespace transferui {
+// INSTALL_VIEW_PRODUCTION
+void Draw(NVGcontext*,Vec4,const nexus::transfer::activity::Snapshot&,const nexus::transfer::activity::Cursor&,const InstallView&){assert(false&&"Ordinary progress must not open the PC activity view");}
+}
 struct NVGtextRow{const char* start{};const char* end{};const char* next{};float width{};};
 std::string operator""_i18n(const char* text,std::size_t size){return std::string(text,size);}
 float Width(const char* start,const char* end,float font){float out{};for(auto p=start;p<end;++p)if((static_cast<unsigned char>(*p)&0xc0)!=0x80)out+=font*0.53f;return out;}
@@ -78,6 +83,7 @@ struct ProgressBox{
     nexus::network::RateMeter m_network_rate;int m_image{},m_image_pending{};bool m_is_image_pending{},m_own_image{},stopping{};
     ScrollingText m_scroll_action,m_scroll_title,m_scroll_transfer;nexus::safety::ProgressState m_safety;
     nexus::safety::Operation m_operation=nexus::safety::Operation::MayWrite;
+    bool m_transfer_log{},m_detailed{};nexus::transfer::activity::Cursor m_activity_cursor;
     float GetX(){return m_pos.x;}float GetY(){return m_pos.y;}float GetW(){return m_pos.w;}float GetH(){return m_pos.h;}
     bool ShouldExit(){return stopping;}void FreeImage(){m_image=0;}
     std::vector<Button> GetFooterButtons(){return {{{m_pos.x+360,m_pos.y+m_pos.h-40,200,24}}};}

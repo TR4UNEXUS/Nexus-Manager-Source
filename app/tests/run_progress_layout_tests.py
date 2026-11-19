@@ -11,6 +11,8 @@ def block(signature):
         depth+=(source[end]=='{')-(source[end]=='}');end+=1
     return source[start:end]
 fixture=(root/'tests/progress_layout_fixture.cpp').read_text()
+activity_ui=(root/'sphaira/include/ui/transfer_activity.hpp').read_text()
+fixture=fixture.replace('// INSTALL_VIEW_PRODUCTION',activity_ui[activity_ui.index('struct InstallView {'):activity_ui.index('inline void Line(')])
 fixture=fixture.replace('// HELPERS_PRODUCTION',block('void DrawProgressLine(')+'\n'+block('void DrawProgressBody('))
 fixture=fixture.replace('// DRAW_PRODUCTION',block('auto ProgressBox::Draw('))
 output=root/'build/network-browser-validation/progress-layout'

@@ -54,7 +54,7 @@ void Browser::Update(Controller* controller,TouchInfo* touch){
         }
     }}
     if(last_selected!=model->selected||last_revision!=model->revision)SetupActions();
-    SetSubHeading(std::to_string(model->rows.empty()?0:model->selected+1)+" / "+std::to_string(model->rows.size())+"  |  Left/right: page"+(model->install_selected?"  |  Selected: "+std::to_string(model->marked.size())+" / "+std::to_string(nexus::network::browser::MaxSelection):""));
+    SetSubHeading(std::to_string(model->rows.empty()?0:model->selected+1)+" / "+std::to_string(model->rows.size()));
 }
 void Browser::Draw(NVGcontext* vg,Theme* theme){
     MenuBase::Draw(vg,theme);

@@ -5,6 +5,7 @@
 #include "fs.hpp"
 #include "nexus/progress_safety.hpp"
 #include "nexus/network_rate.hpp"
+#include "nexus/transfer_activity.hpp"
 #include <functional>
 #include <span>
 #include <stop_token>
@@ -19,6 +20,7 @@ using ProgressBoxDoneCallback = std::function<void(Result rc)>;
 enum class ProgressBoxOption : u8 {
     None,
     ScreenToggle,
+    TransferLog,
 };
 
 struct ProgressBox final : Widget {
@@ -49,6 +51,12 @@ struct ProgressBox final : Widget {
     // throughput/ETA; ordinary byte-based transfer progress is unchanged.
     auto SetProgressNote(const std::string& note) -> ProgressBox&;
     // Opt-in NAS payload telemetry, independent of install/verify progress.
+    // Explicit installer telemetry; generic/weighted progress is never treated
+    // as NCA bytes. Other progress dialogs do not write into the PC journal.
+    void TransferEvent(const std::string& text){if(m_transfer_log)nexus::transfer::activity::Get().Event(text);}
+    void ContentFile(const std::string& name,const std::string& kind,const std::string& phase,u64 size,u64 packed=0){if(m_transfer_log)nexus::transfer::activity::Get().ContentFile(name,kind,phase,size,packed);}
+    void ContentBytes(u64 offset,u64 size){if(m_transfer_log)nexus::transfer::activity::Get().ContentBytes(offset,size);}
+    void ContentPhase(const std::string& phase){if(m_transfer_log)nexus::transfer::activity::Get().ContentPhase(phase);}
     void BeginNetworkTransfer();
     void AddNetworkBytes(u64 bytes);
     void EndNetworkTransfer();
@@ -144,6 +152,8 @@ private:
     int m_image{};
     bool m_own_image{};
     bool m_screen_toggle_enabled{};
+    bool m_transfer_log{};
+    nexus::transfer::activity::Cursor m_activity_cursor;
 };
 
 // this is a helper function that does many things.

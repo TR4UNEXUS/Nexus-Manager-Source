@@ -35,7 +35,7 @@ def function(source, signature):
 stop = 'nexus::updates::StopStartupCheck();'
 pc_entry = function(function(menu, 'void Menu::ActivateMore()'), 'if(selected==0)')
 assert pc_entry.index(stop) < pc_entry.index('App::Push<extended::Menu>(extended::Mode::Transfer)')
-discovery = function(network, 'void DiscoverSmb(bool installing){')
+discovery = function(network, 'void DiscoverNetwork(bool installing,const std::string& protocol){')
 assert discovery.index(stop) < discovery.index('std::make_shared<Session>()')
 assert discovery.index(stop) < discovery.index('session->Open(')
 shutdown = function(main, 'int main(')

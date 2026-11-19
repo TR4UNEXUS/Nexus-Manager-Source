@@ -250,6 +250,15 @@ Result ImportTicket(const void* tik_buf, u64 tik_size, const void* cert_buf, u64
     );
 }
 
+// ES command 3 removes only the supplied rights ID. Never use delete-all or
+// write directly into the system ticket saves.
+Result DeleteTicket(const FsRightsId& rights) {
+    R_UNLESS(IsRightsIdValid(rights),MAKERESULT(Module_Libnx,LibnxError_BadInput));
+    return serviceDispatch(&g_esSrv,3,
+        .buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_In},
+        .buffers={{&rights,sizeof(rights)}});
+}
+
 Result CountCommonTicket(s32* count) {
     return serviceDispatchOut(&g_esSrv, 9, *count);
 }

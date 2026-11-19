@@ -41,5 +41,9 @@ struct RecoveryPlan {
 };
 Result ScanUsbRecovery(ui::ProgressBox*, RecoveryPlan&, u64 only_application=0);
 Result ApplyUsbRecovery(ui::ProgressBox*, RecoveryPlan&);
+Result ReadUsbRoutingContent(std::set<std::array<u8,16>>&);
+Result UsbRoutingReferences(const std::set<std::array<u8,16>>&,bool&);
+Result RemoveDeletedUsbRouting(ui::ProgressBox*,u64 generation,const std::vector<NcmContentId>&,
+    const std::vector<u64>& applications);
 std::string RecoveryIssuePage(const RecoveryPlan&, size_t);
 }

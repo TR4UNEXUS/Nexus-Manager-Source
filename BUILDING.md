@@ -10,7 +10,7 @@ sh tools/setup-libnx.sh
 sh build-nexus-wsl.sh
 ```
 
-`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.7 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
+`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.17 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
 
 The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro`. No console key is embedded in the default build. Keep raw USB mounting disabled: Nexus firmware owns the drive.
 
@@ -23,6 +23,11 @@ The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro
 Use a host C++20 compiler and Python 3. The library import tests also link OpenSSL (`libssl-dev` on Debian/Ubuntu):
 
 ```sh
+python3 tests/run_pc_transfer_tests.py
+python3 tests/run_transfer_cleanup_flow_tests.py
+python3 tests/run_transfer_cache_guard_tests.py
+python3 tests/run_library_details_tests.py
+python3 tests/run_game_cleanup_tests.py
 python3 tests/run_usb_import_repair_tests.py
 python3 tests/run_usb_import_orchestration_tests.py
 python3 tests/run_network_persistence_tests.py

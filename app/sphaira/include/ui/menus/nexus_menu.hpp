@@ -3,6 +3,7 @@
 #include "ui/menus/menu_base.hpp"
 #include "ui/scrolling_text.hpp"
 #include "nexus/manager.hpp"
+#include "nexus/game_cleanup.hpp"
 #include "nexus/mods.hpp"
 #include "nexus/release.hpp"
 #include <map>
@@ -24,7 +25,15 @@ private:
     std::string path="/";
     std::vector<nexusapp::Item> files;
     std::vector<nexusapp::Game> games;
-    std::vector<nexusapp::Placeholder> placeholders;
+    std::vector<nexusapp::CleanupItem> cleanup_items;
+    std::string cleanup_detail;
+    nexus::Target cleanup_target{nexus::Target::Sd};
+    void ReviewRemoval(const nexusapp::CleanupItem&);
+    void DeleteGameOptions(const nexusapp::Game&);
+    void ScanCleanupTarget(nexus::Target);
+    void ScanTickets();
+    void DeleteAllCleanup();
+    bool cleanup_tickets{};
     std::vector<nexus::mods::Candidate> mods;
     std::string mod_folder="/atmosphere";
     void ModActions();

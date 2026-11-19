@@ -5,6 +5,8 @@
 #include "log.hpp"
 #include "ui/menus/homebrew.hpp"
 #include "utils/thread.hpp"
+#include "nexus/transfer_policy.hpp"
+#include "nexus/notification_throttle.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -42,6 +44,7 @@ std::atomic_bool g_should_exit{};
 std::atomic_int g_start_state{}; // 0 starting, 1 listening, -1 stopped/failed.
 bool g_is_running{};
 bool g_joining{};
+bool g_manager_session{};
 Thread g_thread{};
 Mutex g_mutex{};
 
@@ -51,7 +54,10 @@ void ftp_log_callback(enum FTP_API_LOG_TYPE type, const char* msg) {
 }
 
 void ftp_progress_callback(void) {
-    App::NotifyFlashLed();
+    // Called for every data-loop iteration. Controller IPC must not run for
+    // every socket block (or every would-block result).
+    static nexus::NotificationThrottle throttle;
+    if(throttle.Ready(armTicksToNs(armGetSystemTick())/1000000))App::NotifyFlashLed();
 }
 
 void ftp_nro_change_callback(const char* path) {
@@ -402,7 +408,7 @@ auto vfs_stdio_fix_path(const char* str) -> fs::FsPath {
         str++;
     }
 
-    fs::FsPath out = str;
+    fs::FsPath out = g_manager_session?nexus::transfer::FtpNativePath(str):std::string(str);
     if (out.ends_with(":")) {
         out += '/';
     }
@@ -572,6 +578,25 @@ FtpVfs g_vfs_stdio = {
     .rename = vfs_stdio_rename,
 };
 
+// Rename the SD view without replacing its native filesystem backend. In
+// particular, keep the existing large-file/archive-folder transfer support.
+int manager_sd_open(void* user,const char* path,FtpVfsOpenMode mode){const auto p=vfs_stdio_fix_path(path);if(mode!=FtpVfsOpenMode_READ&&!nexus::transfer::SdMutationAllowed(std::string_view(p))){errno=EACCES;return -1;}return g_vfs_fs.open(user,p,mode);}
+int manager_sd_opendir(void* user,const char* path){const auto p=vfs_stdio_fix_path(path);return g_vfs_fs.opendir(user,p);}
+int manager_sd_dirlstat(void* user,const void* entry,const char* path,struct stat* st){const auto p=vfs_stdio_fix_path(path);return g_vfs_fs.dirlstat(user,entry,p,st);}
+int manager_sd_stat(const char* path,struct stat* st){const auto p=vfs_stdio_fix_path(path);return g_vfs_fs.stat(p,st);}
+int manager_sd_lstat(const char* path,struct stat* st){const auto p=vfs_stdio_fix_path(path);return g_vfs_fs.lstat(p,st);}
+int manager_sd_mkdir(const char* path){const auto p=vfs_stdio_fix_path(path);if(!nexus::transfer::SdMutationAllowed(std::string_view(p))){errno=EACCES;return -1;}return g_vfs_fs.mkdir(p);}
+int manager_sd_unlink(const char* path){const auto p=vfs_stdio_fix_path(path);if(!nexus::transfer::SdMutationAllowed(std::string_view(p))){errno=EACCES;return -1;}return g_vfs_fs.unlink(p);}
+int manager_sd_rmdir(const char* path){const auto p=vfs_stdio_fix_path(path);if(!nexus::transfer::SdMutationAllowed(std::string_view(p))){errno=EACCES;return -1;}return g_vfs_fs.rmdir(p);}
+int manager_sd_rename(const char* from,const char* to){const auto a=vfs_stdio_fix_path(from),b=vfs_stdio_fix_path(to);if(!nexus::transfer::SdMutationAllowed(std::string_view(a))||!nexus::transfer::SdMutationAllowed(std::string_view(b))){errno=EACCES;return -1;}return g_vfs_fs.rename(a,b);}
+FtpVfs g_vfs_manager_sd=[] {
+    auto vfs=g_vfs_fs;
+    vfs.open=manager_sd_open;vfs.opendir=manager_sd_opendir;vfs.dirlstat=manager_sd_dirlstat;
+    vfs.stat=manager_sd_stat;vfs.lstat=manager_sd_lstat;vfs.mkdir=manager_sd_mkdir;
+    vfs.unlink=manager_sd_unlink;vfs.rmdir=manager_sd_rmdir;vfs.rename=manager_sd_rename;
+    return vfs;
+}();
+
 void loop(void* arg) {
     log_write("[FTP] loop entered\n");
 
@@ -697,13 +722,15 @@ bool Init(const std::vector<VfsNxCustomPath>* extensions) {
         // Foreground Manager session: stock sdmc:/ + games:/, no raw NAND,
         // no independent HDD driver, and no persistent configuration writes.
         g_custom_vfs = *extensions;
-        g_custom_vfs.push_back({.name = "games", .user = NULL, .func = &g_vfs_stdio});
-        g_ftpsrv_mount_flags = 0;
+        g_custom_vfs.push_back({.name = nexus::transfer::VolumeName(nexus::transfer::Use::FilesSd), .user = NULL, .func = &g_vfs_manager_sd});
+        g_custom_vfs.push_back({.name = nexus::transfer::FtpGamesName, .user = NULL, .func = &g_vfs_stdio});
+        g_ftpsrv_mount_flags = VfsNxMountFlag_HIDE_SD;
         g_ftpsrv_config.anon = true;
         g_ftpsrv_config.user[0] = g_ftpsrv_config.pass[0] = 0;
         g_ftpsrv_config.port = 5000;
         g_ftpsrv_config.timeout = 120;
     }
+    g_manager_session = extensions != nullptr;
 
     if (!g_ftpsrv_config.port) {
         g_ftpsrv_config.port = 5000;
@@ -759,6 +786,7 @@ void Exit() {
     std::memset(&g_ftpsrv_config, 0, sizeof(g_ftpsrv_config));
     g_custom_vfs.clear();
     g_ftpsrv_mount_flags = 0;
+    g_manager_session = false;
     g_joining = false;
 
     log_write("[FTP] exitied\n");

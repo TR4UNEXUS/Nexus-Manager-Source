@@ -22,6 +22,9 @@ Bytes Pfs(std::vector<std::string> names,std::vector<std::pair<std::uint64_t,std
 int main(){
     Meta meta;std::string reason;auto base=Cnmt();assert(ParseCnmt(base,meta,reason));assert(meta.id==0x0100000000001800&&meta.application_id==meta.id&&meta.content.size()==1&&meta.content[0].size==0x4000&&meta.tail.empty());
     for(auto type:{0x81,0x82,0x84}){auto b=Cnmt(type);assert(ParseCnmt(b,meta,reason));assert(meta.application_id==0x0100000000001000);}
+    auto homebrew=base;Put<std::uint64_t>(homebrew,0,0x0500123400000000ULL);assert(!ParseCnmt(homebrew,meta,reason));assert(ParseCnmt(homebrew,meta,reason,true)&&meta.application_id==0x0500123400000000ULL);
+    Put<std::uint16_t>(homebrew,18,1);assert(!ParseCnmt(homebrew,meta,reason));assert(ParseCnmt(homebrew,meta,reason,true)&&meta.content.size()==1);
+    homebrew.resize(60);assert(!ParseCnmt(homebrew,meta,reason,true)); // Reference list itself must always be complete.
     auto bad=base;bad.resize(31);assert(!ParseCnmt(bad,meta,reason)&&!reason.empty());
     bad=base;bad[12]=0x01;assert(!ParseCnmt(bad,meta,reason));
     bad=base;bad[13]=1;assert(!ParseCnmt(bad,meta,reason));

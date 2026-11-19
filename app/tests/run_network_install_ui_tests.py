@@ -22,11 +22,11 @@ methods = [extract(name) for name in ('void Message(', 'void PrepareInstall(', '
            'void PickPackage(')]
 methods += [extract('struct NetworkQueueRecord') + ';', 'using NetworkQueueReport=std::vector<NetworkQueueRecord>;']
 methods += [extract(name) for name in ('Result CheckInstallQueue(', 'Result RunInstallQueue(', 'std::string InstallQueueSummary(',
-           'void PrepareInstallQueue(', 'void ChooseQueueDestination(', 'void Browse(SessionPtr session', 'void Connect(', 'bool PromptNetworkPassword(', 'void OpenSavedInstall(')]
-form = source[source.index('class ConnectionForm final'):source.index('void DiscoverSmb(bool installing)')]
+           'void PrepareInstallQueue(', 'void ChooseQueueDestination(', 'void Browse(SessionPtr session', 'Result SaveConnectedLocation(', 'void Connect(', 'bool PromptNetworkPassword(', 'void OpenSavedInstall(')]
+form = source[source.index('class ConnectionForm final'):source.index('void BrowseServerShares(Connection c,')]
 methods += [form, extract('class NetworkLocationsSidebar final') + ';', extract('void Locations(const std::string& protocol')]
 fixture = fixture.replace('// FUNCTIONS_PRODUCTION', '\n'.join(methods))
-fixture = fixture.replace('// DISPLAY_PRODUCTION', extract('void DisplayNetworkInstallLocations(') + '\n' + extract('void AddNetworkInstallShortcuts('))
+fixture = fixture.replace('// DISPLAY_PRODUCTION', extract('void DisplayNetworkLocations(') + '\n' + extract('void DisplayNetworkInstallLocations(') + '\n' + extract('void AddNetworkInstallShortcuts('))
 menu = (root / 'sphaira/source/ui/menus/nexus_menu.cpp').read_text()
 fixture = fixture.replace('// INSTALL_SOURCES_CLASS_PRODUCTION', extract('class InstallSourcesSidebar final', menu) + ';')
 start = menu.index('            App::Push<InstallSourcesSidebar>')

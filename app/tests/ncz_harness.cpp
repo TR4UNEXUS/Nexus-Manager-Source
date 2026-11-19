@@ -5,6 +5,7 @@
 #include "nexus/install_diagnostics.hpp"
 #include "nexus/usb_verification_proof.hpp"
 #include <vector>
+#include <string>
 #include <span>
 #include <atomic>
 #include <algorithm>
@@ -50,7 +51,7 @@ struct BlockInfo{u64 offset,size;bool InRange(u64 n)const{return n>=offset && n-
 #define NCZ_SECTION_OFFSET (0x4000+sizeof(ncz::Header))
 #define NCZ_SECTION_MAGIC ncz::SectionMagic
 #define NCZ_BLOCK_MAGIC ncz::BlockMagic
-struct Collection{s64 size{},offset{};nca::Header header{};int placeholder_id{};bool has_expected_hash{},verified_alias{},modified{};u64 expected_size{};u8 hash[32];nexus::install::HeaderSizeIssue header_size_issue{};nexus::verification::Written usb_written;};
+struct Collection{std::string name;s64 size{},offset{};nca::Header header{};int placeholder_id{};bool has_expected_hash{},verified_alias{},modified{};u64 expected_size{};u8 hash[32];nexus::install::HeaderSizeIssue header_size_issue{};nexus::verification::Written usb_written;};
 Result ncmContentStorageSetPlaceHolderSize(int*,int*,s64){return 0;}
 struct HarnessSource {
     const u8* data{};size_t bytes{},chunk{65536};s64 cursor{};
@@ -79,6 +80,7 @@ struct ThreadData{
     Result SetWriteBuf(std::vector<u8>& buf,s64 size,bool){sha256ContextUpdate(&sha256,buf.data(),size);output.insert(output.end(),buf.begin(),buf.begin()+size);buf.clear();return 0;}
 };
 struct Yati{
+    struct Progress{void ContentFile(const std::string&,const std::string&,const std::string&,u64,u64){}} progress;Progress* pbox{&progress};
     int cs{};keys::Keys keys{};
     HarnessSource* source{};HarnessDestination* destination{};
     struct Config{bool skip_nca_hash_verify=false,skip_rsa_header_fixed_key_verify=true,ignore_distribution_bit=true,convert_to_standard_crypto=false,lower_master_key=false;}config;

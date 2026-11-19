@@ -48,19 +48,19 @@ public:
         length += count;
     }
     void Raw(void* out) { sha256ContextGetHash(&raw, out); }
-    bool Matches(const void* expected, size_t count, bool* converted = nullptr, bool* plaintext_origin = nullptr) {
+    bool Matches(const void* expected, size_t count, bool* converted = nullptr, bool* plaintext_origin = nullptr, void* matched_digest = nullptr) {
         if (converted) *converted = false;
         if (plaintext_origin) *plaintext_origin = false;
         if (count != 16 && count != 32) return false;
         std::array<u8,32> digest{}; Raw(digest.data());
-        if (!std::memcmp(digest.data(), expected, count)) return true;
+        if (!std::memcmp(digest.data(), expected, count)) { if(matched_digest)std::memcpy(matched_digest,digest.data(),32);return true; }
         if (alternate && length==declared_size) {
             sha256ContextGetHash(&original,digest.data());
-            if (!std::memcmp(digest.data(),expected,count)) { if(converted)*converted=true;return true; }
+            if (!std::memcmp(digest.data(),expected,count)) { if(converted)*converted=true;if(matched_digest)std::memcpy(matched_digest,digest.data(),32);return true; }
         }
         if (has_plaintext && length==plaintext_size) {
             sha256ContextGetHash(&plaintext,digest.data());
-            if (!std::memcmp(digest.data(),expected,count)) { if(plaintext_origin)*plaintext_origin=true;return true; }
+            if (!std::memcmp(digest.data(),expected,count)) { if(plaintext_origin)*plaintext_origin=true;if(matched_digest)std::memcpy(matched_digest,digest.data(),32);return true; }
         }
         return false;
     }

@@ -76,11 +76,15 @@ struct Session {
         if(R_SUCCEEDED(rc)){out.data.resize(size);rc=fsFileRead(&file,0,out.data.data(),out.data.size(),FsReadOption_None,&got);}
         fsFileClose(&file);R_TRY(rc);R_UNLESS(got==out.data.size(),nexus::Invalid);out.exists=true;return Check();
     }
-    Result Open(u64 expected){
+    Result Open(u64 expected,bool ownership_only=false){
         R_TRY(Cancelled());
         stage="checking the connected USB drive";
         nexus::Status status{};R_TRY(usb.Query(status));R_UNLESS(status.Available()&&(!expected||status.generation==expected),nexus::Unavailable);
         scan.generation=status.generation;
+        if(ownership_only){
+            stage="opening the content-header key service";R_TRY(splCryptoInitialize());spl_open=true;
+            R_TRY(keys::parse_keys(keys,false));return Check();
+        }
         if(!nexusHasSdBootstrap(envGetLoaderInfo(),envGetLoaderInfoSize())){
             stage="checking the physical SD view";
             NexusVsdStatus vs{};R_TRY(usb.VirtualSdStatus(vs));R_UNLESS(!(vs.flags&(NEXUS_VSD_ACTIVE|NEXUS_VSD_ARMED)),nexus::Unavailable);
@@ -599,10 +603,10 @@ UsbLibraryPlan PlanUsbLibrary(const UsbImportScan& scan){
 }
 UsbLibrarySummary SummarizeUsbLibrary(const UsbImportScan& scan){return PlanUsbLibrary(scan).summary;}
 
-Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected_generation,const std::atomic_bool* cancel,bool names){
+Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected_generation,const std::atomic_bool* cancel,bool names,bool ownership_only){
     scan={};Session s(progress,scan,cancel);
     const auto operation=[&]()->Result{
-    if(progress){progress->SetTitle("Scan USB game library");progress->NewTransfer("Reading this system's registrations");}R_TRY(s.Open(expected_generation));
+    if(progress){progress->SetTitle("Scan USB game library");progress->NewTransfer("Reading this system's registrations");}R_TRY(s.Open(expected_generation,ownership_only));
     s.stage="listing registered USB content files";
     std::vector<nexus::Entry> directories;const auto list_result=s.usb.List(scan.generation,"/registered",directories);
     if(list_result==MissingUsb){scan.complete=true;scan.detail="No registered content folder was found on this USB drive. Nothing was changed.";return 0;}R_TRY(list_result);
@@ -644,16 +648,17 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
         if(raw.size()>=13&&!core::SupportedType(raw[12])){++scan.ignored_meta;continue;}
         PreviewIdentity(row,header,raw,names);
         core::Meta parsed;
-        if(!core::ParseCnmt(raw,parsed,row.reason)||parsed.id!=header.program_id||!MakeRecord(parsed,file,row.record)){
+        if(!core::ParseCnmt(raw,parsed,row.reason,ownership_only)||parsed.id!=header.program_id||!MakeRecord(parsed,file,row.record)){
             if(row.reason.empty())row.reason="This metadata is unsupported, too large for recovery, or contains an inconsistent NCA reference.";
             scan.titles.push_back(std::move(row));continue;
         }
         row.name=names?SafeName(title::GetCachedTitleName(row.record.application_id)):std::string{};if(row.name.empty())row.name=TitleId(row.record.application_id);
-        s.stage="checking content, permissions and registrations";R_TRY(Classify(s,row));
+        if(!ownership_only){s.stage="checking content, permissions and registrations";R_TRY(Classify(s,row));}
         references+=row.record.content.size();stored_meta+=row.record.installed_meta.size();
         if(references>MaxReferences||stored_meta>MaxStoredMeta){scan.detail="This drive's metadata exceeds the safe scan limit. No registrations were changed.";return nexus::Invalid;}
         scan.titles.push_back(std::move(row));if(progress)progress->UpdateTransfer(i+1,metas.size());
     }
+    if(ownership_only){R_TRY(s.Check());scan.complete=true;scan.detail="Physical USB content ownership was read without import or ticket checks.";return 0;}
     std::map<Key,size_t> seen_meta;
     for(size_t i=0;i<scan.titles.size();++i){
         auto& row=scan.titles[i];if(!row.record.key.id)continue;

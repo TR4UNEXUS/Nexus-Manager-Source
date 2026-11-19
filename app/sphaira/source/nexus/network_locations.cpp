@@ -7,6 +7,7 @@
 #include "nexus/network_source.hpp"
 #include "nexus/network_install.hpp"
 #include "nexus/smb_discovery.hpp"
+#include "nexus/network_shares.hpp"
 #include "nexus/package.hpp"
 #include "nexus/file_manager.hpp"
 #include "nexus/lifecycle.hpp"
@@ -165,6 +166,23 @@ Result Save(const Connection& c,const std::string* password=nullptr){
     if(c.protocol=="SMB"&&c.remember_password&&password)R_TRY(SavePassword(c,*password));
     return 0;
 }
+Result SaveConnectedLocation(Connection c,const std::string& password){
+    const auto rows=Load();
+    // Reuse the saved endpoint's name; a new share on the same NAS gets its
+    // own name instead of silently replacing another share or its login.
+    const auto same=std::find_if(rows.begin(),rows.end(),[&](const auto& old){return nexus::network::SameEndpoint(old,c);});
+    if(same!=rows.end())c.name=same->name;
+    else {
+        R_UNLESS(rows.size()<64,nexus::Invalid);
+        const auto base=c.name;
+        for(unsigned suffix=2;std::any_of(rows.begin(),rows.end(),[&](const auto& old){return old.name==c.name;});++suffix){
+            R_UNLESS(suffix<=65,nexus::Invalid);const auto tail=" ("+std::to_string(suffix)+")";
+            c.name=base.substr(0,64-tail.size())+tail;
+        }
+    }
+    R_TRY(Save(c,&password));session_passwords.Remember(c,password);return 0;
+}
+void BrowseServerShares(Connection,const std::string&,bool);
 Result Forget(const Connection& c){
     R_TRY(ClearSavedPassword(c));
     R_UNLESS(ini_puts(c.name.c_str(),nullptr,nullptr,ConfigPath),IoError);
@@ -430,15 +448,14 @@ void Browse(SessionPtr session,const std::string& path,BrowserState browser){
         if(path!="/"&&!session->installing)rows.push_back({"Copy this folder to USB","Choose destination",BrowserKind::Action,[=]{Destination(session,path,"/");}});
         for(const auto& item:*entries)rows.push_back({Leaf(item.path),item.directory?"Folder":utils::formatSizeStorage(item.size),item.directory?BrowserKind::Folder:BrowserKind::File,[=]{
             if(item.directory){if(auto state=weak.lock())Browse(session,item.path,state);}
-            else if(session->installing)PickPackage(session,item);else Destination(session,item.path,"/");
-        },session->installing&&!item.directory?item.path:std::string{},item.size});
+            else if(nexus::package::Supported(item.path))PickPackage(session,item);else Destination(session,item.path,"/");
+        },!item.directory&&nexus::package::Supported(item.path)?item.path:std::string{},item.size});
         std::function<void()> back;if(path!="/")back=[=]{if(auto state=weak.lock())Browse(session,Parent(path),state);};
-        std::string help=session->installing?"Mark up to 64 NSP, NSZ, XCI or XCZ files across folders, then choose Install selected. A selects one file.":"Select a file to copy to USB. Open a folder to browse or copy it.";
+        std::string help=session->installing?"Mark up to 64 NSP, NSZ, XCI or XCZ files across folders, then choose Install selected. A selects one file.":"Select a game package to install, or another file to copy to USB. Mark packages to install together.";
         if(*skipped)help+=" "+std::to_string(*skipped)+" unsupported items hidden.";
         browser->Replace(session->installing?"Install Games / Browse "+session->protocol:"File manager / "+session->protocol,session->name+":"+path,std::move(rows),help,
             session->installing?"No supported game files in this folder":"This folder is empty",std::move(back),[=]{if(auto state=weak.lock())Browse(session,path,state);});
-        if(session->installing)browser->SetSelectionAction([session,weak](std::vector<SelectedNetworkFile> files){ChooseQueueDestination(session,std::move(files),weak);});
-        else browser->SetSelectionAction({});
+        browser->SetSelectionAction([session,weak](std::vector<SelectedNetworkFile> files){ChooseQueueDestination(session,std::move(files),weak);});
         if(initial)App::Push<ui::menu::network::Browser>(browser);
     },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
@@ -480,7 +497,11 @@ void Connect(const Connection& c,const std::string& password,bool installing=fal
         // login and expose the existing form for either retry or explicit edit.
         if(!form_open)EditConnectionAfterFailure(c,installing);
         App::PushErrorBox(rc,*detail+"\n\nYour settings and login were kept. Retry Browse or edit the connection.");return;
-    }Browse(session,"/");},ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+    }
+        const auto saved=SaveConnectedLocation(c,password);
+        Browse(session,"/");
+        if(R_FAILED(saved))App::PushErrorBox(saved,"Connected, but this location could not be saved on the SD card. You can browse now; check SD write access or remove an unused saved location before the next boot.");
+    },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
 bool PromptNetworkPassword(const Connection& c,std::string& password){
     if(App::IsApplet()){Message("Open Nexus Manager in full-memory mode, or use its HOME app, to connect to a network location.");return false;}
@@ -495,7 +516,7 @@ bool PromptNetworkPassword(const Connection& c,std::string& password){
     if(R_SUCCEEDED(rc))password=text;
     memset(text,0,sizeof(text));return R_SUCCEEDED(rc);
 }
-void OpenSavedInstall(const std::string& name,const std::string& protocol){
+void OpenSavedInstall(const std::string& name,const std::string& protocol,bool installing=true){
     if(App::IsApplet()){Message("Open Nexus Manager in full-memory mode, or use its HOME app, to connect to a network location.");return;}
     const auto saved=Load();
     const auto found=std::find_if(saved.begin(),saved.end(),[&](const auto& c){return c.name==name&&c.protocol==protocol&&nexus::network::Valid(c);});
@@ -507,7 +528,7 @@ void OpenSavedInstall(const std::string& name,const std::string& protocol){
         session_passwords.Remember(*found,password);
         if(found->remember_password){const auto rc=SavePassword(*found,password);if(R_FAILED(rc)){App::PushErrorBox(rc,"Could not remember the SMB password on this SD card. The login is kept for this session. Check that the saved location has not changed and the SD card is writable, then retry.");return;}}
     }
-    Connect(*found,password,true);
+    Connect(*found,password,installing);
 }
 class ConnectionForm final:public FormSidebar {
     Connection value,password_target;bool installing{},password_known{};std::string password;SidebarEntryTextInput *name{},*host{},*share{},*user{},*domain{};SidebarEntryTextBase* pass{};
@@ -554,41 +575,61 @@ public:
                 if(R_FAILED(rc)){value.remember_password=before.remember_password;enabled=before.remember_password;App::PushErrorBox(rc,"Could not update the saved password preference. Check that the SD card is writable and try again.");}
             }
         },"SMB only. Stores your password on this SD card without encryption. Turn Off to remove the saved password; it can still be used until the app closes.");
+        Add<SidebarEntryCallback>("Find shared folders",[this]{const auto c=Read();std::string entered;CurrentPassword(c,entered);BrowseServerShares(c,entered,installing);},false,"Ask this server for its SMB shares or NFS exports. Enter the server and any SMB login first. You can still enter a share manually.");
         Add<SidebarEntryCallback>(installing?"Browse "+value.protocol:"Connect and browse",[this]{BrowseConnection();},false,installing?"Browse NSP, NSZ, XCI or XCZ files and choose one to install to SD Card or USB Drive.":"Browse this share and copy files or folders to USB. The network share is opened read-only.");
-        Add<SidebarEntryCallback>("Save location",[this]{const auto c=Read();std::string entered;const bool known=CurrentPassword(c,entered);const auto rc=Save(c,known?&entered:nullptr);if(R_FAILED(rc)){App::PushErrorBox(rc,"Could not save. Your entries are still here. Check the server and share fields, and that the SD card is writable. SMB needs a server address and shared folder name, for example 192.168.1.20 and Games.");return;}if(known)session_passwords.Remember(c,entered);value=c;name->SetValue(c.name);host->SetValue(c.host);App::Notify("Saved "+c.name+(c.protocol=="SMB"&&c.remember_password&&known?" with its login.":"."));},false,"Save this location for Install Games. When enabled, Remember password stores the SMB login on SD without encryption.");
+        Add<SidebarEntryCallback>("Save location",[this]{const auto c=Read();std::string entered;const bool known=CurrentPassword(c,entered);const auto rc=Save(c,known?&entered:nullptr);if(R_FAILED(rc)){App::PushErrorBox(rc,"Could not save. Your entries are still here. Check the server and share fields, and that the SD card is writable. SMB needs a server address and shared folder name, for example 192.168.1.20 and Games.");return;}if(known)session_passwords.Remember(c,entered);value=c;name->SetValue(c.name);host->SetValue(c.host);App::Notify("Saved "+c.name+(c.protocol=="SMB"&&c.remember_password&&known?" with its login.":"."));},false,"Successful connections are saved automatically. This button also saves settings before connecting. Remember password stores the SMB login on SD without encryption.");
     }
 };
 void EditConnectionAfterFailure(const Connection& c,bool installing){App::Push<ConnectionForm>(c,installing);}
-void DiscoverSmb(bool installing){
+void BrowseServerShares(Connection c,const std::string& password,bool installing){
+    nexus::updates::StopStartupCheck();
+    auto session=std::make_shared<Session>();auto shares=std::make_shared<std::vector<std::string>>();auto detail=std::make_shared<std::string>();
+    App::Push<ProgressBox>(0,"Finding shared folders",c.host,[=](ProgressBox* p)->Result{
+        R_TRY(p->ShouldExitResult());R_TRY(session->Open(detail.get()));return nexusapp::ListNetworkShares(p,c,password,*shares,*detail);
+    },[=](Result rc){
+        if(R_FAILED(rc)){App::Push<ConnectionForm>(c,installing);App::PushErrorBox(rc,detail->empty()?"Could not list folders. Enter the shared folder and login manually, or use Find shared folders after entering your login.":*detail);return;}
+        auto menu=std::make_unique<Sidebar>(c.protocol+" folders",c.host,Sidebar::Side::RIGHT,1280.f);
+        for(const auto& share:*shares)menu->Add<SidebarEntryCallback>(share,[=]{auto selected=c;selected.share=share;selected.name=c.host+" "+share;
+            for(auto& ch:selected.name)if(ch=='['||ch==']'||ch=='='||ch==';')ch=' ';
+            if(selected.name.size()>64)selected.name=c.host;
+            Connect(selected,password,installing);
+        },"Connect and browse. Successful connections and your Remember password preference are saved on SD.");
+        if(shares->empty())menu->Add<SidebarEntryCallback>("No advertised folders",[detail]{Message(*detail);});
+        menu->Add<SidebarEntryCallback>("Enter share / login manually",[=]{App::Push<ConnectionForm>(c,installing);});App::Push(std::move(menu));
+    },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+}
+void DiscoverNetwork(bool installing,const std::string& protocol){
     nexus::updates::StopStartupCheck();
     auto session=std::make_shared<Session>();auto servers=std::make_shared<std::vector<nexusapp::SmbServer>>();auto detail=std::make_shared<std::string>();
-    App::Push<ProgressBox>(0,"Discover SMB servers","Searching this local network",[=](ProgressBox* p)->Result{
-        R_TRY(p->ShouldExitResult());R_UNLESS(nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);R_TRY(session->Open(detail.get()));return nexusapp::DiscoverSmbServers(p,*servers,*detail);
+    App::Push<ProgressBox>(0,"Find network servers","Scanning the full connected subnet",[=](ProgressBox* p)->Result{
+        R_TRY(p->ShouldExitResult());R_UNLESS(nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);R_TRY(session->Open(detail.get()));return nexusapp::DiscoverNetworkServers(p,*servers,*detail,protocol);
     },[=](Result rc){
-        if(R_FAILED(rc)){App::PushErrorBox(rc,detail->empty()?"SMB discovery stopped. Connect to your local network or enter the server address manually.":*detail);return;}
-        auto results=std::make_unique<Sidebar>("Discovered SMB servers","Choose a server, then enter its share and login",Sidebar::Side::RIGHT);
-        results->Add<SidebarEntryCallback>("Discovery details",[detail]{Message(*detail);});
-        for(const auto& server:*servers)results->Add<SidebarEntryCallback>(server.label,[=]{Connection c;c.protocol="SMB";c.name=server.label;c.host=server.address;App::Push<ConnectionForm>(c,installing);},"Server address will be filled in. Enter the shared folder name and any required login.");
-        if(servers->empty())results->Add<SidebarEntryCallback>("No SMB servers found",[detail]{Message(*detail+"\n\nUse Add SMB location to enter a server manually.");});
-        results->Add<SidebarEntryCallback>("Add SMB location manually",[installing]{Connection c;c.protocol="SMB";App::Push<ConnectionForm>(c,installing);});
-        App::Push(std::move(results));
+        if(R_FAILED(rc)){App::PushErrorBox(rc,detail->empty()?"Discovery stopped. Check Wi-Fi or enter the server manually.":*detail);return;}
+        auto results=std::make_unique<Sidebar>("Network servers","Choose a server to find its shared folders",Sidebar::Side::RIGHT,1280.f);
+        for(const auto& server:*servers)results->Add<SidebarEntryCallback>(server.label,[=]{Connection c;c.protocol=server.protocol;c.name=server.address;c.host=server.address;BrowseServerShares(c,"",installing);},"List shared folders. If the server requires a login, enter it on the connection screen.");
+        if(servers->empty())results->Add<SidebarEntryCallback>("No servers found",[detail]{Message(*detail);});
+        results->Add<SidebarEntryCallback>("Scan details",[detail]{Message(*detail);});
+        results->Add<SidebarEntryCallback>("Enter server manually",[=]{Connection c;if(!protocol.empty())c.protocol=protocol;App::Push<ConnectionForm>(c,installing);});App::Push(std::move(results));
     },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
 class NetworkLocationsSidebar final:public Sidebar {
     const std::string protocol_;const bool installing_;bool focused_once{};
     void Populate(){
     const auto protocol=protocol_;const auto installing=installing_;auto* menu=this;
-    if(protocol.empty()||protocol=="SMB")menu->Add<SidebarEntryCallback>("Discover SMB servers",[installing]{DiscoverSmb(installing);},"Find SMB servers on this local network. You can then enter the shared folder and login.");
-    menu->Add<SidebarEntryCallback>(protocol.empty()?"Add network location":"Add "+protocol+" location",[=]{Connection c;if(!protocol.empty())c.protocol=protocol;App::Push<ConnectionForm>(c,installing);},"Save a server/share address and optionally remember its SMB login on this SD card.");
-    menu->Add<SidebarEntryCallback>("Refresh saved locations",[=]{Locations(protocol,installing);},true);
-    for(const auto& c:Load())if(protocol.empty()||c.protocol==protocol)menu->Add<SidebarEntryCallback>("["+c.protocol+"] "+c.name,[c,installing]{auto actions=std::make_unique<Sidebar>(c.name,Sidebar::Side::RIGHT);
-        // Returning from the form goes to the refreshed locations list, not
-        // an action menu holding a stale copy of this connection.
-        actions->Add<SidebarEntryCallback>(installing?"Browse "+c.protocol:"Connect / edit",[c,installing]{App::Push<ConnectionForm>(c,installing);},true);
-        actions->Add<SidebarEntryCallback>("Forget location",[c]{App::Push<OptionBox>("Forget "+c.name+" and its saved login?\n\nFiles on the server and USB drive are kept.","Cancel","Forget",0,[c](auto choice){if(choice&&*choice==1){if(R_SUCCEEDED(Forget(c)))App::Notify("Location forgotten.");else Message("Could not remove the saved connection from the SD card.");}});},true);App::Push(std::move(actions));});
+    menu->Add<SidebarEntryCallback>(protocol.empty()?"Scan for SMB and NFS servers":"Scan for "+protocol+" servers",[=]{DiscoverNetwork(installing,protocol);},"Scan the entire connected IPv4 subnet. Press B to stop and use the servers found so far.");
+    menu->Add<SidebarEntryCallback>("Add SMB location",[=]{Connection c;c.protocol="SMB";App::Push<ConnectionForm>(c,installing);});
+    menu->Add<SidebarEntryCallback>("Add NFS location",[=]{Connection c;c.protocol="NFS";App::Push<ConnectionForm>(c,installing);});
+    for(const auto& c:Load())if((protocol.empty()||c.protocol==protocol)&&nexus::network::Valid(c)){
+        auto* row=menu->Add<SidebarEntryCallback>("["+c.protocol+"] "+c.name,[c,installing]{OpenSavedInstall(c.name,c.protocol,installing);},"A opens directly with your saved login. X edits or forgets this location.");
+        row->SetAction(Button::X,Action{"Edit",[c,installing]{
+            auto actions=std::make_unique<Sidebar>(c.name,Sidebar::Side::RIGHT);
+            actions->Add<SidebarEntryCallback>("Edit connection",[=]{App::Push<ConnectionForm>(c,installing);},true);
+            actions->Add<SidebarEntryCallback>("Forget location",[c]{App::Push<OptionBox>("Forget "+c.name+" and its saved login? Server files are kept.","Cancel","Forget",0,[c](auto choice){if(choice&&*choice==1){if(R_SUCCEEDED(Forget(c)))App::Notify("Location forgotten.");else Message("Could not remove the saved connection from SD.");}});},true);App::Push(std::move(actions));
+        }});
+    }
     }
 public:
-    NetworkLocationsSidebar(const std::string& protocol,bool installing):Sidebar(installing?"Browse "+protocol:"Network locations",installing?"Choose a NAS location, then pick a game file":"Browse a PC or NAS, then copy to USB",Sidebar::Side::RIGHT),protocol_(protocol),installing_(installing){Populate();}
+    NetworkLocationsSidebar(const std::string& protocol,bool installing):Sidebar(protocol.empty()?"SMB / NFS":"Browse "+protocol,"Saved servers open directly. New connections are remembered on SD.",Sidebar::Side::RIGHT,1280.f),protocol_(protocol),installing_(installing){Populate();}
     void OnFocusGained() noexcept override {
         // Saving keeps the form alive. Reload once the user returns to this
         // list so new/edited/forgotten locations appear without a manual refresh.
@@ -603,7 +644,7 @@ void Locations(const std::string& protocol,bool installing){
 }
 void DisplayNetworkLocations(){Locations({},false);}
 void DisplayNetworkInstallLocations(const std::string& protocol){
-    if(protocol!="SMB"&&protocol!="NFS"){Message("Choose SMB or NFS.");return;}
+    if(!protocol.empty()&&protocol!="SMB"&&protocol!="NFS"){Message("Choose SMB or NFS.");return;}
     Locations(protocol,true);
 }
 void AddNetworkInstallShortcuts(ui::Sidebar& menu){

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/index_recovery.hpp"
+#include "nexus/usb_import_scan.hpp"
 #include "yati/nx/content_hash.hpp"
 #include "yati/nx/keys.hpp"
 #include "nexus/bootstrap.h"
@@ -478,5 +479,45 @@ Result ApplyUsbRecovery(ui::ProgressBox* p,RecoveryPlan& plan){
     if(!plan.issues.empty())plan.detail+="\nReview issues: "+std::to_string(plan.mismatch_files)+" mismatched NCA(s). Nothing was deleted.";
     if(R_SUCCEEDED(result))p->SetOverallTransfer(10000,10000,"Check finished",true);
     return result;
+}
+Result ReadUsbRoutingContent(std::set<std::array<u8,16>>& ids){
+    ids.clear();FsFileSystem sd{};R_TRY(fsOpenSdCardFileSystem(&sd));ON_SCOPE_EXIT(fsFsClose(&sd));
+    repair::Snapshot snapshot;
+    for(size_t i=0;i<snapshot.size();++i){
+        const NativePath path(repair::Live(i).c_str());FsFile file{};
+        const auto rc=fsFsOpenFile(&sd,path.value,FsOpenMode_Read,&file);if(rc==MissingSd)continue;R_TRY(rc);
+        s64 size{};auto result=fsFileGetSize(&file,&size);u64 actual{};
+        if(R_SUCCEEDED(result)&&(size<0||size>static_cast<s64>(repair::MaxFile)))result=nexus::Invalid;
+        if(R_SUCCEEDED(result)){snapshot[i].data.resize(size);result=fsFileRead(&file,0,snapshot[i].data.data(),size,FsReadOption_None,&actual);}
+        fsFileClose(&file);R_TRY(result);R_UNLESS(actual==snapshot[i].data.size(),nexus::Invalid);snapshot[i].exists=true;
+    }
+    repair::Indexes indexes;R_UNLESS(repair::Decode(snapshot,indexes),nexus::Invalid);
+    ids.insert(indexes.content.begin(),indexes.content.end());
+    for(const auto& [title,mapping]:indexes.mappings)for(const auto& id:mapping)if(id!=std::array<u8,16>{})ids.insert(id);
+    return 0;
+}
+Result UsbRoutingReferences(const std::set<std::array<u8,16>>& ids,bool& found){
+    found=false;std::set<std::array<u8,16>> mapped;R_TRY(ReadUsbRoutingContent(mapped));
+    for(const auto& id:ids)found|=mapped.contains(id);return 0;
+}
+Result RemoveDeletedUsbRouting(ui::ProgressBox* p,u64 generation,const std::vector<NcmContentId>& removed,
+                              const std::vector<u64>& applications){
+    RecoveryPlan plan;plan.generation=generation;Session s(p,plan);R_TRY(s.Open());R_TRY(s.FolderExists(plan.folder_exists));
+    R_TRY(nexus::CheckUsbMutationAllowed());R_TRY(s.Snapshot(plan.before));
+    repair::Indexes before,after;R_UNLESS(repair::Decode(plan.before,before),nexus::Invalid);after=before;
+    for(const auto& id:removed){
+        R_TRY(s.Check());nexus::Info info{};const auto path=CanonicalUsbContentPath(id);
+        R_UNLESS(s.usb.Stat(generation,path,info)==MissingUsb,nexus::Invalid);
+        core::Id value{};memcpy(value.data(),&id,16);after.content.erase(value);
+        for(auto it=after.mappings.begin();it!=after.mappings.end();){
+            if(std::find(it->second.begin(),it->second.end(),value)!=it->second.end()){after.titles.erase(it->first);it=after.mappings.erase(it);}else ++it;
+        }
+    }
+    for(auto app:applications){after.titles.erase(app);after.mappings.erase(app);}
+    if(before==after)return 0;
+    R_UNLESS(plan.folder_exists,nexus::Invalid);plan.after=repair::Output(plan.before,before,after);
+    RepairIO io{s};const repair::Journal journal{armGetSystemTick(),plan.before,plan.after};
+    if(!repair::Publish(io,journal))return R_FAILED(io.rc)?io.rc:nexus::Invalid;
+    return 0;
 }
 }

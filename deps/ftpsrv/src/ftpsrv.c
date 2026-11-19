@@ -729,7 +729,7 @@ static void ftp_data_transfer_progress(struct FtpSession* session) {
         const bool commit_failed = upload_finished && nexus_ftp_finish(&transfer->file_vfs) < 0;
         const struct Pathname completed_path = transfer->path;
         if (commit_failed)
-            ftp_client_msg(session, 451, "Could not commit upload; incomplete file retained.");
+            ftp_client_msg(session, 451, "Upload or installation failed. Check Nexus Manager for details.");
         else
             ftp_client_msg(session, 226, "Closing data connection.");
         ftp_data_transfer_end(session);

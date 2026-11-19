@@ -7,14 +7,14 @@ using namespace sphaira::ui::nexusview;
 static bool Separate(Rect a,Rect b){return a.x+a.w<=b.x || b.x+b.w<=a.x || a.y+a.h<=b.y || b.y+b.h<=a.y;}
 static bool Contains(Rect a,Rect b){return b.x>=a.x && b.y>=a.y && b.x+b.w<=a.x+a.w && b.y+b.h<=a.y+a.h;}
 int main(){
-    static_assert(HomeCount==4 && Columns==1 && Rows==6 && PageSize==6);
+    static_assert(HomeCount==6 && Columns==1 && Rows==6 && PageSize==6);
     for(size_t i=0;i<HomeCount;++i){
         const auto a=HomeCard(i);assert(Contains({42,198,1196,441},a));
         assert(HomeVertical(i,false)<HomeCount && HomeVertical(i,true)<HomeCount);
         for(size_t j=i+1;j<HomeCount;++j)assert(Separate(a,HomeCard(j)));
     }
-    assert(HomeVertical(0,false)==0 && HomeVertical(0,true)==1);
-    assert(HomeVertical(3,true)==3 && HomeVertical(3,false)==2);
+    assert(HomeVertical(0,false)==0 && HomeVertical(0,true)==3);
+    assert(HomeVertical(3,true)==3 && HomeVertical(3,false)==0);
     static_assert(MoreCount==6 && MoreColumns==3);
     for(size_t i=0;i<MoreCount;++i){
         const auto card=MoreCard(i);assert(Contains({42,170,1196,420},card));

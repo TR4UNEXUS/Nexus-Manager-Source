@@ -29,6 +29,8 @@ bool Run(const Bytes& source,const Bytes& expected,const u8* key,size_t chunk,bo
     assert(!memcmp(output_hash,t.entry.hash,32));assert(t.entry.usb_written.header_known&&!memcmp(header_hash,t.entry.usb_written.header.data(),32));
     if(edit||alias){assert(memcmp(t.output.data(),source.data(),sizeof(nca::Header)));assert(!memcmp(t.output.data()+sizeof(nca::Header),expected.data()+sizeof(nca::Header),expected.size()-sizeof(nca::Header)));}
     else assert(t.output==expected);
+    u8 matched[32];assert(t.source_hash.Matches(expected_hash,16,nullptr,nullptr,matched));
+    assert(!memcmp(matched,expected_hash,32));
     return t.source_hash.Matches(expected_hash,32);
 }
 int main(){

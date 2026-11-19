@@ -31,7 +31,8 @@ bool transfer{},applet{};std::string keyboard_text,keyboard_initial,keyboard_hea
 nexus::network::Connection saved,connected;
 std::vector<nexus::network::Connection> locations;unsigned loads{};
 }
-namespace nexus {constexpr Result Unavailable=11;namespace safety{enum class Operation{ReadOnly,MayWrite};}
+namespace nexus {
+constexpr Result Invalid=99;constexpr Result Unavailable=11;namespace safety{enum class Operation{ReadOnly,MayWrite};}
 namespace transfer{enum class Mode{Off,Active};Mode Active(){return state::transfer?Mode::Active:Mode::Off;}}}
 namespace nexus::updates {
 void StopStartupCheck(){++state::startup_stops;state::startup_network_active=false;state::network_events.push_back("startup stopped");}
@@ -120,6 +121,7 @@ Result Save(const Connection& connection,const std::string* password=nullptr){++
 void EditConnectionAfterFailure(const Connection&,bool);
 // PRODUCTION_CONNECT
 // PRODUCTION_PASSWORD_PROMPT
+void BrowseServerShares(Connection,const std::string&,bool){}
 // PRODUCTION_FORM
 // PRODUCTION_FAILURE_FORM
 }
@@ -163,6 +165,14 @@ int main(int argc,char**){
     automatic_name.Press("Save location");assert(!automatic_name.pop&&Value(automatic_name,"Name")=="192.168.1.10"&&Value(automatic_name,"Server")=="192.168.1.10");
     assert(state::saved.name=="192.168.1.10"&&state::saved.host=="192.168.1.10");
     automatic_name.Press("Browse SMB");App::Run();assert(!automatic_name.pop&&state::connected_password==" session password ");
+    // Successful connections persist without pressing Save, across session
+    // restart, and a second share cannot overwrite the first share's login.
+    Reset();state::locations.clear();Connection first{"NAS","SMB","192.168.1.10","Games","user",""};
+    Connect(first,"remember me",true,true);App::Run();assert(state::locations.size()==1);session_passwords.Clear();std::string restored;
+    assert(ReadSavedPassword(state::locations[0],restored)&&restored=="remember me");
+    auto second=first;second.share="Backups";Connect(second,"second password",true,true);App::Run();assert(state::locations.size()==2&&state::locations[0].share=="Games"&&state::locations[1].name!="NAS");
+    session_passwords.Clear();assert(ReadSavedPassword(state::locations[0],restored)&&restored=="remember me");assert(ReadSavedPassword(state::locations[1],restored)&&restored=="second password");
+    Reset();state::locations.clear();state::save_result=Fault;Connect(first,"private",true,true);App::Run();assert(state::browses==1&&!state::error.empty()&&state::error.find("private")==std::string::npos);
     // The real Connect entry point releases the startup worker's process-wide
     // sockets before its queued NAS worker can enter Session::Open. Exercise
     // both protocols, including failure and cancellation before service opens.

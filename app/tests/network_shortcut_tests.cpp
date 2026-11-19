@@ -19,7 +19,7 @@ int main(){
     // An authenticated shortcut asks only for a password and goes straight to
     // the connected browser. Its login is remembered immediately for restart.
     state::keyboard_text="session password";Start(menu,"[SMB] Test NAS");
-    assert(state::keyboard_shows==1&&state::connected_url=="smb://192.168.1.10/Games"&&state::connected_password=="session password"&&state::saves==0);
+    assert(state::keyboard_shows==1&&state::connected_url=="smb://192.168.1.10/Games"&&state::connected_password=="session password"&&state::saves==1);
     Start(menu,"[SMB] Test NAS");assert(state::keyboard_shows==1&&state::connected_password=="session password");
     assert(state::keyboard_header=="SMB password"&&state::keyboard_guide.find("Test NAS")!=std::string::npos&&state::keyboard_guide.find("testuser")!=std::string::npos);
     assert(state::keyboard_subtext.find("without encryption")!=std::string::npos);

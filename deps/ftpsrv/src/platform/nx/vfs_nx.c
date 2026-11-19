@@ -377,7 +377,9 @@ void vfs_nx_init(const struct VfsNxCustomPath* custom, int custom_count, int mou
     g_skip_ascii_convert = skip_ascii_convert;
 
     if (g_enabled_devices) {
-        vfs_nx_add_device("sdmc", VFS_TYPE_FS);
+        if (!(mount_flags & VfsNxMountFlag_HIDE_SD)) {
+            vfs_nx_add_device("sdmc", VFS_TYPE_FS);
+        }
 
         if (mount_flags & VfsNxMountFlag_ALBUM) {
             if (!fsdev_wrapMountImage("album_nand", FsImageDirectoryId_Nand)) {
@@ -558,7 +560,7 @@ void vfs_nx_add_device(const char* name, enum VFS_TYPE type) {
         return;
     }
 
-    if (strlen(name) >= sizeof(g_device[0].name) + 2) {
+    if (!name || strlen(name) + 2 > sizeof(g_device[0].name)) {
         return;
     }
 

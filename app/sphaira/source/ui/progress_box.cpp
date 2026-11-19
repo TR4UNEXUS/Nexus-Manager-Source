@@ -1,4 +1,5 @@
 #include "ui/progress_box.hpp"
+#include "ui/transfer_activity.hpp"
 #include "ui/option_box.hpp"
 #include "ui/nvg_util.hpp"
 #include "ui/nexus_dialog.hpp"
@@ -126,6 +127,14 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
     m_pos.x = (SCREEN_WIDTH / 2.f) - (m_pos.w / 2.f);
     m_pos.y = (SCREEN_HEIGHT / 2.f) - (m_pos.h / 2.f);
 
+    m_transfer_log=option==ProgressBoxOption::TransferLog;
+    if(m_transfer_log){
+        m_pos={24,80,1232,624};
+        SetAction(Button::UP,Action{[this]{m_activity_cursor.Scroll(nexus::transfer::activity::Get().Read(),-1);}});
+        SetAction(Button::DOWN,Action{[this]{m_activity_cursor.Scroll(nexus::transfer::activity::Get().Read(),1);}});
+        SetAction(Button::Y,Action{[this]{m_activity_cursor.Follow();}});
+    }
+
     // create cancel event.
     ueventCreate(&m_uevent, false);
 
@@ -212,6 +221,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     const auto speed = m_speed;
     const auto last_offset = m_last_offset;
     const auto overall = m_overall;
+    const auto detailed = m_detailed;
     const auto finishing = m_finishing;
     const auto progress_note = m_progress_note;
     const auto byte_detail = m_byte_detail;
@@ -233,6 +243,14 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     }
 
     gfx::dimBackground(vg);
+    if(m_transfer_log){
+        nexusdialog::Panel(vg,m_pos);
+        const transferui::InstallView view{true,transfer,progress_note,offset,size,overall||detailed,ShouldExit(),
+            m_safety.Slow(armGetSystemTick(),armNsToTicks(15ULL*1000*1000*1000))};
+        transferui::Draw(vg,{42,106,1196,533},nexus::transfer::activity::Get().Read(),m_activity_cursor,view);
+        for(auto& button:GetFooterButtons())button.Draw(vg,theme);
+        return;
+    }
     nexusdialog::Panel(vg,m_pos);
     nexusdialog::Brand(vg,GetX()+32,GetY()+22,"/  TRANSFER");
 
@@ -339,6 +357,7 @@ auto ProgressBox::GetFooterButtons() const -> Widget::uiButtons {
 }
 
 auto ProgressBox::SetActionName(const std::string& action)  -> ProgressBox& {
+    if(m_transfer_log)nexus::transfer::activity::Get().Stage(action);
     SCOPED_MUTEX(&m_mutex);
     m_action = action;
     m_safety.Touch(armGetSystemTick());
@@ -354,6 +373,7 @@ auto ProgressBox::SetTitle(const std::string& title)  -> ProgressBox& {
 }
 
 auto ProgressBox::NewTransfer(const std::string& transfer)  -> ProgressBox& {
+    if(m_transfer_log)nexus::transfer::activity::Get().Stage(transfer);
     SCOPED_MUTEX(&m_mutex);
     if(m_detailed)return *this;
     m_transfer = transfer;
@@ -387,6 +407,7 @@ auto ProgressBox::UpdateTransfer(s64 offset, s64 size)  -> ProgressBox& {
 auto ProgressBox::SetProgressNote(const std::string& note) -> ProgressBox& {
     SCOPED_MUTEX(&m_mutex);
     if(m_detailed)return *this;
+    if(m_transfer_log&&!note.empty()&&note!=m_progress_note)nexus::transfer::activity::Get().Event(note);
     m_progress_note=note;
     return *this;
 }
@@ -409,6 +430,7 @@ void ProgressBox::EndNetworkTransfer() {
 }
 
 auto ProgressBox::SetDetailedProgress(unsigned percent,const std::string& stage,const std::string& bytes,const std::string& note) -> ProgressBox& {
+    if(m_transfer_log)nexus::transfer::activity::Get().Stage(stage);
     SCOPED_MUTEX(&m_mutex);
     if(percent>100 || (m_detailed && percent<m_offset))return *this;
     if(!m_detailed){m_last_offset=0;m_speed=0;m_timestamp.Update();}
@@ -419,6 +441,7 @@ auto ProgressBox::SetDetailedProgress(unsigned percent,const std::string& stage,
 }
 
 auto ProgressBox::SetOverallTransfer(s64 offset,s64 size,const std::string& stage,bool finishing) -> ProgressBox& {
+    if(m_transfer_log)nexus::transfer::activity::Get().Stage(stage);
     SCOPED_MUTEX(&m_mutex);
     if(m_detailed)return *this;
     if(size<=0 || offset<0 || offset>size)return *this;

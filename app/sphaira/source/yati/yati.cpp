@@ -61,6 +61,7 @@ struct NcaCollection : container::CollectionEntry {
     // new hash of the nca..
     u8 hash[SHA256_HASH_SIZE]{};
     u8 expected_hash[SHA256_HASH_SIZE]{};
+    u8 source_digest[SHA256_HASH_SIZE]{}; // matched source representation, before header edits
     u64 expected_size{};
     bool has_expected_hash{};
     bool converted_hash{};
@@ -782,6 +783,8 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                     t->nca->size,is_ncz,t->nca->has_expected_hash,t->nca->expected_size);
                 R_UNLESS(t->nca->header_size_issue==nexus::install::HeaderSizeIssue::None, Result_YatiInvalidNcaSha256);
                 t->write_size = header.size;
+                static constexpr const char* kinds[]={"Program","Content metadata","Control / icon","Manual","Data","Public data"};
+                pbox->ContentFile(t->nca->name,header.content_type<std::size(kinds)?kinds[header.content_type]:"NCA","Writing NCA",header.size,t->nca->size);
                 if (is_ncz) {
                     R_UNLESS(nexus::compat::ValidSections(t->ncz_sections,header.size), Result_YatiInvalidNczSectionCount);
                     if (t->ncz_sections.front().offset<0x4000)
@@ -1206,6 +1209,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
 
         if (!idx) {
             pbox->UpdateTransfer(t_data.GetWriteOffset(), t_data.GetWriteSize());
+            pbox->ContentBytes(t_data.GetWriteOffset(),t_data.GetWriteSize());
         } else {
             break;
         }
@@ -1214,6 +1218,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     // wait for all threads to close.
     log_write("waiting for threads to close\n");
     while (t_data.IsAnyRunning()) {
+        if(R_FAILED(t_data.GetResults()))source->SignalCancel();
         t_data.WakeAllThreads();
         pbox->Yield();
 
@@ -1238,17 +1243,20 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     // A successful worker result alone must not promote a truncated write.
     R_UNLESS(t_data.GetWriteSize()>0 && t_data.GetWriteOffset()==t_data.GetWriteSize(),Result_YatiInvalidNcaSha256);
 
+    pbox->ContentBytes(t_data.GetWriteOffset(),t_data.GetWriteSize());
+    pbox->ContentPhase("Checking streamed hash");
     NcmContentId content_id{};
     std::memcpy(std::addressof(content_id), nca.hash, sizeof(content_id));
 
     log_write("old id: %s new id: %s\n", utils::hexIdToStr(nca.content_id).str, utils::hexIdToStr(content_id).str);
     if (!config.skip_nca_hash_verify || nca.verified_alias) {
         const void* expected=nca.has_expected_hash ? static_cast<const void*>(nca.expected_hash) : &nca.content_id;
-        if(!t_data.source_hash.Matches(expected,nca.has_expected_hash?32:16,&nca.converted_hash)) {
+        if(!t_data.source_hash.Matches(expected,nca.has_expected_hash?32:16,&nca.converted_hash,nullptr,nca.source_digest)) {
             if(diagnostic)diagnostic->Set(nexus::install::Failure::Hash,nca.name,diagnostic_title);
             return Result_YatiInvalidNcaSha256;
         }
         log_write("NCA source verified%s: %s\n",nca.converted_hash?" (distribution conversion)":"",nca.name.c_str());
+        pbox->ContentPhase("Written / source hash OK");
         nca.usb_written.key=VerificationKey(nca,usb_generation);
         nca.usb_written.source_matched=true;
         nca.usb_written.complete=true;
@@ -1283,7 +1291,9 @@ Result Yati::InstallNca(std::span<TikCollection> tickets, NcaCollection& nca) {
     if (nca.skipped) {
         R_TRY(ncmContentStorageGetPath(std::addressof(cs), path, sizeof(path), std::addressof(nca.content_id)));
     } else {
+        pbox->ContentPhase(destination->IsUsb()?"Flushing to USB":"Flushing to SD");
         R_TRY(ncmContentStorageFlushPlaceHolder(std::addressof(cs)));
+        pbox->ContentPhase("Saved / awaiting registration");
         nca.usb_written.flushed=true;
         R_TRY(ncmContentStorageGetPlaceHolderPath(std::addressof(cs), path, sizeof(path), std::addressof(nca.placeholder_id)));
     }
@@ -1303,7 +1313,7 @@ Result Yati::InstallNca(std::span<TikCollection> tickets, NcaCollection& nca) {
         }
     }
 
-    if(destination->IsUsb() && nca.type!=NcmContentType_Meta && !nca.skipped) {
+    if(destination->IsUsb() && !source->IsStream() && nca.type!=NcmContentType_Meta && !nca.skipped) {
         // Commit verified individual files so the next attempt need not copy
         // the whole package again. Do not publish NS/metadata until all pass.
         R_TRY(PublishNca(nca));Cleanup(nca);nca.placeholder_owned=false;nca.skipped=true;
@@ -1452,7 +1462,7 @@ Result Yati::InstallCnmtNca(std::span<TikCollection> tickets, CnmtCollection& cn
     cnmt.content_info.content_id = cnmt.content_id;
     cnmt.content_info.content_type = NcmContentType_Meta;
     cnmt.content_info.attr = 0;
-    ncmU64ToContentInfoSize(cnmt.size, &cnmt.content_info);
+    ncmU64ToContentInfoSize(cnmt.header.size, &cnmt.content_info);
     cnmt.content_info.id_offset = 0;
 
     if (config.lower_system_version) {
@@ -1589,6 +1599,7 @@ Result Yati::ImportTickets(std::span<TikCollection> tickets) {
                 }
 
                 log_write("installing ticket\n");
+                pbox->TransferEvent("Installing ticket and certificate");
                 R_TRY(es::ImportTicket(ticket.ticket.data(), ticket.ticket.size(), ticket.cert.data(), ticket.cert.size()));
                 if(archive){
                     // Original bytes were retained before PatchTicket, but
@@ -1624,6 +1635,8 @@ Result Yati::PublishNca(const NcaCollection& nca) {
     // Reuse is still a USB publication: prove physical bytes before ensuring it.
     if(nca.skipped)return destination->IsUsb()?VerifyReusedNca(nca):0;
     R_UNLESS(nca.placeholder_owned,nexus::Invalid);
+    pbox->ContentFile(nca.name,"NCA","Registering NCA",nca.header.size);
+    pbox->ContentPhase("Registering NCA");
     const auto rc=ncmContentStorageRegister(&cs,&nca.content_id,&nca.placeholder_id);
     if(R_FAILED(rc)) {
         nexus::Log("P2-register-nca",rc);
@@ -1670,6 +1683,8 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
     const auto cached=quick_usb_final_verify&&!exact_output_hash?usb_verified.Find(key):nullptr;
     const bool written=quick_usb_final_verify&&!exact_output_hash&&allow_written&&nca.usb_written.Matches(key);
     const bool quick=cached||written;
+    pbox->ContentFile(nca.name,"NCA",quick?"Quick USB check":"Verifying stored NCA",size);
+    if(quick)pbox->ContentPhase("Quick check: header + size + write proof");
     const auto progress=usb_verification;
     if(progress) {
         R_UNLESS(progress->completed_bytes<=progress->total_bytes &&
@@ -1709,7 +1724,7 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
             }
             hash.Update(buffer.data(),count,keys.header_key);
             if(exact_output_hash)sha256ContextUpdate(&output_hash,buffer.data(),count);
-            off+=count;
+            off+=count;pbox->ContentBytes(off,size);
             // Keep completion pending until hash, size and registration pass.
             pbox->UpdateTransfer(std::min(completed+off,total-std::max<u64>(1,total/1000)),total);
         }
@@ -1722,7 +1737,7 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
     R_TRY(destination->Verify(cs,nca.content_id,size));
     R_TRY(pbox->ShouldExitResult());
     if(quick_usb_final_verify&&header_known)usb_verified.Remember(key,header_hash);
-    verified=true;
+    verified=true;pbox->ContentPhase("Verified / registered");
     if(progress) {
         progress->completed_bytes+=size;
         ++progress->completed_files;
@@ -1811,6 +1826,7 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
     R_TRY(ncmContentMetaDatabaseGet(&db,&cnmt.key,&read_size,stored.data(),stored.size()));
     R_UNLESS(read_size==stored.size() && !memcmp(stored.data(),buf.buf.data(),stored.size()),nexus::Invalid);
     R_TRY(Checkpoint(nexusapp::InstallStep::MetadataCommitted));
+    pbox->TransferEvent("Content metadata registered");
 
     // push record.
     ncm::ContentStorageRecord content_storage_record{};
@@ -1832,6 +1848,7 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
             r.key.type==cnmt.key.type && r.key.install_type==cnmt.key.install_type;
     }),nexus::Invalid);
     R_TRY(Checkpoint(nexusapp::InstallStep::RecordPublished));
+    pbox->TransferEvent("Application record added to HOME");
     // USB import's transaction owner commits the complete application family
     // before applying non-rollbackable launch-version/HOME-cache changes.
     if(defer_postcommit)return 0;
@@ -1919,6 +1936,9 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
     yati->config.skip_if_already_installed = false;
     yati->config.convert_to_standard_crypto = false;
     yati->config.lower_master_key = false;
+    // Full CNMT validation below requires the streamed source digest, even if
+    // another caller has a legacy skip-hash setting enabled.
+    yati->config.skip_nca_hash_verify = false;
 
     std::vector<NcaCollection> ncas{};
     std::vector<CnmtCollection> cnmts{};
@@ -1975,6 +1995,18 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
         }
     }
 
+    // Do not publish titles from an aborted/truncated upload, including a
+    // missing trailing ticket/certificate or unrelated declared container file.
+    s64 end{};
+    for(const auto& entry:collections){
+        R_UNLESS(entry.offset>=0&&entry.size>=0&&entry.offset<=INT64_MAX-entry.size,Result_NspInvalidHeader);
+        end=std::max(end,entry.offset+entry.size);
+    }
+    R_TRY(source->FinishRead(end));
+    pbox->TransferEvent("Upload complete. Checking content metadata before registration.");
+
+    // Bind every streamed digest to its full CNMT hash/expanded size before
+    // publishing ANY title. The metadata may be last in the incoming package.
     for (auto& cnmt : cnmts) {
         // copy nca structs into cnmt.
         for (auto& cnmt_nca : cnmt.ncas) {
@@ -1983,11 +2015,18 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
             });
 
             R_UNLESS(it != ncas.cend(), Result_YatiNczSectionNotFound);
-            const auto type = cnmt_nca.type;
-            cnmt_nca = *it;
-            cnmt_nca.type = type;
+            R_UNLESS(cnmt_nca.has_expected_hash && it->header.size==cnmt_nca.expected_size &&
+                !memcmp(it->source_digest,cnmt_nca.expected_hash,32),Result_YatiInvalidNcaSha256);
+            const auto type=cnmt_nca.type;
+            const auto expected_size=cnmt_nca.expected_size;
+            std::array<u8,32> expected{};memcpy(expected.data(),cnmt_nca.expected_hash,32);
+            cnmt_nca=*it;cnmt_nca.type=type;cnmt_nca.expected_size=expected_size;
+            memcpy(cnmt_nca.expected_hash,expected.data(),32);cnmt_nca.has_expected_hash=true;
+            cnmt_nca.usb_written.key=VerificationKey(cnmt_nca,yati->usb_generation);
         }
-
+    }
+    pbox->TransferEvent("CNMT hashes and content sizes checked.");
+    for (auto& cnmt : cnmts) {
         u32 latest_version_num;
         bool skip = false;
         R_TRY(yati->GetLatestVersion(cnmt, latest_version_num, skip));

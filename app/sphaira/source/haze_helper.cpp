@@ -1,4 +1,5 @@
 #include "haze_helper.hpp"
+#include "nexus/transfer_policy.hpp"
 
 #include "app.hpp"
 #include "fs.hpp"
@@ -151,9 +152,9 @@ struct FsProxy final : FsProxyBase {
     using Dir = fs::Dir;
     using DirEntry = FsDirectoryEntry;
 
-    FsProxy(std::unique_ptr<fs::Fs>&& fs, const char* name, const char* display_name)
+    FsProxy(std::unique_ptr<fs::Fs>&& fs, const char* name, const char* display_name,bool protect_install_cache=false)
     : FsProxyBase{name, display_name}
-    , m_fs{std::forward<decltype(fs)>(fs)} {
+    , m_fs{std::forward<decltype(fs)>(fs)},m_protect_install_cache(protect_install_cache) {
     }
 
     ~FsProxy() {
@@ -293,21 +294,25 @@ struct FsProxy final : FsProxyBase {
     }
 
     Result CreateFile(const char* path, s64 size) override {
+        R_UNLESS(CanMutate(path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         log_write("[HAZE] CreateFile(%s)\n", path);
         return m_fs->CreateFile(FixPath(path), 0, 0);
     }
 
     Result DeleteFile(const char* path) override {
+        R_UNLESS(CanMutate(path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         log_write("[HAZE] DeleteFile(%s)\n", path);
         return m_fs->DeleteFile(FixPath(path));
     }
 
     Result RenameFile(const char *old_path, const char *new_path) override {
+        R_UNLESS(CanMutate(old_path)&&CanMutate(new_path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         log_write("[HAZE] RenameFile(%s -> %s)\n", old_path, new_path);
         return m_fs->RenameFile(FixPath(old_path), FixPath(new_path));
     }
 
     Result OpenFile(const char *path, haze::FileOpenMode mode, haze::File *out_file) override {
+        R_UNLESS(mode!=haze::FileOpenMode_WRITE||CanMutate(path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         log_write("[HAZE] OpenFile(%s)\n", path);
 
         u32 flags = FsOpenMode_Read;
@@ -357,14 +362,17 @@ struct FsProxy final : FsProxyBase {
     }
 
     Result CreateDirectory(const char* path) override {
+        R_UNLESS(CanMutate(path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         return m_fs->CreateDirectory(FixPath(path));
     }
 
     Result DeleteDirectoryRecursively(const char* path) override {
+        R_UNLESS(CanMutate(path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         return m_fs->DeleteDirectoryRecursively(FixPath(path));
     }
 
     Result RenameDirectory(const char *old_path, const char *new_path) override {
+        R_UNLESS(CanMutate(old_path)&&CanMutate(new_path),MAKERESULT(Module_Libnx,LibnxError_BadInput));
         return m_fs->RenameDirectory(FixPath(old_path), FixPath(new_path));
     }
 
@@ -409,6 +417,10 @@ struct FsProxy final : FsProxyBase {
 
 private:
     std::unique_ptr<fs::Fs> m_fs{};
+    const bool m_protect_install_cache;
+    bool CanMutate(const char* path) const {
+        return !m_protect_install_cache||nexus::transfer::SdMutationAllowed("sdmc:"+std::string(FixPath(path)));
+    }
 };
 
 struct FsProxyVfs : FsProxyBase {
@@ -1034,7 +1046,7 @@ bool Init(const haze::FsEntries* extensions) {
     g_fs_entries.clear();
     g_install_fs.reset();
     // add default mount of the sd card.
-    g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeSd>(), "", "microSD card"));
+    g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeSd>(), "", "microSD card",extensions!=nullptr));
 
     if (!extensions && App::GetApp()->m_mtp_show_album.Get()) {
         g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeImage>(FsImageDirectoryId_Sd), "Album", "Album (Image SD)"));

@@ -195,6 +195,8 @@ enum VfsNxMountFlag {
 
     VfsNxMountFlag_MOUNT_ALL = 0xFFFF,
     VfsNxMountFlag_SAVES_WRITEABLE = 1 << 16,
+    // Foreground clients can supply their own labelled SD custom path.
+    VfsNxMountFlag_HIDE_SD = 1 << 17,
 };
 
 void vfs_nx_init(const struct VfsNxCustomPath* custom, int custom_count, int mount_flags, bool skip_ascii_convert);

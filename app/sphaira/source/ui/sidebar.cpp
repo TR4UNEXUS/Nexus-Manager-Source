@@ -28,12 +28,17 @@ SidebarEntryBase::SidebarEntryBase(const std::string& title, const std::string& 
 void SidebarEntryBase::Draw(NVGcontext* vg, Theme* theme, const Vec4& root_pos, bool left) {
     // draw spacers or highlight box if in focus (selected)
     if (HasFocus()) {
-        gfx::drawRect(vg,{m_pos.x,m_pos.y+4,m_pos.w,m_pos.h-8},nvgRGB(57,28,76),12);
+        gfx::drawRect(vg,{m_pos.x,m_pos.y+4,m_pos.w,m_pos.h-8},violet::Selected(),12);
         gfx::drawRect(vg,m_pos.x+1,m_pos.y+20,3,m_pos.h-40,nexusdialog::Accent(),1);
 
         const auto& info = IsEnabled() ? m_info : m_depends_info;
 
-        if (!info.empty()) {
+        if (!info.empty() && root_pos.w>=1000.f) {
+            nvgSave(vg);nvgIntersectScissor(vg,root_pos.x+30,606,root_pos.w-60,28);
+            m_scolling_info_title.Draw(vg,true,root_pos.x+30,612,root_pos.w-60,16,
+                NVG_ALIGN_LEFT|NVG_ALIGN_TOP,theme->GetColour(ThemeEntryID_TEXT),info);
+            nvgRestore(vg);
+        } else if (!info.empty()) {
             // reset clip here as the box will draw oob.
             nvgSave(vg);
             nvgScissor(vg, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);

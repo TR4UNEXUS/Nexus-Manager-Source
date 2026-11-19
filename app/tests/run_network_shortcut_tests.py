@@ -29,7 +29,7 @@ constructors += sidebar[sidebar.index('SidebarEntryTextInput::SidebarEntryTextIn
 fixture = fixture.replace('// PRODUCTION_ROW_CLASSES', '\n'.join(classes))
 fixture = fixture.replace('// PRODUCTION_ROW_CONSTRUCTORS', constructors)
 fixture = fixture.replace('// PRODUCTION_SESSION', block(network, 'struct Session {') + ';')
-fixture = fixture.replace('// PRODUCTION_CONNECT', block(network, 'void Connect('))
+fixture = fixture.replace('// PRODUCTION_CONNECT', block(network, 'Result SaveConnectedLocation(') + '\n' + block(network, 'void Connect('))
 fixture = fixture.replace('// PRODUCTION_PASSWORD_PROMPT', block(network, 'bool PromptNetworkPassword('))
 fixture = fixture.replace('// PRODUCTION_FORM', block(network, 'class ConnectionForm final') + ';')
 fixture = fixture.replace('// PRODUCTION_FAILURE_FORM', block(network, 'void EditConnectionAfterFailure(const Connection& c'))
@@ -39,7 +39,8 @@ cases = (root / 'tests/network_shortcut_tests.cpp').read_text()
 cases = cases.replace('// OPEN_SAVED_PRODUCTION', block(network, 'void OpenSavedInstall('))
 cases = cases.replace('// ADD_SHORTCUTS_PRODUCTION', block(network, 'void AddNetworkInstallShortcuts('))
 menu = (root / 'sphaira/source/ui/menus/nexus_menu.cpp').read_text()
-assert 'devoptab::AddNetworkInstallShortcuts(sources);' in menu
+assert 'devoptab::AddNetworkInstallShortcuts(sources);' not in menu
+assert 'else if(selected==4)devoptab::DisplayNetworkLocations();' in menu
 with tempfile.TemporaryDirectory(prefix='nexus-network-shortcuts-') as directory:
     source = Path(directory) / 'production.cpp'
     source.write_text(fixture + '\n' + cases)

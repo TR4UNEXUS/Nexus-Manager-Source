@@ -13,6 +13,15 @@ constexpr Config DownloadSocketConfig(Config defaults){
     return defaults;
 }
 
+// FTP uploads and downloads use the same bounded, larger TCP windows.
+template<class Config>
+constexpr Config TransferSocketConfig(Config defaults){
+    defaults=DownloadSocketConfig(defaults);
+    defaults.tcp_tx_buf_size=512*1024;
+    defaults.tcp_tx_buf_max_size=1024*1024;
+    return defaults;
+}
+
 // Matches libnx's _bsdGetTransferMemSizeForConfig. This is a diagnostic only:
 // libnx owns the actual allocation, page alignment, cleanup and registration.
 template<class Config>

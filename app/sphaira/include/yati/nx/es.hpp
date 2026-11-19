@@ -180,6 +180,7 @@ Service* GetServiceSession();
 // todo: make the above an option for both dump and install.
 
 Result ImportTicket(const void* tik_buf, u64 tik_size, const void* cert_buf, u64 cert_size);
+Result DeleteTicket(const FsRightsId& rights);
 Result CountCommonTicket(s32* count);
 Result CountPersonalizedTicket(s32* count);
 Result ListCommonTicket(s32 *out_entries_written, FsRightsId* out_ids, s32 count);

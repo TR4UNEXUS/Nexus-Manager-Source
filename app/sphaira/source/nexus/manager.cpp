@@ -394,9 +394,10 @@ Result ListFiles(bool usb,const std::string& path,std::vector<Item>& items,u64& 
     std::ranges::sort(items,[](const Item& a,const Item& b){return a.directory!=b.directory?a.directory>b.directory:strcasecmp(a.name.c_str(),b.name.c_str())<0;});
     R_SUCCEED();
 }
-Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& path,Target target,u64 destination_generation,nexus::install::Diagnostic* diagnostic) {
+Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& path,Target target,u64 destination_generation,nexus::install::Diagnostic* diagnostic,yati::InstallOutcome* outcome) {
     yati::ConfigOverride cfg{}; cfg.nexus_target=target;
-    cfg.diagnostic=diagnostic;
+    cfg.diagnostic=diagnostic;cfg.outcome=outcome;if(outcome)*outcome={};
+    if(outcome){cfg.ticket_only=false;cfg.skip_base=false;cfg.skip_patch=false;cfg.skip_addon=false;cfg.skip_data_patch=false;cfg.skip_ticket=false;}
     if(diagnostic){diagnostic->Clear();diagnostic->completion.clear();}
     cfg.nexus_destination_generation=destination_generation;
     // Keep original hashes/crypto. The package remains untouched on the source.
@@ -1007,6 +1008,12 @@ Result ScanPlaceholders(ui::ProgressBox* p,Target target,std::vector<Placeholder
 Result RemovePlaceholder(const Placeholder& item) {
     if(item.target==Target::Usb)R_TRY(nexus::CheckUsbMutationAllowed());
     Storage s;R_TRY(s.Open(item.target,false));
+    if(item.target==Target::Usb){
+        R_UNLESS(s.generation==item.generation,nexus::Unavailable);
+        ncmContentStorageClose(&s.cs);s.cs={};R_TRY(nexus::CheckUsbFirmware());
+        R_TRY(serviceDispatchIn(ncmGetServiceSession(),65031,item.generation,
+            .out_num_objects=1,.out_objects=&s.cs.s));
+    }
     bool exists{};s64 size{};
     R_TRY(ncmContentStorageHasPlaceHolder(&s.cs,&exists,&item.id));
     R_UNLESS(exists,Invalid);

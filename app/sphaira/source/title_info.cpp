@@ -31,7 +31,7 @@ struct ThreadData {
 
     void Run();
     void Close();
-    void Clear();
+    void Clear(bool clear_disk_cache);
 
     void PushAsync(u64 id);
     void PushAsync(const std::span<const NsApplicationRecord> app_ids);
@@ -274,11 +274,11 @@ void ThreadData::Close() {
     ueventSignal(&m_uevent);
 }
 
-void ThreadData::Clear() {
+void ThreadData::Clear(bool clear_disk_cache) {
     SCOPED_MUTEX(&m_mutex_id);
     SCOPED_MUTEX(&m_mutex_result);
     m_result.clear();
-    nxtcWipeCache();
+    if(clear_disk_cache)nxtcWipeCache();
 }
 
 void ThreadData::PushAsync(u64 id) {
@@ -356,6 +356,14 @@ auto ThreadData::Get(u64 app_id, bool* cached) -> ThreadResultData* {
         if (data->name && data->publisher && data->icon_size <= sizeof(NsApplicationControlData::icon) &&
                 (!data->icon_size || data->icon_data)) {
             result->status = NacpLoadStatus::Loaded;
+            // NXTC caches names/icons only. CacheOnly avoids adding a storage
+            // fallback to browsing just to obtain the optional display version.
+            if(!ns::IsNsControlFetchSlow()){
+                auto control=std::make_unique<NsApplicationControlData>();u64 actual{};
+                if(R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_CacheOnly,app_id,control.get(),sizeof(*control),&actual))&&
+                    nexus::control::ValidSize(actual,sizeof(NacpStruct),sizeof(*control)))
+                    result->display_version.assign(control->nacp.display_version,strnlen(control->nacp.display_version,sizeof(control->nacp.display_version)));
+            }
             std::snprintf(result->lang.name, sizeof(result->lang.name), "%s", data->name);
             std::snprintf(result->lang.author, sizeof(result->lang.author), "%s", data->publisher);
             result->icon.resize(data->icon_size);
@@ -400,6 +408,7 @@ auto ThreadData::Get(u64 app_id, bool* cached) -> ThreadResultData* {
         if (!has_nacp) {
             FakeNacpEntry(result.get());
         } else {
+            result->display_version.assign(control->nacp.display_version,strnlen(control->nacp.display_version,sizeof(control->nacp.display_version)));
             NormalizeNacpLangData(control->nacp);
 
             bool valid = true;
@@ -564,10 +573,10 @@ void Exit() {
     }
 }
 
-void Clear() {
+void Clear(bool clear_disk_cache) {
     SCOPED_MUTEX(&g_mutex);
     if (g_thread_data) {
-        g_thread_data->Clear();
+        g_thread_data->Clear(clear_disk_cache);
     }
 }
 

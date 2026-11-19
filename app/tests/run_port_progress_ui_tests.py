@@ -23,6 +23,7 @@ for name in names:
     methods.append(source[start:end])
     declarations.append(source[start:brace].replace('ProgressBox::', '') + ';')
 fixture = r'''
+#include "nexus/transfer_activity.hpp"
 #include <cassert>
 #include <cstdint>
 #include <string>
@@ -34,7 +35,7 @@ struct Clock {void Update(){}};
 struct Safety {void Touch(unsigned){}};
 struct ProgressBox {
     s64 m_size{}, m_offset{}, m_last_offset{}, m_speed{};
-    bool m_overall{}, m_finishing{}, m_detailed{};
+    bool m_overall{}, m_finishing{}, m_detailed{},m_transfer_log{};
     std::string m_title, m_transfer, m_progress_note, m_byte_detail;
     Clock m_timestamp; Safety m_safety;
     DECLARATIONS
@@ -71,5 +72,5 @@ test = out / 'port_progress_ui_tests.cpp'
 test.write_text(fixture)
 binary = out / 'port_progress_ui_tests'
 subprocess.run(['g++', '-std=c++20', '-O1', '-UNDEBUG', '-Wall', '-Wextra', '-Werror',
-                str(test), '-o', str(binary)], check=True)
+                '-I',str(app/'sphaira/include'),str(test), '-o', str(binary)], check=True)
 subprocess.run([str(binary)], check=True)

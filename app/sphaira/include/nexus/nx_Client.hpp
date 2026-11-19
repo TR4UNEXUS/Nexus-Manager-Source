@@ -60,6 +60,7 @@ public:
     // Exact registered NCA only; no recursive or fallback-to-SD deletion.
     Result DeleteRegistered(u64 generation,const std::string& path,u64 expected_size);
     // Exact reviewed port file only, after destination readback and launcher creation.
+    Result DeleteInstallTemporary(u64 generation,const std::string& path,u64 expected_size);
     Result DeletePortFile(u64 generation,const std::string& path,u64 expected_size);
     // Exact reviewed ordinary file or empty directory. Never recursive.
     Result DeleteFileManagerEntry(u64 generation,const std::string& path,u64 expected_size,bool directory,const std::string& reviewed_root);

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+namespace sphaira::yati {struct InstallOutcome;}
 namespace sphaira::nexusapp {
 using nexus::Target;
 struct Item { std::string name, path; u64 size{}; bool directory{}; };
@@ -18,6 +19,14 @@ struct Game {
     std::string name;
     std::array<u64,3> bytes{};
     bool location_checked{};
+    // Read-only inventory details never authorize moving or deleting content.
+    std::array<u64,3> installed_bytes{};
+    std::array<bool,3> size_known{};
+    std::string display_version;
+    u32 base_version{},update_version{};
+    bool has_base{},has_update{};
+    size_t dlc_count{};
+    std::string location_hint; // Physical presence only; never authorizes deletion.
     int badge_state{-1}; // unknown=-1, no USB=0, USB program=1, USB forwarder=2
     bool usb_forwarder{};
     bool forwarder_migratable{};
@@ -34,7 +43,7 @@ Result OpenStorage(Target target, NcmContentStorage& cs, u64* generation = nullp
 Result ReadContent(Target target, NcmContentStorage& cs, const NcmContentId& id,
     u64 generation, u64 offset, void* buffer, size_t size);
 Result ListFiles(bool usb, const std::string& path, std::vector<Item>& items, u64& generation);
-Result Install(ui::ProgressBox* progress, bool usb_source, u64 source_generation, const std::string& path, Target target,u64 destination_generation=0,nexus::install::Diagnostic* diagnostic=nullptr);
+Result Install(ui::ProgressBox* progress, bool usb_source, u64 source_generation, const std::string& path, Target target,u64 destination_generation=0,nexus::install::Diagnostic* diagnostic=nullptr,yati::InstallOutcome* outcome=nullptr);
 Result InstallBatch(ui::ProgressBox* progress,bool usb_source,u64 source_generation,nexus::batch::Report& report);
 Result ScanGames(ui::ProgressBox* progress, std::vector<Game>& games);
 Result InspectGame(ui::ProgressBox* progress,u64 application,Game& game);

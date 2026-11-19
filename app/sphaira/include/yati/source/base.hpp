@@ -20,6 +20,10 @@ struct Base {
         return false;
     }
 
+    // Forward producers may need to consume trailing entries/padding and
+    // confirm clean transport EOF before tickets or title metadata are published.
+    virtual Result FinishRead(s64) { return 0; }
+
     virtual void SignalCancel() {
 
     }

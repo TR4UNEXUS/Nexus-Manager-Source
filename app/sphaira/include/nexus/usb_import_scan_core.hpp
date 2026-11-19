@@ -55,12 +55,12 @@ struct Meta {
     std::vector<std::uint8_t> extended,tail;
     std::vector<Content> content;
 };
-inline bool ParseCnmt(std::span<const std::uint8_t> bytes,Meta& out,std::string& reason){
+inline bool ParseCnmt(std::span<const std::uint8_t> bytes,Meta& out,std::string& reason,bool ownership_only=false){
     out={};reason.clear();
     const auto fail=[&](const char* text){reason=text;out={};return false;};
     if(bytes.size()<32||bytes.size()>MaxMetaBytes)return fail("Content metadata is truncated or too large.");
     out.id=Read<std::uint64_t>(bytes,0);out.version=Read<std::uint32_t>(bytes,8);out.type=bytes[12];
-    if(!SupportedType(out.type)||!UserId(out.id))return fail("This is not supported game, update or DLC metadata.");
+    if(!SupportedType(out.type)||!(UserId(out.id)||(ownership_only&&(out.id>>56)==5)))return fail("This is not supported game, update or DLC metadata.");
     if(bytes[13]!=0||bytes[22]!=0)return fail("This metadata is not a complete Switch content installation.");
     const auto ext=Read<std::uint16_t>(bytes,14),count=Read<std::uint16_t>(bytes,16),meta_count=Read<std::uint16_t>(bytes,18);
     const std::size_t minimum=out.type==0x81?24:out.type==0x84?32:16;
@@ -71,14 +71,19 @@ inline bool ParseCnmt(std::span<const std::uint8_t> bytes,Meta& out,std::string&
     std::uint64_t tail_size=std::uint64_t(meta_count)*16;
     if(out.type==0x81)tail_size+=Read<std::uint32_t>(bytes,32+12);
     if(out.type==0x84)tail_size+=Read<std::uint32_t>(bytes,32+20);
-    if(!Range(tail_offset,tail_size,bytes.size()))return fail("Content metadata is missing its extended data.");
-    const auto remainder=bytes.size()-tail_offset-tail_size;
-    if(remainder!=0 && remainder!=32)return fail("Content metadata has an unexpected trailing layout.");
+    if(!ownership_only){
+        if(!Range(tail_offset,tail_size,bytes.size()))return fail("Content metadata is missing its extended data.");
+        const auto remainder=bytes.size()-tail_offset-tail_size;
+        if(remainder!=0 && remainder!=32)return fail("Content metadata has an unexpected trailing layout.");
+    }
     out.application_id=out.type==0x80?out.id:Read<std::uint64_t>(bytes,out.type==0x84?40:32);
-    if(!UserId(out.application_id))return fail("Content metadata has no valid parent game.");
+    if(!(UserId(out.application_id)||(ownership_only&&(out.application_id>>56)==5)))return fail("Content metadata has no valid parent game.");
     std::copy_n(bytes.begin()+14,8,out.header.begin());
     out.extended.assign(bytes.begin()+32,bytes.begin()+content_offset);
-    out.tail.assign(bytes.begin()+tail_offset,bytes.begin()+tail_offset+tail_size);
+    // Ownership needs the bounded NCA reference list, not import-ready tail
+    // data. Old forwarders can declare a nonexistent metadata-reference tail.
+    // The strict import parser still rejects that layout by default.
+    if(!ownership_only)out.tail.assign(bytes.begin()+tail_offset,bytes.begin()+tail_offset+tail_size);
     std::set<std::array<std::uint8_t,16>> unique;
     for(std::size_t i=0;i<count;++i){
         const auto at=content_offset+i*56;Content c{};

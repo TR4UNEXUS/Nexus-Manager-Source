@@ -92,5 +92,10 @@ int main(int argc,char** argv){
     SidebarEntryBase sidebar;Theme theme;sidebar.m_title=std::string(200,'W');sidebar.m_info=report;
     capture::fills.clear();nvgBeginFrame(vg,1280,720,1);sidebar.Draw(vg,&theme,{880,0,400,720},false);nvgEndFrame(vg);for(const auto& fill:capture::fills)assert(fill.x>=0&&fill.y>=0&&fill.x+fill.w<=1280&&fill.y+fill.h<=720);
     for(float width:{310.f,40.f}){sidebar.m_pos.w=width;capture::clips.clear();nvgBeginFrame(vg,1280,720,1);sidebar.DrawEntry(vg,&theme,std::string(200,'W'),std::string(200,'W'),true);nvgEndFrame(vg);for(const auto& clip:capture::clips){assert(clip.x>=sidebar.m_pos.x&&clip.x+clip.w<=sidebar.m_pos.x+width+0.1&&clip.y>=sidebar.m_pos.y&&clip.y+clip.h<=sidebar.m_pos.y+sidebar.m_pos.h+0.1);}}
+    sidebar.m_pos={30,170,1220,70};sidebar.m_info="Browse your SMB share, then choose SD card or USB drive.";
+    capture::fills.clear();capture::clips.clear();nvgBeginFrame(vg,1280,720,1);sidebar.Draw(vg,&theme,{0,0,1280,720},false);nvgEndFrame(vg);
+    assert(!capture::clips.empty());
+    for(const auto& clip:capture::clips)assert(clip.x>=30&&clip.x+clip.w<=1250&&clip.y>=606&&clip.y+clip.h<=634);
+    for(const auto& fill:capture::fills)assert(fill.y+fill.h<=240); // no help flyout over the full-screen list
     nvgDeleteInternal(vg);std::cout<<"Production dialogs + real NanoVG font metrics: long reports/headings, image layout, bounded white text, scroll limits, A/B dismissal and Left/Right confirmation unchanged passed\n";
 }

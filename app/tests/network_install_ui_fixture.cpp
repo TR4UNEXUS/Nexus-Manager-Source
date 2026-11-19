@@ -50,6 +50,7 @@ Result CheckUsbMutationAllowed(){++state::checks;return state::policy_error;}
 Result QueryPhysicalSd(Space& out){out.free=state::free_space;return state::sd_error;}
 Result QueryDestination(Target,Space& out){out.free=state::free_space;return state::destination_error;}
 struct Client{Result Query(Status& out){out={state::generation,state::usb_available};return state::query_error;}Result Check(u64 generation){return state::usb_available&&generation==state::generation?0:Fault;}};
+namespace updates {void StopStartupCheck(){}}
 namespace lifecycle {bool CanPoll(){return state::foreground;}}
 namespace transfer {enum class Mode{Off,Active};Mode Active(){return state::active_transfer?Mode::Active:Mode::Off;}}
 }
@@ -65,8 +66,10 @@ Result swkbdShow(SwkbdConfig*,char*,size_t){return Cancelled;}void swkbdClose(Sw
 int ini_puts(const char*,const char*,const char*,const char*){return 1;}
 namespace sphaira::ui {
 enum class ProgressBoxOption{None};
+enum class Button{X};struct Action {std::string label;std::function<void()> callback;};
 struct Row{std::string label;std::function<void()> callback;virtual ~Row()=default;};
 struct SidebarEntryCallback:Row{
+    std::function<void()> edit;void SetAction(Button,Action action){edit=std::move(action.callback);}
     bool pop_on_click{};
     SidebarEntryCallback(std::string label,std::function<void()> callback,bool pop=false,const std::string& = {}):pop_on_click(pop){this->label=std::move(label);this->callback=std::move(callback);}
     SidebarEntryCallback(std::string label,std::function<void()> callback,const std::string& info):SidebarEntryCallback(std::move(label),std::move(callback),false,info){}
@@ -78,7 +81,7 @@ struct SidebarEntryTextInput:Row{std::string value;SidebarEntryTextInput(const c
 struct SidebarEntryTextBase:Row{std::string value;SidebarEntryTextBase(const char* label,const std::string& value,std::function<void()> callback,const char*):value(value){this->label=label;this->callback=std::move(callback);}void SetValue(std::string next){value=std::move(next);}};
 struct Sidebar{
     enum class Side{RIGHT};std::string title,subtitle;std::vector<std::unique_ptr<Row>> entries;
-    Sidebar(std::string title,std::string subtitle,Side):title(std::move(title)),subtitle(std::move(subtitle)){}
+    Sidebar(std::string title,std::string subtitle,Side,float=450):title(std::move(title)),subtitle(std::move(subtitle)){}
     Sidebar(std::string title,Side side):Sidebar(std::move(title),"",side){}
     virtual ~Sidebar()=default;
     virtual void OnFocusGained() noexcept {}
@@ -169,7 +172,8 @@ bool KnownPassword(const Connection& c,std::string& password){return session_pas
 Result SavePassword(const Connection&,const std::string&){return 0;}
 Result Forget(const Connection& c){std::erase_if(state::connections,[&](const auto& row){return row.name==c.name;});session_passwords.Forget(c);return 0;}
 void EditConnectionAfterFailure(const Connection&,bool);
-void DiscoverSmb(bool){++state::discovery;}
+void BrowseServerShares(Connection,const std::string&,bool){}
+void DiscoverNetwork(bool,const std::string&){++state::discovery;}
 class CopyIO {
     SessionPtr session;ProgressBox* progress;
 public:
@@ -203,29 +207,34 @@ void Reset(){
     state::files={{"/game.nsp",{"/game.nsp",1024,false,{}}},{"/notes.txt",{"/notes.txt",1024,false,{}}},{"/compressed.nsz",{"/compressed.nsz",1024,false,{}}},{"/folder",{"/folder",0,true,{}}}};
 }
 void OpenBrowse(const std::string& protocol="SMB"){
-    sphaira::ui::menu::nexusmenu::Menu menu;menu.OpenSources();assert(App::sidebar->title=="Install games");assert(App::Has("SMB")&&App::Has("NFS"));App::Select(protocol);
-    assert(App::sidebar->title=="Browse "+protocol);assert(App::Has("Add "+protocol+" location"));
-    assert(App::Has("["+protocol+"] "+(protocol=="SMB"?"Office NAS":"Linux NAS")));assert(!App::Has(protocol=="SMB"?"[NFS] Linux NAS":"[SMB] Office NAS"));
-    App::Select("["+protocol+"] "+(protocol=="SMB"?"Office NAS":"Linux NAS"));App::Select("Browse "+protocol);
-    assert(App::sidebar->title==protocol+" connection"&&App::Has("Browse "+protocol));App::Select("Browse "+protocol);
+    sphaira::ui::menu::nexusmenu::Menu menu;menu.OpenSources();assert(App::sidebar->title=="Install games");assert(!App::Has("SMB")&&!App::Has("NFS")&&App::sidebar->entries.size()==2);DisplayNetworkLocations();
+    assert(App::sidebar->title=="SMB / NFS");assert(App::Has("Add "+protocol+" location"));
+    assert(App::Has("["+protocol+"] "+(protocol=="SMB"?"Office NAS":"Linux NAS")));assert(App::Has(protocol=="SMB"?"[NFS] Linux NAS":"[SMB] Office NAS"));
+    App::Select("["+protocol+"] "+(protocol=="SMB"?"Office NAS":"Linux NAS")); // saved location connects immediately
     assert(App::progress&&App::progress->operation==nexus::safety::Operation::ReadOnly);assert(!state::installs&&!state::copies);App::Run();
     assert(App::progress&&App::progress->operation==nexus::safety::Operation::ReadOnly);App::Run();
-    assert(App::browser->title=="Install Games / Browse "+protocol&&App::Has("game.nsp")&&App::Has("folder"));assert(!App::Has("notes.txt")&&App::Has("compressed.nsz"));assert(!state::installs&&!state::copies);
+    assert(App::browser->title=="File manager / "+protocol&&App::Has("game.nsp")&&App::Has("folder"));assert(App::Has("notes.txt")&&App::Has("compressed.nsz"));assert(!state::installs&&!state::copies);
 }
 void Pick(){App::Select("game.nsp");assert(App::sidebar->title=="Picked file"&&App::Has("Install picked file"));App::Select("Install picked file");assert(App::sidebar->title=="Choose install destination");assert(App::sidebar->entries.size()==2&&App::Has("SD Card")&&App::Has("USB Drive"));assert(!state::installs&&!state::copies);}
 void Preflight(const std::string& destination){Pick();App::Select(destination);assert(App::progress&&App::progress->operation==nexus::safety::Operation::ReadOnly);App::Run();}
 // QUEUE_UI_CASES
 int main(){
-    // Install Games itself stays underneath the SMB/NFS settings menus. It
-    // must refresh saved shortcuts on focus without needing close/reopen.
+    // Home SMB/NFS is a general browser; packages still install directly,
+    // while unrelated files remain available for normal file browsing.
+    Reset();Connect(state::connections.front(),"test-session-only",false);App::Run();App::Run();
+    assert(App::Has("notes.txt")&&App::Has("game.nsp")&&App::Has("folder"));
+    App::Select("game.nsp");assert(App::Has("Install picked file"));
+    // Install Games stays local-only, including after saving another NAS.
     Reset();sphaira::ui::menu::nexusmenu::Menu owner;owner.OpenSources();
-    assert(App::Has("[SMB] Office NAS")&&App::Has("[NFS] Linux NAS"));
-    auto sources=std::move(App::sidebar);Connection shortcut{"Quick NAS","SMB","192.168.1.50","Games","",""};Save(shortcut);
-    sources->OnFocusGained();App::sidebar=std::move(sources);assert(App::Has("[SMB] Quick NAS"));
+    assert(App::sidebar->entries.size()==2&&App::Has("SD card")&&App::Has("USB drive"));
+    Connection shortcut{"Quick NAS","SMB","192.168.1.50","Games","",""};Save(shortcut);
+    App::sidebar->OnFocusGained();assert(App::sidebar->entries.size()==2&&!App::Has("[SMB] Quick NAS"));
+    App::Select("SD card");assert(owner.source_choices==1&&!owner.usb);App::sidebar->OnFocusGained();App::Select("USB drive");assert(owner.source_choices==2&&owner.usb);
+    // The dedicated network manager owns saved servers and refreshes on return.
+    DisplayNetworkLocations();assert(App::Has("[SMB] Quick NAS")&&App::Has("[NFS] Linux NAS"));
     const auto source_rows=App::sidebar->entries.size();App::sidebar->OnFocusGained();App::sidebar->OnFocusGained();assert(App::sidebar->entries.size()==source_rows);
     state::connections.front().name="Renamed NAS";App::sidebar->OnFocusGained();assert(App::Has("[SMB] Renamed NAS")&&!App::Has("[SMB] Office NAS"));
     std::erase_if(state::connections,[](const auto& c){return c.name=="Quick NAS";});App::sidebar->OnFocusGained();assert(!App::Has("[SMB] Quick NAS")&&App::sidebar->entries.size()==source_rows-1);
-    App::Select("SD card");assert(owner.source_choices==1&&!owner.usb);App::sidebar->OnFocusGained();App::Select("USB drive");assert(owner.source_choices==2&&owner.usb);
     // Keep the location list alive beneath an edited connection, as the real
     // widget stack does. Focus return must reload persisted values, not append
     // duplicate rows or preserve stale captured connection details.
@@ -234,14 +243,15 @@ int main(){
     list->OnFocusGained();App::sidebar=std::move(list);assert(App::Has("[SMB] Saved NAS")&&!App::Has("[NFS] Linux NAS"));
     const auto rows=App::sidebar->entries.size();App::sidebar->OnFocusGained();App::sidebar->OnFocusGained();assert(App::sidebar->entries.size()==rows);
     added.host="192.168.1.22";Save(added);App::sidebar->OnFocusGained();assert(App::sidebar->entries.size()==rows);
-    App::Select("[SMB] Saved NAS");App::Select("Browse SMB");
+    auto saved_row=std::find_if(App::sidebar->entries.begin(),App::sidebar->entries.end(),[](const auto& row){return row->label=="[SMB] Saved NAS";});
+    assert(saved_row!=App::sidebar->entries.end());auto edit=dynamic_cast<sphaira::ui::SidebarEntryCallback*>(saved_row->get())->edit;assert(edit);edit();App::Select("Edit connection");
     auto server=std::find_if(App::sidebar->entries.begin(),App::sidebar->entries.end(),[](const auto& row){return row->label=="Server";});
     assert(server!=App::sidebar->entries.end()&&dynamic_cast<sphaira::ui::SidebarEntryTextInput*>(server->get())->GetValue()=="192.168.1.22");
-    Reset();DisplayNetworkInstallLocations("NFS");const auto nfs_rows=App::sidebar->entries.size();App::sidebar->OnFocusGained();assert(App::sidebar->entries.size()==nfs_rows&&App::Has("[NFS] Linux NAS")&&!App::Has("[SMB] Office NAS")&&!App::Has("Discover SMB servers"));
+    Reset();DisplayNetworkInstallLocations("NFS");const auto nfs_rows=App::sidebar->entries.size();App::sidebar->OnFocusGained();assert(App::sidebar->entries.size()==nfs_rows&&App::Has("[NFS] Linux NAS")&&!App::Has("[SMB] Office NAS")&&!App::Has("Scan for SMB servers"));
     Reset();OpenBrowse();auto browser=App::browser;const auto root_rows=browser->rows.size();
     App::Select("folder");state::source_error=Fault;App::Run();assert(App::browser==browser&&browser->location=="Office NAS:/"&&browser->rows.size()==root_rows&&App::browser_pushes==1);
     state::source_error=0;App::Select("folder");App::Run(true);assert(browser->location=="Office NAS:/"&&App::browser_pushes==1);
-    App::Select("folder");App::Run();assert(browser->location=="Office NAS:/folder"&&browser->rows.empty()&&browser->back&&App::browser_pushes==1);
+    App::Select("folder");App::Run();assert(browser->location=="Office NAS:/folder"&&browser->rows.size()==1&&App::Has("Copy this folder to USB")&&browser->back&&App::browser_pushes==1);
     browser->back();App::Run();assert(browser->location=="Office NAS:/"&&!browser->back&&browser->rows[browser->selected].name=="folder"&&App::browser_pushes==1);
     browser->refresh();App::Run();assert(browser->rows.size()==root_rows&&App::browser_pushes==1);browser.reset();
     for(const auto& file:{"title.NSP","title.nsz","title.XCI","title.xcz"}){
@@ -272,12 +282,12 @@ int main(){
     Reset();OpenBrowse();Preflight("SD Card");state::install_error=Fault;App::Press(1);App::Run();assert(App::option->message.find("NAS read disconnected")!=std::string::npos&&!state::mutations);
     Reset();state::applet=true;DisplayNetworkInstallLocations("SMB");assert(App::option&&!App::sidebar&&!App::progress&&!state::opens);
     Reset();DisplayNetworkInstallLocations("FTP");assert(App::option&&!App::sidebar&&!App::progress);
-    Reset();DisplayNetworkInstallLocations("SMB");assert(App::Has("Discover SMB servers"));App::Select("Discover SMB servers");assert(state::discovery==1&&!state::installs&&!state::copies);
+    Reset();DisplayNetworkInstallLocations("SMB");assert(App::Has("Scan for SMB servers"));App::Select("Scan for SMB servers");assert(state::discovery==1&&!state::installs&&!state::copies);
     Reset();state::connect_error=Fault;Connect(state::connections.front(),"session-only-password",true);App::Run();assert(App::option&&!App::progress&&!state::installs&&!state::copies&&state::opens==1&&state::closes==1);
     Reset();Connect(state::connections.front(),"",true);App::Run(true);assert(App::option&&!App::progress&&!state::installs&&!state::opens);
     Reset();state::active_transfer=true;Connect(state::connections.front(),"",true);App::Run();assert(App::option&&!App::progress&&!state::installs&&!state::opens);
     Reset();Connect(state::connections.front(),"",true);App::Run();state::source_error=Fault;App::Run();assert(App::option&&!App::progress&&!state::installs&&!state::copies&&state::unmounts==1&&state::closes==1);
     Reset();auto session=std::make_shared<Session>();session->mount="nexusnet1:/";session->name="NAS";session->protocol="SMB";session->installing=true;Browse(session,"/folder");App::Run();assert(App::Has("No supported game files in this folder")&&!App::Has("Copy this folder to USB"));
     session.reset();RunQueueUiTests();
-    std::cout<<"Production NAS install UI: Install games > SMB/NFS > full-screen Browse > NSP/NSZ/XCI/XCZ > SD/USB; read-only preflight, explicit confirmation, cancellation/errors, source lifetime and USB generation pin passed\n";
+    std::cout<<"Production NAS install UI: local-only Install games; dedicated SMB/NFS > full-screen Browse > NSP/NSZ/XCI/XCZ > SD/USB; read-only preflight, explicit confirmation, cancellation/errors, source lifetime and USB generation pin passed\n";
 }

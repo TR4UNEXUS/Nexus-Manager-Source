@@ -47,6 +47,7 @@ struct ThreadResultData {
     u64 id{};
     std::vector<u8> icon;
     NacpLanguageEntry lang{};
+    std::string display_version;
     NacpLoadStatus status{NacpLoadStatus::None};
 };
 
@@ -57,7 +58,7 @@ Result Init();
 // closes the background thread.
 void Exit();
 // clears cache and empties the result array.
-void Clear();
+void Clear(bool clear_disk_cache=true);
 
 // adds new entry to queue.
 void PushAsync(u64 app_id);

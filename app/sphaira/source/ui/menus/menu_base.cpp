@@ -59,9 +59,10 @@ public:
 };
 std::unique_ptr<StoragePoller> poller;
 unsigned users{};
+int nexus_logo{};
 void StorageCard(NVGcontext* vg,float x,const char* name,bool valid,u64 free,u64 total,const char* unavailable,NVGcolor accent){
-    const auto muted=nvgRGB(194,175,216),fg=nvgRGB(248,242,255);
-    violet::Card(vg,{x,16,198,73},false,true);
+    const auto muted=nvgRGB(255,255,255),fg=nvgRGB(255,255,255);
+
     gfx::drawText(vg,x+14,25,15,accent,name);
     char value[64]{};
     if(valid)snprintf(value,sizeof(value),"%.1f GB free",double(free)/(1024*1024*1024));
@@ -78,7 +79,7 @@ void StorageCard(NVGcontext* vg,float x,const char* name,bool valid,u64 free,u64
     nvgIntersectScissor(vg,x+14,47,170,23);
     gfx::drawText(vg,x+14,47,font,valid?fg:muted,value);
     nvgRestore(vg);
-    gfx::drawRect(vg,x+14,74,170,4,nvgRGB(67,42,84),2);
+    gfx::drawRect(vg,x+14,74,170,4,violet::Line(),2);
     if(valid && total){
         const auto used=std::clamp(1.0-double(free)/double(total),0.0,1.0);
         if(used>0)gfx::drawRect(vg,x+14,74,static_cast<float>(170*used),4,accent,2);
@@ -91,34 +92,36 @@ auto MenuBase::GetPolledData(bool refresh)->PolledData {
     return poller->Get(); // no filesystem/USB IPC on the draw thread
 }
 MenuBase::MenuBase(const std::string& title,u32 flags):m_title(title),m_flags(flags){
-    if(!users++)poller=std::make_unique<StoragePoller>();
+    if(!users++){
+        poller=std::make_unique<StoragePoller>();
+        if(R_SUCCEEDED(romfsInit())){
+            nexus_logo=nvgCreateImage(App::GetVg(),"romfs:/theme/nexus-logo.jpg",0);
+            romfsExit();
+        }
+    }
     SetPos(30,100,1220,540);SetAction(Button::START,Action{App::Exit});
 }
-MenuBase::~MenuBase(){if(!--users)poller.reset();}
+MenuBase::~MenuBase(){if(!--users){poller.reset();if(nexus_logo>0)nvgDeleteImage(App::GetVg(),nexus_logo);nexus_logo=0;}}
 void MenuBase::OnFocusGained(){Widget::OnFocusGained();if(poller)poller->Pause(false);}
 void MenuBase::OnFocusLost(){Widget::OnFocusLost();if(poller)poller->Pause(true);}
 void MenuBase::Update(Controller* controller,TouchInfo* touch){Widget::Update(controller,touch);}
 void MenuBase::Draw(NVGcontext* vg,Theme* theme){
-    gfx::drawRect(vg,0,0,1280,720,nvgRGB(12,7,20));
-    DrawElement(0,0,1280,720,ThemeEntryID_BACKGROUND); // original cached Nexus artwork
-    // Keep the Manager heading readable over the older Loader wordmark.
-    gfx::drawRect(vg,42,100,1196,92,nvgRGB(14,8,23));
-    gfx::drawRect(vg,0,0,1280,100,nvgRGBA(12,7,20,244));
-    gfx::drawRect(vg,30,98,1220,1,nvgRGB(99,52,132));
-    gfx::drawRect(vg,54,98,154,2,violet::Accent());
-    gfx::drawText(vg,54,21,32,violet::Accent(),"NEXUS");
-    gfx::drawText(vg,202,29,21,nvgRGB(248,242,255),"MANAGER");
-    // Show the packaged preview number so a test run can be identified.
+    gfx::drawRect(vg,0,0,1280,720,nvgLinearGradient(vg,0,0,1280,720,nvgRGB(6,12,26),nvgRGB(16,17,36)));
+    gfx::drawRect(vg,0,0,1280,100,nvgRGBA(9,16,31,244));
+    gfx::drawRect(vg,54,98,1172,1,violet::Line());
+    if(nexus_logo>0)gfx::drawImage(vg,54,24,48,48,nexus_logo,8);
+    gfx::drawText(vg,118,26,26,nvgRGB(255,255,255),"NEXUS MANAGER");
     const std::string build_version=APP_DISPLAY_VERSION;
     const std::string edition=std::string("v")+build_version.substr(0,build_version.find(' '))+
-        (App::IsApplet()?"  |  Limited memory mode":"  |  Your games, organised");
-    gfx::drawText(vg,55,66,15,violet::Lilac(),edition.c_str());
+        (App::IsApplet()?"  /  Limited memory mode":"");
+    gfx::drawText(vg,119,65,15,nvgRGB(255,255,255),edition.c_str());
     const auto p=GetPolledData();
-    StorageCard(vg,600,"SD card",p.sd_valid,p.sd_free,p.sd_total,"Unavailable",nvgRGB(201,161,255));
-    StorageCard(vg,810,"Console",p.emmc_valid,p.emmc_free,p.emmc_total,"Unavailable",nvgRGB(184,166,255));
+    StorageCard(vg,600,"SD card",p.sd_valid,p.sd_free,p.sd_total,"Unavailable",violet::Accent());
+    StorageCard(vg,810,"Console",p.emmc_valid,p.emmc_free,p.emmc_total,"Unavailable",violet::Lilac());
     constexpr const char* usb_states[]={"Checking...","Connected","Not connected","Firmware unavailable","Storage error"};
     StorageCard(vg,1020,"USB",p.usb_state==1,p.usb_free,p.usb_total,usb_states[std::min(p.usb_state,4u)],violet::Accent());
-    violet::Card(vg,{30,653,1220,52},false,true);
+    gfx::drawRect(vg,0,653,1280,67,nvgRGBA(9,16,31,244));
+    gfx::drawRect(vg,54,653,1172,1,violet::Line());
     Widget::Draw(vg,theme);
     m_scroll_sub_heading.Draw(vg,true,50,673,205,15,NVG_ALIGN_LEFT|NVG_ALIGN_TOP,violet::Lilac(),m_sub_heading);
 }

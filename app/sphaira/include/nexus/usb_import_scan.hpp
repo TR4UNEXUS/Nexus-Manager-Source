@@ -38,7 +38,7 @@ UsbLibrarySummary SummarizeUsbLibrary(const UsbImportScan&);
 // Background callers supply cancellation and names=false: no UI or shared
 // title-name cache is accessed. The caller must stop/join before mutations.
 Result ScanUsbImports(ui::ProgressBox*,UsbImportScan&,u64 expected_generation=0,
-    const std::atomic_bool* cancel=nullptr,bool names=true);
+    const std::atomic_bool* cancel=nullptr,bool names=true,bool ownership_only=false);
 std::string CanonicalUsbContentPath(const NcmContentId&);
 const char* UsbImportStatusText(UsbImportStatus);
 std::string UsbImportPreview(const UsbImportScan&);

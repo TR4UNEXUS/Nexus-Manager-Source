@@ -7,17 +7,16 @@
 
 namespace sphaira::ui::nexusdialog {
 inline NVGcolor Accent(){return violet::Accent();}
-inline NVGcolor Text(){return nvgRGB(248,242,255);}
-inline NVGcolor Muted(){return nvgRGB(194,175,216);}
+inline NVGcolor Text(){return nvgRGB(255,255,255);}
+inline NVGcolor Muted(){return nvgRGB(255,255,255);}
 inline void Panel(NVGcontext* vg,const Vec4& r) {
     nvgSave(vg);
     violet::Card(vg,r,false);
-    gfx::drawRect(vg,r.x+28,r.y+1,78,3,Accent(),1);
     nvgRestore(vg);
 }
 inline void Brand(NVGcontext* vg,float x,float y,const char* section) {
-    gfx::drawText(vg,x,y,14,Accent(),"NEXUS MANAGER");
-    gfx::drawText(vg,x+154,y,14,Muted(),section);
+    while(*section=='/' || *section==' ')++section;
+    gfx::drawText(vg,x,y,14,Text(),section);
 }
 inline void Button(NVGcontext* vg,const Vec4& r,const char* label,bool focus) {
     if(r.w<=20 || r.h<=0)return;

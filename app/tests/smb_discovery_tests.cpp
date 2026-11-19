@@ -2,6 +2,7 @@
 #include <cassert>
 #include <iostream>
 #include <random>
+#include <set>
 
 namespace c=nexus::smbdiscovery;
 static c::Bytes Reply(std::uint16_t dialect=0x0302){
@@ -19,10 +20,10 @@ int main(){
     c::Range r;
     assert(c::Plan(0xc0a80c1a,0xffffff00,r)&&!r.limited&&r.network==0xc0a80c00&&r.hosts.size()==253);
     assert(r.hosts.front()==0xc0a80c01&&r.hosts.back()==0xc0a80cfe);
-    assert(std::find(r.hosts.begin(),r.hosts.end(),0xc0a80c1a)==r.hosts.end());
-    assert(c::Plan(0x0a020304,0xff000000,r)&&r.limited&&r.network==0x0a020300&&r.mask==0xffffff00&&r.hosts.size()==253);
-    assert(c::Plan(0xac120109,0xfffffffc,r)&&r.hosts==std::vector<std::uint32_t>{0xac12010a});
-    assert(c::Plan(0xa9fe0202,0xffff0000,r)&&r.limited);
+    assert(!r.hosts.contains(0xc0a80c1a));
+    assert(c::Plan(0x0a020304,0xff000000,r)&&!r.limited&&r.network==0x0a000000&&r.mask==0xff000000&&r.hosts.size()==16777213);
+    assert(c::Plan(0xac120109,0xfffffffc,r)&&r.hosts.size()==1&&r.hosts[0]==0xac12010a);
+    assert(c::Plan(0xa9fe0202,0xffff0000,r)&&!r.limited&&r.hosts.size()==65533);
     for(auto ip:{0x7f000001u,0x08080808u,0u,0xffffffffu,0xac0f0002u,0xac200002u,0xc0a80100u,0xc0a801ffu})assert(!c::Plan(ip,0xffffff00,r)&&r.hosts.empty());
     for(auto mask:{0u,0xff00ff00u,0xffffffffu,0xfffffffeu,0x00ffffffu})assert(!c::Plan(0xc0a80102,mask,r)&&r.hosts.empty());
     std::array<std::uint8_t,16> guid{};std::array<std::uint8_t,32> salt{};
@@ -71,6 +72,29 @@ int main(){
         for(size_t j=0;j<1+i%8;++j)fuzz[rng()%fuzz.size()]=rng();
         if(i%3==0)fuzz.resize(rng()%fuzz.size());
         (void)c::Response(fuzz);
+    }
+    // Independent SMB 2.1 NAS reply captured during the live regression check.
+    // Server GUID and timestamps are cleared; no login or share access occurred.
+    const std::string nas_hex="000000cafe534d42400000000000000000000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000410001001002000000000000000000000000000000000000070000000000800000008000000080000000000000000000000000000000000080004a0000000000604806062b0601050502a03e303ca00e300c060a2b06010401823702020aa32a3028a0261b246e6f745f646566696e65645f696e5f5246433431373840706c656173655f69676e6f7265";
+    c::Bytes nas;for(size_t i=0;i<nas_hex.size();i+=2)nas.push_back(std::stoul(nas_hex.substr(i,2),nullptr,16));
+    assert(c::Get16(nas,72)==0x0210&&c::Response(nas)==c::Reply::Valid);
+    for(size_t cut=0;cut<nas.size();++cut)assert(c::Response(std::span(nas).first(cut))==c::Reply::More);
+    // NFS TCP fragments, wrong XID, truncated/auth-denied and unrelated RPC.
+    const auto request_nfs=c::NfsNull(0x12345678);assert(c::Be32(request_nfs,0)==0x80000028&&c::Be32(request_nfs,16)==100003&&c::Be32(request_nfs,20)==3);
+    c::Bytes nfs(28);c::PutBe32(nfs,0,0x80000018);c::PutBe32(nfs,4,0x12345678);c::PutBe32(nfs,8,1);
+    assert(c::NfsResponse(nfs,0x12345678)==c::Reply::Valid);
+    for(size_t cut=0;cut<nfs.size();++cut)assert(c::NfsResponse(std::span(nfs).first(cut),0x12345678)==c::Reply::More);
+    assert(c::NfsResponse(nfs,99)==c::Reply::Invalid);
+    for(auto off:{4,8,12,20,24}){auto bad=nfs;bad[off]^=0xff;assert(c::NfsResponse(bad,0x12345678)==c::Reply::Invalid);}
+    auto fragments=nfs;fragments.erase(fragments.begin(),fragments.begin()+4);fragments.insert(fragments.begin()+8,{0x80,0,0,16});fragments.insert(fragments.begin(),{0,0,0,8});
+    assert(c::NfsResponse(fragments,0x12345678)==c::Reply::Valid);
+    for(size_t cut=0;cut<fragments.size();++cut)assert(c::NfsResponse(std::span(fragments).first(cut),0x12345678)==c::Reply::More);
+    auto mismatch=nfs;mismatch.resize(36);c::PutBe32(mismatch,0,0x80000020);c::PutBe32(mismatch,24,2);c::PutBe32(mismatch,28,4);c::PutBe32(mismatch,32,4);assert(c::NfsResponse(mismatch,0x12345678)==c::Reply::Valid);
+    c::PutBe32(mismatch,24,1);assert(c::NfsResponse(mismatch,0x12345678)==c::Reply::Invalid);
+    // Entire /23 and /16, with no duplicate/self/network/broadcast probes.
+    for(auto mask:{0xfffffe00u,0xffff0000u}){assert(c::Plan(0xc0a80105,mask,r));std::set<std::uint32_t> seen;
+        for(size_t i=0;i<r.hosts.size();++i){const auto host=r.hosts[i];assert(r.hosts.contains(host)&&seen.insert(host).second);}
+        assert(seen.size()==size_t(~mask)-2);
     }
     std::cout<<"SMB discovery range/wire/parser tests passed\n";
 }
