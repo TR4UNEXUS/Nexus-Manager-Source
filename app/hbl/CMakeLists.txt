@@ -8,7 +8,6 @@ add_executable(hbl
     source/main.c
     source/nexus_vsd.c
     source/nexus_trace.c
-    source/nexus_timing.c
     source/trampoline.s
 )
 target_include_directories(hbl PRIVATE ${CMAKE_SOURCE_DIR}/sphaira/include)
@@ -23,7 +22,7 @@ target_link_options(hbl PRIVATE
 )
 
 target_compile_definitions(hbl PRIVATE
-    VERSION="0.6.8-SD8"
+    VERSION="0.6.8-Nexus"
 )
 
 find_program(NX_ELF2NSO_EXE NAMES elf2nso HINTS "${DEVKITPRO}/tools/bin" REQUIRED)

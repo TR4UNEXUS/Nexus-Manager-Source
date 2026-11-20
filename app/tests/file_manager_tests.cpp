@@ -169,6 +169,30 @@ static void FailedTransfer(const Fake& f,const fm::Report& report){
     if(f.removes){::Check(f.published&&f.DestinationComplete(),"partial cut retains verified destination");::Check(report.removal_started,"uncertain removal reported truthfully");}
 }
 int main(){
+    // Fast standalone deletion reads no payload, including huge game files.
+    for(bool usb:{false,true}){
+        auto huge=Fixture(usb,!usb,1);huge.deletion=true;huge.Store(usb).at(huge.root).reported_size=100ULL*1024*1024*1024;
+        huge.ResetCounters();fm::Snapshot selection;::Check(!fm::Inventory(huge,usb,huge.root,selection));
+        ::Check(selection.bytes==100ULL*1024*1024*1024);huge.ResetCounters();fm::Report report;
+        ::Check(!fm::QuickDelete(huge,usb,selection,report));::Check(report.complete&&!huge.reads&&!huge.Store(usb).contains(huge.root));Untouched(huge);
+    }
+    for(bool usb:{false,true}){
+        auto ready=Fixture(usb,!usb,0);ready.deletion=true;ready.ResetCounters();
+        fm::Snapshot selection;::Check(!fm::Inventory(ready,usb,ready.root,selection));ready.ResetCounters();
+        fm::Report report;::Check(!fm::QuickDelete(ready,usb,selection,report));::Check(report.complete&&!ready.reads);Untouched(ready);
+        const auto steps=ready.calls;
+        for(size_t fault=1;fault<=steps;++fault){
+            auto broken=Fixture(usb,!usb,0);broken.deletion=true;broken.ResetCounters();fm::Snapshot snapshot;
+            ::Check(!fm::Inventory(broken,usb,broken.root,snapshot));broken.ResetCounters();broken.fail_at=fault;
+            fm::Report partial;::Check(fm::QuickDelete(broken,usb,snapshot,partial)!=0);::Check(!partial.complete&&!broken.reads);
+            if(broken.removes)::Check(partial.removal_started);Untouched(broken);
+        }
+        auto changed=Fixture(usb,!usb,0);changed.deletion=true;changed.ResetCounters();fm::Snapshot snapshot;
+        ::Check(!fm::Inventory(changed,usb,changed.root,snapshot));
+        changed.Store(usb)[changed.root+"/new-file"]={false,{10,20}};changed.ResetCounters();fm::Report partial;
+        ::Check(fm::QuickDelete(changed,usb,snapshot,partial)!=0);::Check(changed.Store(usb).contains(changed.root+"/new-file")&&!changed.reads);Untouched(changed);
+    }
+
     std::size_t injected{},post_mutation{};
     {auto good=Fixture();good.ResetCounters();fm::Snapshot s;::Check(!fm::Prepare(good,false,good.root,s));const auto calls=good.calls;
         for(std::size_t at=1;at<=calls;++at){auto f=Fixture();f.fail_at=at;fm::Snapshot bad;

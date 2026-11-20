@@ -6,6 +6,7 @@
 #include "nexus/progress_safety.hpp"
 #include "nexus/network_rate.hpp"
 #include "nexus/transfer_activity.hpp"
+#include "nexus/task_progress.hpp"
 #include <functional>
 #include <span>
 #include <stop_token>
@@ -50,6 +51,8 @@ struct ProgressBox final : Widget {
     // Weighted work is not bytes. Display this note instead of a fictitious
     // throughput/ETA; ordinary byte-based transfer progress is unchanged.
     auto SetProgressNote(const std::string& note) -> ProgressBox&;
+    void BeginProgressRange(unsigned begin,unsigned end);
+    void EndProgressRange();
     // Opt-in NAS payload telemetry, independent of install/verify progress.
     // Explicit installer telemetry; generic/weighted progress is never treated
     // as NCA bytes. Other progress dialogs do not write into the PC journal.
@@ -134,6 +137,7 @@ private:
     s64 m_last_offset{};
     s64 m_speed{};
     bool m_overall{};
+    nexus::TaskProgress m_task_progress;
     std::string m_progress_note;
     std::string m_byte_detail;
     bool m_detailed{};
@@ -154,6 +158,15 @@ private:
     bool m_screen_toggle_enabled{};
     bool m_transfer_log{};
     nexus::transfer::activity::Cursor m_activity_cursor;
+};
+
+// Map child work into a portion of the parent's whole-task bar.
+struct ProgressScope {
+    ProgressBox* box;
+    ProgressScope(ProgressBox* p,unsigned begin,unsigned end):box(p){if(box)box->BeginProgressRange(begin,end);}
+    ~ProgressScope(){if(box)box->EndProgressRange();}
+    ProgressScope(const ProgressScope&)=delete;
+    ProgressScope& operator=(const ProgressScope&)=delete;
 };
 
 // this is a helper function that does many things.

@@ -197,29 +197,23 @@ void Menu::Paste(){
     },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
 void Menu::Remove(const nexusapp::Item& item){
-    if(mode!=Mode::Files || !FullMemory())return;
+    if(mode!=Mode::Files||!FullMemory())return;
     const nexusfiles::Selection source{usb,generation,item};
-    auto plan=std::make_shared<nexusfiles::DeletePlan>();auto detail=std::make_shared<std::string>();
-    App::Push<ProgressBox>(0,"Reviewing deletion",nexusmanager::Display(item.name),[source,plan,detail](ProgressBox* p){
-        return nexusfiles::PrepareDelete(p,source,*plan,*detail);
-    },[this,plan,detail](Result rc){
-        if(R_FAILED(rc)){App::PushErrorBox(rc,detail->empty()?"Could not prepare deletion. No files were removed.":*detail);return;}
-        App::Push<OptionBox>(nexusfiles::DeletePreview(*plan)+"\n\nThis permanently deletes the selected item and its contents. It cannot be undone.","Cancel","Delete",0,[this,plan](auto answer){
-            if(!answer || *answer!=1)return;
-            auto report=std::make_shared<nexusfiles::Report>();
-            App::Push<ProgressBox>(0,"Deleting files",nexusmanager::Display(plan->source.item.name),[plan,report](ProgressBox* p){
-                return nexusfiles::Delete(p,*plan,*report);
-            },[this,plan,report](Result result){
-                if(clipboard && (report->removal_started || report->removed || report->complete) && clipboard->usb==plan->source.usb &&
-                   clipboard->generation==plan->source.generation && view::IsSameOrChild(clipboard->item.path,plan->source.item.path)){
-                    clipboard.reset();cut=false;
-                }
-                actions_dirty=true;pending=true;
-                const auto message=report->detail.empty()?(R_SUCCEEDED(result)?"Deletion complete.":"Deletion stopped. Some items may remain. Refresh the folder before continuing."):report->detail;
-                if(R_FAILED(result))App::PushErrorBox(result,message);else App::Push<OptionBox>(message,"Done",[](auto){});
-            },ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
-        });
-    },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+    const auto text=std::string("Permanently delete from ")+(usb?"USB":"SD card")+"?\n\n"+item.path+
+        "\n\nThe selected item and everything inside it will be removed, including any saves stored there. This cannot be undone.";
+    App::Push<OptionBox>(text,"Cancel","Delete",0,[this,source](auto answer){
+        if(!answer||*answer!=1)return;auto report=std::make_shared<nexusfiles::Report>();
+        App::Push<ProgressBox>(0,"Deleting files",nexusmanager::Display(source.item.name),[source,report](ProgressBox* p)->Result{
+            nexusfiles::DeletePlan plan;std::string detail;const auto rc=nexusfiles::PrepareDelete(p,source,plan,detail);
+            if(R_FAILED(rc)){report->detail=detail;return rc;}return nexusfiles::Delete(p,plan,*report);
+        },[this,source,report](Result rc){
+            if(clipboard&&(report->removal_started||report->removed||report->complete)&&clipboard->usb==source.usb&&
+                clipboard->generation==source.generation&&view::IsSameOrChild(clipboard->item.path,source.item.path)){clipboard.reset();cut=false;}
+            actions_dirty=true;pending=true;
+            const auto text=report->detail.empty()?"Deletion stopped. Refresh before retrying.":report->detail;
+            if(R_FAILED(rc))App::PushErrorBox(rc,text);else App::Push<OptionBox>(text,"Done",[](auto){});
+        },ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
+    });
 }
 void Menu::Open(){
     if(selected>=Count())return;

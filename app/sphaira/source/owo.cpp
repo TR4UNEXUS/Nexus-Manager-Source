@@ -933,7 +933,7 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         // argv[0] is also used to reopen embedded NRO assets. Preserve spaces.
         R_UNLESS(config.nro_path.find('"')==std::string::npos,Result_OwoBadArgs);
         config.args=nro_add_arg(config.nro_path)+(config.args.empty()?std::string{}:" "+config.args);
-    } else if(config.port_shortcut || config.startup_timing) {
+    } else if(config.port_shortcut) {
         config.args=nro_add_arg(config.nro_path)+(config.args.empty()?std::string{}:" "+config.args);
     } else if (config.args.empty()) {
         config.args = config.nro_path;
@@ -944,14 +944,12 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
     // create tid by using a hash over path + args
     u64 hash_data[SHA256_HASH_SIZE / sizeof(u64)];
     const bool usb_forwarder=!config.usb_path.empty();
-    const bool exclusive_forwarder=usb_forwarder||config.port_shortcut||config.startup_timing;
-    R_UNLESS(!config.startup_timing || (storage_id==NcmStorageId_BuiltInUser && config.program_nca.empty()),Result_OwoBadArgs);
+    const bool exclusive_forwarder=usb_forwarder||config.port_shortcut;
     nexus_vsd::Profile usb_profile{};
     R_UNLESS(!usb_forwarder || (storage_id==NcmStorageId_BuiltInUser && config.program_nca.empty() &&
         config.usb_nro_hash.size()==32 && nexus_vsd::Parse(config.usb_path,usb_profile) &&
         config.nro_path==std::string("sdmc:")+usb_profile.logical),Result_OwoBadArgs);
-    const auto hash_path = config.startup_timing ? std::string("Nexus startup timing SD8 v1:")+(usb_forwarder?"usb:"+config.usb_path:"sd:"+config.nro_path)+":"+config.args :
-        config.port_shortcut ? std::string("Nexus Manager port v1:")+(usb_forwarder?"usb:"+config.usb_path:"sd:"+config.nro_path)+":"+config.args :
+    const auto hash_path = config.port_shortcut ? std::string("Nexus Manager port v1:")+(usb_forwarder?"usb:"+config.usb_path:"sd:"+config.nro_path)+":"+config.args :
         usb_forwarder?"USB Loader VSD v1:"+config.usb_path:config.nro_path+config.args;
     sha256CalculateHash(hash_data, hash_path.data(), hash_path.length());
     const u64 old_tid = 0x0100000000000000 | (hash_data[0] & 0x00FFFFFFFFFFF000);
@@ -985,10 +983,6 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         FileEntries romfs;
         add_file_entry(romfs, "/nextArgv", config.args.data(), config.args.length());
         add_file_entry(romfs, "/nextNroPath", config.nro_path.data(), config.nro_path.length());
-        if(config.startup_timing){
-            const u32 timing_version=1;
-            add_file_entry(romfs,"/nexusStartupTiming",&timing_version,sizeof(timing_version));
-        }
         if(usb_forwarder){
             add_file_entry(romfs,"/nexusUsbPath",config.usb_path.data(),config.usb_path.size());
             add_file_entry(romfs,"/nexusNroHash",config.usb_nro_hash);

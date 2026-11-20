@@ -2,31 +2,27 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.19 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.19).
+This repository contains the 0.2.22 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.22).
 
 ## What's new
 
-- Fixed a USB file-ownership check that could prevent games from being deleted. Known content can use the installed-game records when its on-drive metadata cannot be read.
-- Ordinary game deletion no longer depends on checking unrelated unfinished downloads. Clearer errors explain a check that still cannot finish.
-- XCI content is marked for installed use while the original package data is still checked for corruption. The original XCI is not changed.
-- If an XCI installed with an older version will not launch, delete its broken installed copy and reinstall from your original XCI. Saves are kept.
+- Browse ports in an icon grid with SD and USB labels. Both drives appear by default.
+- Recently viewed port icons stay cached while browsing, changing filters and returning from details. Press Y: Refresh to reload them.
+- Copy or move NRO ports between SD and USB without creating a HOME shortcut first. Linked data folders are included, and moves verify the copied files before removing the originals.
+- Manage port mods from existing folders or ZIP files. Enable a mod, disable it or restore the original files.
+- Delete port files and HOME shortcuts separately, with a warning about saves stored inside port folders.
+- Progress bars follow the whole task instead of restarting for each file.
+- Delete confirms first, then checks and removes the selection in one task. File and port deletion no longer hashes every file before removing it.
+- Removed the public startup timing tests and timing-shortcut creation.
 
-- Visible Copy, Move, Delete and Paste here controls in File manager, with Switch shortcuts and touch buttons.
-- Copy and move files or folders between SD and USB; switching drives keeps the clipboard selection. Moves verify the copy first, and deletion requires confirmation.
-- A cleaner blue and purple interface with dedicated Cleanup and SMB/NFS pages.
-- Installed games shows each game's title ID, version, update revision, DLC count and size on SD, internal storage and USB. Move and delete are available through Manage.
-- Delete a chosen storage copy, including its base game, updates and DLC, while keeping saves and copies on other storage.
-- Review unused content and tickets, or use Cleanup's Delete all with a confirmation and checks before each removal.
-- FTP installs stream directly to SD or USB, with live transfer and installation details.
-- Successful USB-cable installs remove their temporary package. Failed, cancelled or skipped installs keep it for retry; original PC/NAS files are untouched.
-- Saved SMB/NFS locations, network discovery and direct streamed installs from a NAS.
+Earlier improvements include File manager copy/move/delete, storage-specific game deletion, Cleanup, direct FTP and NAS installs, and USB-library repair. The fixes for game deletion and XCI installation from 0.2.19 are included.
 
-The 0.2.19 build and PC regression checks passed. This version still needs testing on a Switch.
+The 0.2.22 build and automated checks passed. These changes still need testing on Switch hardware.
 
 ## Getting started
 
 - [Build instructions](BUILDING.md)
-- [Contributing](CONTRIBUTING.md) â€” help building the app, testing it and improving the interface is welcome.
+- [Contributing](CONTRIBUTING.md) - help building the app, testing it and improving the interface is welcome.
 - [App downloads](https://github.com/TechRepairs4U/Nexus-Manager/releases)
 - [Nexus Atmosphere source](https://github.com/TR4UNEXUS/Nexus-Atmosphere)
 - [USB firmware integration](https://github.com/TR4UNEXUS/Nexus-USB-Firmware)

@@ -2,7 +2,6 @@
 #include <string.h>
 #include "nexus_vsd.h"
 #include "nexus_trace.h"
-#include "nexus_timing.h"
 #include "nexus_read.h"
 #include "nexus/bootstrap.h"
 #include "nexus/watchdog.h"
@@ -313,9 +312,6 @@ void NX_NORETURN loadNro(void) {
     u8 initial_hash[32]={0};
     const bool first_load = g_nroSize == 0;
     bool physical_sd_bootstrap = false;
-    bool startup_timing=false;
-    u64 timing_started=0;
-    if(!first_load)nexusTimingConfigure(false,false,NULL);
 
     memcpy((u8*)armGetTls() + 0x100, g_savedTls, 0x100);
     startLaunchMonitor();
@@ -400,14 +396,7 @@ void NX_NORETURN loadNro(void) {
         }
 
         const romfs_dir* dir = (const romfs_dir*)romfs_dirs;
-        const romfs_file* timing_file=findRomfsFile(romfs_files,romfs_header.fileTableSize,dir,"nexusStartupTiming");
-        if(timing_file){
-            u32 timing_version=0;
-            if(timing_file->dataSize!=sizeof(timing_version) ||
-                !readRomfsFile(&s,&romfs_header,romfs_files,romfs_header.fileTableSize,dir,"nexusStartupTiming",&timing_version,sizeof(timing_version)) || timing_version!=1)selfExit();
-            startup_timing=true;
-        }
-        nexusTraceConfigure(!startup_timing);
+        nexusTraceConfigure(true);
         if (!readRomfsFile(&s, &romfs_header, romfs_files, romfs_header.fileTableSize, dir, "nextArgv", g_nextArgv, sizeof(g_nextArgv) - 1) ||
             !readRomfsFile(&s, &romfs_header, romfs_files, romfs_header.fileTableSize, dir, "nextNroPath", g_nextNroPath, sizeof(g_nextNroPath) - 1))
             diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 44));
@@ -435,7 +424,6 @@ void NX_NORETURN loadNro(void) {
         }
 
         fsStorageClose(&s);
-        nexusTimingConfigure(startup_timing,initial_usb[0]!=0,initial_usb[0]?initial_usb:g_nextNroPath);
         nexusTrace("romfs-config-read",0,initial_usb[0]!=0);
 
         if (has_redirect && R_FAILED(rc = restoreProgramPath(redirect_storage, redirect_program_id, redirect_path)))
@@ -463,10 +451,8 @@ void NX_NORETURN loadNro(void) {
         physical_sd_bootstrap=nexusDeferUsbRegistration(first_load,fixedNextNroPath,initial_usb);
         nexusTrace("vsd-handoff-begin",0,initial_usb[0]!=0);
         rc=0;
-        timing_started=nexusTimingBegin();
         if(!initial_usb[0] && !physical_sd_bootstrap)
             rc=nexusVsdBeforeLoad(g_procHandle,fixedNextNroPath,NULL);
-        nexusTimingEnd(NexusStartup_Activate,timing_started);
         if(physical_sd_bootstrap)nexusTrace("physical-sd-bootstrap",0,0);
         nexusTrace("vsd-handoff-end",rc,0);
         if(R_FAILED(rc))selfExit();
@@ -484,7 +470,6 @@ void NX_NORETURN loadNro(void) {
         NexusUsbSource usb={0};
         bool fs_open=false,file_open=false;
         NexusReadAt reader=readSdNro;void* source=&f;
-        timing_started=nexusTimingBegin();
         if(initial_usb[0]){
             // Keep the real-SD view until the executable has been read and
             // hash-checked. Each request pins the same USB media generation.
@@ -500,12 +485,9 @@ void NX_NORETURN loadNro(void) {
                 nexusTrace("nro-file-open-end",rc,0);
             }
         }
-        nexusTimingEnd(NexusStartup_Open,timing_started);
         if(R_FAILED(rc))goto load_failed;
         nexusTrace("nro-header-read-begin",0,0);
-        timing_started=nexusTimingBegin();
         rc=nexusReadExact(reader,source,0,start,sizeof(*start)+sizeof(*header));
-        nexusTimingEnd(NexusStartup_Header,timing_started);
         nexusTrace("nro-header-read-end",rc,sizeof(*start)+sizeof(*header));
         if(R_FAILED(rc) ||
             header->magic!=NROHEADER_MAGIC ||
@@ -515,11 +497,8 @@ void NX_NORETURN loadNro(void) {
             goto load_failed;
         }
         const u32 code_size=header->size;
-        nexusTimingBytes(code_size);
         nexusTrace("nro-code-read-begin",0,code_size);
-        timing_started=nexusTimingBegin();
         rc=nexusReadExact(reader,source,0,start,code_size);
-        nexusTimingEnd(NexusStartup_Code,timing_started);
         nexusTrace("nro-code-read-end",rc,code_size);
         if(R_FAILED(rc) ||
             header->size!=code_size || header->magic!=NROHEADER_MAGIC){
@@ -528,16 +507,11 @@ void NX_NORETURN loadNro(void) {
 
         if(initial_usb[0]){
             nexusTrace("nro-hash-begin",0,code_size);
-            timing_started=nexusTimingBegin();
             u8 hash[32];sha256CalculateHash(hash,nrobuf,header->size);
-            nexusTimingEnd(NexusStartup_Hash,timing_started);
-            nexusTimingHash(hash,memcmp(hash,initial_hash,sizeof(hash))==0);
             nexusTrace("nro-hash-end",0,memcmp(hash,initial_hash,sizeof(hash))==0);
             if(memcmp(hash,initial_hash,sizeof(hash)))goto load_failed;
             // Only verified code can activate the process-local sdmc: view.
-            timing_started=nexusTimingBegin();
             rc=nexusUsbActivate(&usb,g_procHandle,fixedNextNroPath);
-            nexusTimingEnd(NexusStartup_Activate,timing_started);
             if(R_FAILED(rc))goto load_failed;
         }
 
@@ -551,7 +525,6 @@ load_failed:
         if(file_open)fsFileClose(&f);
         if(fs_open)fsFsClose(&fs);
         nexusUsbClose(&usb);
-        (void)nexusTimingSubmit(false,rc);
         selfExit();
 load_complete:;
     }
@@ -575,20 +548,17 @@ load_complete:;
 
     // Map code memory to a new randomized address
     nexusTrace("map-code-begin",0,header->size);
-    timing_started=nexusTimingBegin();
     virtmemLock();
     const size_t total_size = ((u64)header->size + header->bss_size + 0xFFF) & ~(u64)0xFFF;
     void* map_addr = virtmemFindCodeMemory(total_size, 0);
     rc = svcMapProcessCodeMemory(g_procHandle, (u64)map_addr, (u64)g_heapAddr, total_size);
     virtmemUnlock();
-    nexusTimingEnd(NexusStartup_Map,timing_started);
     nexusTrace("map-code-end",rc,total_size);
 
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_HomebrewLoader, 18));
 
     // .text
-    timing_started=nexusTimingBegin();
     rc = svcSetProcessMemoryPermission(
         g_procHandle, (u64)map_addr + header->segments[0].file_off, header->segments[0].size, Perm_R | Perm_X);
 
@@ -609,7 +579,6 @@ load_complete:;
     if (R_FAILED(rc))
         diagAbortWithResult(rc);
 
-    nexusTimingEnd(NexusStartup_Permissions,timing_started);
     const u64 nro_size = header->segments[2].file_off + rw_size;
     const u64 nro_heap_start = ((u64) g_heapAddr) + nro_size;
     const u64 nro_heap_size  = g_heapSize + (u64) g_heapAddr - (u64) nro_heap_start;
@@ -685,7 +654,6 @@ load_complete:;
     nexusWatchdogStop(); // no loader thread may survive into another runtime
     // Timed shortcuts require a matching capture endpoint. Never silently run
     // an unmeasured launch when the diagnostic firmware is missing or refuses.
-    if(R_FAILED(nexusTimingSubmit(true,0)))selfExit();
     // jump to trampoline.s
     nroEntrypointTrampoline(&entries[0], -1, g_nroAddr);
 }
@@ -723,7 +691,6 @@ void __libnx_initheap(void) {
 }
 
 void __appInit(void) {
-    nexusTimingEnter();
     Result rc;
 
     // Detect Atmosphère early on. This is required for hosversion logic.

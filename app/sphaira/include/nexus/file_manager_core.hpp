@@ -128,6 +128,7 @@ template<class IO> auto Inventory(IO& io,bool usb,const std::string& root,Snapsh
 }
 template<class IO> auto Prepare(IO& io,bool usb,const std::string& root,Snapshot& out,bool staging=false){
     using R=typename IO::Result;if(auto rc=Inventory(io,usb,root,out,staging))return rc;
+    if constexpr(requires {io.BeginWork(out.bytes);})io.BeginWork(out.bytes);
     std::vector<std::uint8_t> buffer(io.BufferSize());
     // A retained temporary item is explicitly being discarded, not treated as
     // valid user data. Review its exact names/types/sizes without reading a
@@ -166,6 +167,7 @@ template<class IO> auto Transfer(IO& io,bool source_usb,bool destination_usb,con
     Snapshot current;if(auto rc=Inventory(io,source_usb,s.root,current))return rc;if(!SameInventory(s,current))return R{IO::Invalid};
     if(auto rc=io.Preflight(s.bytes))return rc;
     std::vector<std::uint8_t> buffer(io.BufferSize());if(buffer.empty())return R{IO::Invalid};
+    if constexpr(requires {io.BeginWork(s.bytes);})io.BeginWork(s.bytes*(move?4:2));
     report.detail="Copying into a new temporary item";
     if(auto rc=io.NewStage(s.entries[0].directory,s.entries[0].size,report.staged_path))return rc;
     if(!StagePath(report.staged_path)||Parent(report.staged_path)!=Parent(final))return R{IO::Invalid};
@@ -202,6 +204,24 @@ template<class IO> auto Delete(IO& io,bool usb,const Snapshot& s,Report& report)
     if(s.staging){Snapshot current;if(auto rc=Inventory(io,usb,s.root,current,true))return rc;if(!SameInventory(s,current))return R{IO::Invalid};}
     else if(auto rc=Recheck(io,usb,s,buffer))return rc;report.detail="Deleting reviewed items";
     if(auto rc=RemoveReviewed(io,usb,s,report,buffer))return rc;
+    report.complete=true;report.detail="Deletion complete.";return R{};
+}
+// Explicit deletion needs names, types and sizes, not payload hashes. Keep
+// non-recursive, exact-path removal and refuse newly added directory contents.
+template<class IO> auto QuickDelete(IO& io,bool usb,const Snapshot& s,Report& report){
+    using R=typename IO::Result;report={};report.detail="Deleting selected items";
+    if(!ValidSnapshot(s))return R{IO::Invalid};
+    if(auto rc=CheckSpelling(io,usb,s.root))return rc;
+    for(auto it=s.entries.rbegin();it!=s.entries.rend();++it){
+        if(auto rc=io.Check())return rc;const auto path=s.root+it->path;
+        Entry current;bool exists{};if(auto rc=io.Stat(usb,path,current,exists))return rc;
+        if(!exists||current.directory!=it->directory||current.size!=it->size)return R{IO::Invalid};
+        if(it->directory){std::vector<std::string> names;if(auto rc=io.List(usb,path,names))return rc;if(!names.empty())return R{IO::Invalid};}
+        io.Progress("Removing",path,report.removed,s.entries.size());
+        report.removal_started=true;if(auto rc=io.Remove(usb,path,it->size,it->directory))return rc;
+        ++report.removed;io.Progress("Removing",path,report.removed,s.entries.size());
+    }
+    if(auto rc=io.Flush(usb))return rc;
     report.complete=true;report.detail="Deletion complete.";return R{};
 }
 }

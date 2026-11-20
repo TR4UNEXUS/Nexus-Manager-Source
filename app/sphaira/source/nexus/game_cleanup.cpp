@@ -638,7 +638,8 @@ Result ApplyCleanupBatch(ui::ProgressBox* p,const CleanupBatchPlan& batch,Cleanu
     const auto run=[&]()->Result{
         for(size_t index=0;index<batch.entries.size();++index){
             R_TRY(p->ShouldExitResult());const auto& entry=batch.entries[index];
-            p->SetOverallTransfer(index,batch.entries.size(),"Deleting reviewed cleanup items",true);
+            ui::ProgressScope item_progress(p,nexus::WorkPart(index,batch.entries.size()),nexus::WorkPart(index+1,batch.entries.size()));
+            p->NewTransfer("Deleting selected cleanup items");
             p->SetTitle("Cleanup "+std::to_string(index+1)+" / "+std::to_string(batch.entries.size()));
             if(!entry.ready){++report.skipped;R_TRY(line("SKIPPED_PREVIEW",entry,entry.result));continue;}
             GameRemovalPlan fresh;const auto checked=PreviewGameRemoval(p,entry.item,fresh);R_TRY(p->ShouldExitResult());

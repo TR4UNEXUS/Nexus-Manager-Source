@@ -154,6 +154,7 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
 
 void ProgressBox::WorkerFinished() {
     EndNetworkTransfer();
+    {SCOPED_MUTEX(&m_mutex);m_task_progress.Finish(R_SUCCEEDED(m_thread_data.result));if(m_task_progress.known){m_overall=true;m_size=10000;m_offset=m_task_progress.value;}}
     if (m_protected) {
         nexusWatchdogUnprotect();
         m_protected = false;
@@ -218,11 +219,8 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     const auto transfer = m_transfer;
     const auto size = m_size;
     const auto offset = m_offset;
-    const auto speed = m_speed;
-    const auto last_offset = m_last_offset;
     const auto overall = m_overall;
     const auto detailed = m_detailed;
-    const auto finishing = m_finishing;
     const auto progress_note = m_progress_note;
     const auto byte_detail = m_byte_detail;
     const auto network = m_network_rate.Sample(armTicksToNs(armGetSystemTick()));
@@ -258,7 +256,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     const auto colour=theme->GetColour(ThemeEntryID_TEXT);
     const Vec4 prog_bar{layout.bar.x,layout.bar.y,layout.bar.w,layout.bar.h};
     const auto end_y=layout.footer_y;
-    const bool has_progress=size>0&&(offset>0||overall);
+    const bool has_progress=size>0&&overall;
 
     nvgSave(vg);
     nvgIntersectScissor(vg,GetX(),GetY(),GetW(),GetH());
@@ -282,9 +280,10 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     }else if(!byte_detail.empty()){
         DrawProgressBody(vg,layout.status,byte_detail,22,layout.centered,colour);
     }else if(overall){
-        DrawProgressBody(vg,layout.status,"Copy, check, finish. Keep both storage devices connected.",18,layout.centered,colour);
+        DrawProgressBody(vg,layout.status,"Overall progress. Keep storage connected.",18,layout.centered,colour);
     }
 
+    if(!has_progress){gfx::drawSpinner(vg,theme,layout.spinner_x,layout.spinner_y,13,armTicksToNs(armGetSystemTick())/1e+9);}
     if(has_progress){
         gfx::drawRect(vg,prog_bar,theme->GetColour(ThemeEntryID_PROGRESSBAR_BACKGROUND),5);
         const auto fraction=std::clamp(double(offset)/double(size),0.0,1.0);
@@ -306,19 +305,8 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
         DrawProgressBody(vg,layout.note,progress_note,16,layout.centered,colour);
     }else{
         if(!progress_note.empty())metric=progress_note;
-        else if(has_progress){
-            if(finishing||speed<=0)metric=finishing?"Almost done - keep storage connected":"Calculating time remaining...";
-            else{
-                const auto left=std::max<s64>(0,size-last_offset);
-                const auto left_seconds=left/speed;
-                const auto hours=left_seconds/(60*60),minutes=left_seconds%(60*60)/60,seconds=left_seconds%60;
-                char time_str[96]{};
-                if(hours)std::snprintf(time_str,sizeof(time_str),"%zu hours %zu minutes remaining"_i18n.c_str(),hours,minutes);
-                else if(minutes)std::snprintf(time_str,sizeof(time_str),"%zu minutes %zu seconds remaining"_i18n.c_str(),minutes,seconds);
-                else std::snprintf(time_str,sizeof(time_str),"%zu seconds remaining"_i18n.c_str(),seconds);
-                metric=std::string(time_str)+" ("+utils::formatSizeNetwork(speed)+"/s)";
-            }
-        }
+        else if(!has_progress)metric="Working...";
+        else metric="Overall task progress";
         DrawProgressBody(vg,layout.metric,metric,18,layout.centered,colour);
     }
 
@@ -366,28 +354,24 @@ auto ProgressBox::SetActionName(const std::string& action)  -> ProgressBox& {
 
 auto ProgressBox::SetTitle(const std::string& title)  -> ProgressBox& {
     SCOPED_MUTEX(&m_mutex);
-    if(m_detailed)return *this;
+    if(m_detailed&&m_task_progress.parents.empty())return *this;
     m_title = title;
     m_safety.Touch(armGetSystemTick());
     return *this;
 }
 
-auto ProgressBox::NewTransfer(const std::string& transfer)  -> ProgressBox& {
+auto ProgressBox::NewTransfer(const std::string& transfer) -> ProgressBox& {
     if(m_transfer_log)nexus::transfer::activity::Get().Stage(transfer);
-    SCOPED_MUTEX(&m_mutex);
-    if(m_detailed)return *this;
-    m_transfer = transfer;
-    m_safety.Touch(armGetSystemTick());
-    m_size = 0;
-    m_offset = 0;
-    m_last_offset = 0;
-    m_timestamp.Update();
+    SCOPED_MUTEX(&m_mutex);m_safety.Touch(armGetSystemTick());
+    if(m_detailed&&m_task_progress.parents.empty())return *this;
+    m_transfer=transfer;
+    if(!m_overall){m_size=0;m_offset=0;m_last_offset=0;m_timestamp.Update();}
     return *this;
 }
 
 auto ProgressBox::ResetTranfser() -> ProgressBox& {
     SCOPED_MUTEX(&m_mutex);
-    if(m_detailed)return *this;
+    if(m_overall)return *this;
     m_size = 0;
     m_offset = 0;
     m_last_offset = 0;
@@ -395,18 +379,25 @@ auto ProgressBox::ResetTranfser() -> ProgressBox& {
     return *this;
 }
 
-auto ProgressBox::UpdateTransfer(s64 offset, s64 size)  -> ProgressBox& {
-    SCOPED_MUTEX(&m_mutex);
-    if(m_detailed)return *this;
-    if (m_size != size || m_offset != offset) m_safety.Touch(armGetSystemTick());
-    m_size = size;
-    m_offset = offset;
-    return *this;
+auto ProgressBox::UpdateTransfer(s64 offset,s64 size) -> ProgressBox& {
+    SCOPED_MUTEX(&m_mutex);m_safety.Touch(armGetSystemTick());
+    if(!m_task_progress.parents.empty()){
+        if(offset>=0&&size>0)m_task_progress.Set(offset,size);
+        m_size=10000;m_offset=m_task_progress.value;return *this;
+    }
+    if(m_overall)return *this;
+    m_size=size;m_offset=offset;return *this;
 }
+void ProgressBox::BeginProgressRange(unsigned begin,unsigned end){
+    SCOPED_MUTEX(&m_mutex);m_task_progress.Push(begin,end);m_overall=true;m_detailed=true;
+    m_size=10000;m_offset=m_task_progress.value;m_speed=0;m_last_offset=m_offset;
+    if(m_progress_note.empty())m_progress_note="Overall task progress";
+}
+void ProgressBox::EndProgressRange(){SCOPED_MUTEX(&m_mutex);m_task_progress.Pop();}
 
 auto ProgressBox::SetProgressNote(const std::string& note) -> ProgressBox& {
     SCOPED_MUTEX(&m_mutex);
-    if(m_detailed)return *this;
+    if(m_detailed&&m_task_progress.parents.empty())return *this;
     if(m_transfer_log&&!note.empty()&&note!=m_progress_note)nexus::transfer::activity::Get().Event(note);
     m_progress_note=note;
     return *this;
@@ -431,27 +422,17 @@ void ProgressBox::EndNetworkTransfer() {
 
 auto ProgressBox::SetDetailedProgress(unsigned percent,const std::string& stage,const std::string& bytes,const std::string& note) -> ProgressBox& {
     if(m_transfer_log)nexus::transfer::activity::Get().Stage(stage);
-    SCOPED_MUTEX(&m_mutex);
-    if(percent>100 || (m_detailed && percent<m_offset))return *this;
-    if(!m_detailed){m_last_offset=0;m_speed=0;m_timestamp.Update();}
-    m_detailed=true;m_overall=true;m_size=100;m_offset=percent;
-    m_transfer=stage;m_byte_detail=bytes;m_progress_note=note;
-    m_safety.Touch(armGetSystemTick());
-    return *this;
+    SCOPED_MUTEX(&m_mutex);if(percent>100||m_task_progress.Position(percent,100)<m_task_progress.value)return *this;
+    m_task_progress.Set(percent,100);m_detailed=true;m_overall=true;m_size=10000;m_offset=m_task_progress.value;
+    m_transfer=stage;m_byte_detail=bytes;m_progress_note=note;m_safety.Touch(armGetSystemTick());return *this;
 }
-
 auto ProgressBox::SetOverallTransfer(s64 offset,s64 size,const std::string& stage,bool finishing) -> ProgressBox& {
     if(m_transfer_log)nexus::transfer::activity::Get().Stage(stage);
-    SCOPED_MUTEX(&m_mutex);
-    if(m_detailed)return *this;
-    if(size<=0 || offset<0 || offset>size)return *this;
-    if(m_overall && (size!=m_size || offset<m_offset))return *this;
-    if(!m_overall){m_last_offset=0;m_speed=0;m_timestamp.Update();}
-    // Called by completed transfer chunks or bounded metadata/deletion steps,
-    // never an idle timer: repeated finishing steps are real worker activity.
-    m_safety.Touch(armGetSystemTick());
-    m_overall=true;m_finishing=finishing;m_offset=offset;m_size=size;m_transfer=stage;
-    return *this;
+    SCOPED_MUTEX(&m_mutex);if(size<=0||offset<0||offset>size)return *this;
+    if(m_detailed&&m_task_progress.parents.empty())return *this;
+    if(m_task_progress.Position(offset,size)<m_task_progress.value)return *this;
+    m_task_progress.Set(offset,size);m_overall=true;m_finishing=finishing;m_size=10000;m_offset=m_task_progress.value;
+    m_transfer=stage;m_progress_note="Overall task progress";m_safety.Touch(armGetSystemTick());return *this;
 }
 
 auto ProgressBox::SetImage(int image) -> ProgressBox& {

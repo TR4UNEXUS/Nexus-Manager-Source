@@ -73,8 +73,7 @@ private:
     void ChooseInstall(const nexusapp::Item&);
     void LaunchHomebrew(const nexusapp::Item&,u64 gen);
     void HomebrewActions(const nexusapp::Item&,u64 gen,bool usb=true);
-    void CreateForwarder(const nexusapp::Item&,u64 gen,bool timing=false);
-    void CreateSdTimingForwarder(const nexusapp::Item&);
+    void CreateForwarder(const nexusapp::Item&,u64 gen);
     void RunProbe();
     void ChooseBatchDestination();
     void StartBatch(nexus::Target target,const std::vector<nexus::batch::Entry>& entries);

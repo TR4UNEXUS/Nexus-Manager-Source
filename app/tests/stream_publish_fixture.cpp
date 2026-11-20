@@ -1,4 +1,5 @@
 // Execute the production forward-install orchestration with storage/crypto spies.
+#include "nexus/task_progress.hpp"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -20,7 +21,7 @@ void log_write(const char*,...){}
 struct FsRightsId{u8 c[16]{};};
 namespace keys{void parse_hex_key(u8*,const char*){}}
 namespace nexus::archive{std::string Canonical(const std::string& s){return s;}}
-namespace ui{struct ProgressBox{void TransferEvent(const char*){}};}
+namespace ui{struct ProgressBox{void TransferEvent(const char*){}};struct ProgressScope{ProgressScope(ProgressBox*,unsigned,unsigned){}};}
 namespace source{struct Base{bool finished{};Result eof_error{};s64 minimum{};Result FinishRead(s64 n){minimum=n;if(eof_error)return eof_error;finished=true;return 0;}};}
 namespace container{struct CollectionEntry{std::string name;s64 offset{},size{};};using Collections=std::vector<CollectionEntry>;}
 struct NcaCollection:container::CollectionEntry{

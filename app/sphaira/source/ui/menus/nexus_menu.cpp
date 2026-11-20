@@ -19,6 +19,7 @@
 #include "nexus/lifecycle.hpp"
 #include "nexus/vsd_policy.hpp"
 #include "nexus/homebrew.hpp"
+#include "ui/menus/port_manager_menu.hpp"
 #include "nexus/port_transfer.hpp"
 #include "nexus/port_catalog.hpp"
 #include "swkbd.hpp"
@@ -312,36 +313,21 @@ void Menu::LaunchHomebrew(const nexusapp::Item& item,u64 gen){
     },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
 void Menu::HomebrewActions(const nexusapp::Item& item,u64 gen,bool usb){
-    auto sidebar=std::make_unique<Sidebar>(item.name,usb?"Homebrew on USB":"Homebrew on SD - startup timing",Sidebar::Side::RIGHT,1280.f);
     if(!usb){
-        sidebar->Add<SidebarEntryCallback>("Create SD timing shortcut",[this,item]{CreateSdTimingForwarder(item);});
-        App::Push(std::move(sidebar));return;
+        nexusapp::Game game;game.name=item.name;game.forwarder_path="sdmc:"+item.path;
+        auto chosen=std::make_shared<nexusports::Port>();auto detail=std::make_shared<std::string>();
+        App::Push<ProgressBox>(0,"Reading port",item.name,[game,chosen,detail](ProgressBox* p){return nexusports::FromGame(p,game,*chosen,*detail);},[this,chosen,detail](Result rc){if(R_FAILED(rc)){Report(rc,*detail);return;}App::Push<portmanager::Menu>(*chosen);},ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);return;
     }
+    auto sidebar=std::make_unique<Sidebar>(item.name,"Homebrew on USB",Sidebar::Side::RIGHT,1280.f);
     if(!envIsNso())sidebar->Add<SidebarEntryCallback>("Open app",[this,item,gen]{LaunchHomebrew(item,gen);});
     sidebar->Add<SidebarEntryCallback>("Create HOME shortcut",[this,item,gen]{CreateForwarder(item,gen);});
-    sidebar->Add<SidebarEntryCallback>("Create USB timing shortcut",[this,item,gen]{CreateForwarder(item,gen,true);});
     App::Push(std::move(sidebar));
 }
-void Menu::CreateSdTimingForwarder(const nexusapp::Item& item){
-    if(R_FAILED(nexusapp::CheckStartupTimingSupport())){
-        Report(nexus::Unavailable,"Startup timing needs SD8 firmware. Install SD8 and reboot first.");return;
-    }
-    App::Push<OptionBox>("Create a separate SD timing shortcut?\n\n"+item.name+"\n"+item.path+"\n\nLaunch it from HOME, follow the same steps as the USB test, and leave it running for at least 60 seconds. Close the game and export startup captures with X in the benchmark app before rebooting.\n\nBoth timing shortcuts use the same memory and CPU settings. The launcher is installed internally; app files stay on SD.","Cancel","Create",0,[this,item](auto choice){
+void Menu::CreateForwarder(const nexusapp::Item& item,u64 gen){
+    App::Push<OptionBox>("Create a HOME shortcut?\n\n"+item.name+"\n"+item.path+"\n\nA small launcher is installed to Internal Storage. The app, data and saves stay on USB.\n\nOnly use trusted homebrew: it can write to the USB drive. Keep USB connected. After replacing the app's NRO file, remove the shortcut and recreate it. Existing titles are never replaced.","Cancel","Create",0,[this,item,gen](auto choice){
         if(!choice || *choice!=1)return;
-        App::Push<ProgressBox>(0,"Create SD timing shortcut",item.name,[item](ProgressBox* p){
-            return nexusapp::CreateSdTimingForwarder(p,item);
-        },[this](Result rc){Report(rc,R_SUCCEEDED(rc)?"SD timing shortcut installed. Exit Nexus Manager and launch it from HOME.":"Could not create SD timing shortcut. Existing titles and app files were not replaced. If this timing shortcut exists, remove it in System Settings before recreating it.");refresh_pending=true;});
-    });
-}
-void Menu::CreateForwarder(const nexusapp::Item& item,u64 gen,bool timing){
-    if(timing && R_FAILED(nexusapp::CheckStartupTimingSupport())){
-        Report(nexus::Unavailable,"Startup timing needs SD8 firmware. Install SD8 and reboot first.");return;
-    }
-    const auto timing_help=timing?std::string("\n\nThis separate timing shortcut captures the first 60 seconds of filesystem activity. Follow the same steps as the SD test, then close the game and export startup captures with X in the benchmark app before rebooting."):std::string{};
-    App::Push<OptionBox>("Create a HOME shortcut?\n\n"+item.name+"\n"+item.path+"\n\nA small launcher is installed to Internal Storage. The app, data and saves stay on USB.\n\nOnly use trusted homebrew: it can write to the USB drive. Keep USB connected. After replacing the app's NRO file, remove the shortcut and recreate it. Existing titles are never replaced."+timing_help,"Cancel","Create",0,[this,item,gen,timing](auto choice){
-        if(!choice || *choice!=1)return;
-        App::Push<ProgressBox>(0,"Create USB forwarder",item.name,[item,gen,timing](ProgressBox* p){
-            const auto rc=nexusapp::CreateHomebrewForwarder(p,item,gen,timing);
+        App::Push<ProgressBox>(0,"Create USB forwarder",item.name,[item,gen](ProgressBox* p){
+            const auto rc=nexusapp::CreateHomebrewForwarder(p,item,gen);
             nexus::Log("homebrew-forwarder-create",rc);return rc;
         },[this](Result rc){
             Report(rc,R_SUCCEEDED(rc)?"HOME forwarder installed. Exit Nexus Manager, then launch it from HOME with USB connected.":
@@ -502,6 +488,12 @@ void Menu::GameActions(bool primary_move){
     },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
 void Menu::ShowGameActions(const nexusapp::Game& game){
+    if(!game.forwarder_path.empty()||game.id==0x0100b00b51230000ULL){
+        auto port=std::make_shared<nexusports::Port>();auto detail=std::make_shared<std::string>();
+        App::Push<ProgressBox>(0,"Reading port folders",game.name,[game,port,detail](ProgressBox* p){return nexusports::FromGame(p,game,*port,*detail);},
+            [this,port,detail](Result rc){if(R_FAILED(rc))Report(rc,*detail);else App::Push<portmanager::Menu>(*port);},ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+        return;
+    }
     auto sidebar=std::make_unique<Sidebar>(game.name,StorageLabel(game),Sidebar::Side::RIGHT);
     sidebar->Add<SidebarEntryCallback>(PrimaryLabel(game),[this,game]{MoveGameOptions(game,true,true);});
     if(game.forwarder_path.empty())sidebar->Add<SidebarEntryCallback>("Choose another destination",[this,game]{MoveGameOptions(game,true);});
@@ -810,24 +802,23 @@ void Menu::DeleteGameOptions(const nexusapp::Game& game){
     for(auto target:{Target::Sd,Target::Internal,Target::Usb})menu->Add<SidebarEntryCallback>(std::string("Delete ")+nexus::TargetName(target)+" copy",[this,game,target]{
         nexusapp::CleanupItem item;item.kind=nexusapp::CleanupKind::Game;item.target=target;item.application=game.id;item.name=game.name;
         item.reason="Base game, updates and DLC on this storage. Copies on other storage and saved progress are kept.";ReviewRemoval(item);
-    },true,"Review the exact files first. The other storage copy stays installed.");
+    },true,"Confirm deletion from this storage. Other copies and saved progress are kept.");
     App::Push(std::move(menu));
 }
 void Menu::ReviewRemoval(const nexusapp::CleanupItem& item){
-    auto plan=std::make_shared<nexusapp::GameRemovalPlan>();
-    App::Push<ProgressBox>(0,"Review deletion",item.name,[item,plan](ProgressBox* p){return nexusapp::PreviewGameRemoval(p,item,*plan);},[this,plan,item](Result rc){
-        if(R_FAILED(rc)){Report(rc,!plan->detail.empty()?plan->detail:"Could not safely prepare this deletion. No files were removed. The item may have changed, have unreadable metadata, or have no files on this storage. Close other installers and scan again. The running app cannot delete itself.");return;}
-        const auto text=item.name+"\n\n"+std::string(item.kind==nexusapp::CleanupKind::Ticket?"Current system ticket":nexus::TargetName(item.target))+" | "+std::to_string(plan->files)+(item.kind==nexusapp::CleanupKind::Ticket?" ticket":" files | "+utils::formatSizeStorage(plan->bytes))+
-            "\n\n"+item.reason+"\n\n"+plan->detail+"\n\nClose the game, downloads and other installers first. Deletion cannot be undone.";
-        App::Push<OptionBox>(text,item.kind==nexusapp::CleanupKind::Ticket?"Keep ticket":"Keep files","Delete",0,[this,plan](auto choice){
-            if(!choice||*choice!=1)return;auto report=std::make_shared<nexusapp::GameRemovalReport>();
-            App::Push<ProgressBox>(0,"Deleting reviewed files",plan->item.name,[plan,report](ProgressBox* p){return nexusapp::ApplyGameRemoval(p,*plan,*report);},[this,report](Result result){
-                refresh_pending=page==Page::Installed;GetPolledData(true);
-                if(page==Page::Cleanup){cleanup_items.clear();cleanup_detail="Press X to scan again for remaining items.";selected=0;actions_dirty=true;}
-                if(R_FAILED(result))Report(result,report->detail);else App::Push<OptionBox>(report->detail,"Done",[](auto){});
-            });
+    const auto text=item.name+"\n\n"+std::string(item.kind==nexusapp::CleanupKind::Ticket?"Current system ticket":nexus::TargetName(item.target))+
+        "\n\n"+item.reason+"\n\nPermanently delete this selection? Saved progress and copies on other storage are kept. Close the game and other installers first.";
+    App::Push<OptionBox>(text,"Cancel","Delete",0,[this,item](auto answer){
+        if(!answer||*answer!=1)return;auto report=std::make_shared<nexusapp::GameRemovalReport>();
+        App::Push<ProgressBox>(0,"Deleting selected content",item.name,[item,report](ProgressBox* p)->Result{
+            nexusapp::GameRemovalPlan plan;const auto rc=nexusapp::PreviewGameRemoval(p,item,plan);
+            if(R_FAILED(rc)){report->detail=plan.detail;return rc;}return nexusapp::ApplyGameRemoval(p,plan,*report);
+        },[this,report](Result rc){
+            refresh_pending=page==Page::Installed;GetPolledData(true);
+            if(page==Page::Cleanup){cleanup_items.clear();cleanup_detail="Press X to scan again for remaining items.";selected=0;actions_dirty=true;}
+            if(R_FAILED(rc))Report(rc,report->detail);else App::Push<OptionBox>(report->detail,"Done",[](auto){});
         });
-    },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+    });
 }
 void Menu::ScanCleanupTarget(Target target){
     auto scan=std::make_shared<nexusapp::CleanupScan>();
@@ -839,23 +830,24 @@ void Menu::ScanCleanupTarget(Target target){
 }
 void Menu::DeleteAllCleanup(){
     if(cleanup_items.empty())return;
-    const auto items=cleanup_items;auto batch=std::make_shared<nexusapp::CleanupBatchPlan>();
-    App::Push<ProgressBox>(0,"Review all cleanup items","Nothing is being removed yet",[items,batch](ProgressBox* p){return nexusapp::PreviewCleanupBatch(p,items,*batch);},[this,batch](Result rc){
-        if(R_FAILED(rc)){Report(rc,"The bulk review did not finish. Nothing was deleted. Review individual items for the failed check.");return;}
-        if(!batch->ready){App::Push<OptionBox>("None of these items could be prepared for deletion. Nothing was changed. Open an individual item to see which check failed.","Back",[](auto){});return;}
-        const auto noun=batch->tickets?"unused tickets":"cleanup items";
-        std::string text="Delete all "+std::to_string(batch->ready)+" reviewed "+noun+"?\n\n";
-        if(!batch->tickets)text+=std::string(nexus::TargetName(batch->entries.front().item.target))+" | "+std::to_string(batch->files)+" files | "+utils::formatSizeStorage(batch->bytes)+"\n\nIncludes the displayed games marked Ticket missing or Not on HOME, if any, with their updates and DLC.\n\n";
-        else text+="These permissions may belong to uninstalled purchases. Keep them if you plan to reinstall or cannot restore them.\n\n";
-        text+=std::to_string(batch->skipped)+" item(s) cannot be verified and will be skipped. Changed items are also skipped. Saves and protected files are kept. Deletion cannot be undone.";
-        App::Push<OptionBox>(text,"Keep everything","Delete all",0,[this,batch](auto choice){
-            if(!choice||*choice!=1)return;auto report=std::make_shared<nexusapp::CleanupBatchReport>();
-            App::Push<ProgressBox>(0,"Deleting reviewed cleanup items","Keep storage connected",[batch,report](ProgressBox* p){return nexusapp::ApplyCleanupBatch(p,*batch,*report);},[this,report](Result result){
-                cleanup_items.clear();cleanup_detail="Press X to scan again for remaining items.";selected=0;actions_dirty=true;GetPolledData(true);
-                if(R_FAILED(result))Report(result,report->detail);else App::Push<OptionBox>(report->detail,"Done",[](auto){});
-            });
+    const auto items=cleanup_items;
+    std::string text="Delete all "+std::to_string(items.size())+" displayed "+(cleanup_tickets?"unused tickets":"cleanup items")+"?\n\n";
+    if(cleanup_tickets)text+="These permissions may belong to uninstalled purchases. Keep them if you plan to reinstall or cannot restore them.\n\n";
+    else text+=std::string(nexus::TargetName(cleanup_target))+"\n\nIncludes displayed games marked Ticket missing or Not on HOME, with their updates and DLC.\n\n";
+    text+="Items that cannot be safely verified will be skipped. Saves and protected files are kept. Deletion cannot be undone.";
+    App::Push<OptionBox>(text,"Keep everything","Delete all",0,[this,items](auto choice){
+        if(!choice||*choice!=1)return;auto report=std::make_shared<nexusapp::CleanupBatchReport>();
+        App::Push<ProgressBox>(0,"Deleting cleanup items","Keep storage connected",[items,report](ProgressBox* p)->Result{
+            nexusapp::CleanupBatchPlan batch;
+            {ui::ProgressScope preparation(p,0,1000);const auto rc=nexusapp::PreviewCleanupBatch(p,items,batch);
+                if(R_FAILED(rc)){report->detail="The storage check could not finish. Nothing was removed.";return rc;}}
+            if(!batch.ready){report->detail="None of the selected items could be safely verified. Nothing was removed.";return nexus::Invalid;}
+            ui::ProgressScope deletion(p,1000,10000);return nexusapp::ApplyCleanupBatch(p,batch,*report);
+        },[this,report](Result result){
+            cleanup_items.clear();cleanup_detail="Press X to scan again for remaining items.";selected=0;actions_dirty=true;GetPolledData(true);
+            if(R_FAILED(result))Report(result,report->detail);else App::Push<OptionBox>(report->detail,"Done",[](auto){});
         });
-    },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+    });
 }
 void Menu::ScanTickets(){
     auto scan=std::make_shared<nexusapp::CleanupScan>();
@@ -878,12 +870,8 @@ void Menu::MoreOptions(){
 void Menu::ActivateMore(){
     if(selected==0){nexus::updates::StopStartupCheck();App::Push<extended::Menu>(extended::Mode::Transfer);}
     else if(selected==1)App::Push<extended::Menu>(extended::Mode::Cartridge);
-    else if(selected==2){
-        auto sources=std::make_unique<Sidebar>("Homebrew apps","Choose where your apps are stored",Sidebar::Side::RIGHT,1280.f);
-        sources->Add<SidebarEntryCallback>("USB apps and shortcuts",[this]{packages.Clear();usb_source=true;generation=0;path="/";selected=0;page=Page::Homebrew;Refresh();},true,"Browse NRO apps on USB, open them in supported mode or create a HOME shortcut.");
-        sources->Add<SidebarEntryCallback>("SD apps for startup timing",[this]{packages.Clear();usb_source=false;generation=0;path="/";selected=0;page=Page::Homebrew;Refresh();},true,"Browse SD apps and create timed shortcuts to compare startup performance.");
-        App::Push(std::move(sources));
-    }else if(selected==3)App::Push<managertools::Menu>(managertools::Mode::Saves);
+    else if(selected==2)App::Push<portmanager::Menu>();
+    else if(selected==3)App::Push<managertools::Menu>(managertools::Mode::Saves);
     else if(selected==4){selected=0;page=Page::Mods;Refresh();}
     else if(selected==5)Updates();
 }
@@ -948,7 +936,7 @@ void Menu::Update(Controller* c,TouchInfo* touch){
         std::to_string(Count()?selected+1:0)+" / "+std::to_string(Count()));
     if(page==Page::More)SetTitleSubHeading("More / Tools, apps and help");
     else if(page==Page::Files)SetTitleSubHeading(std::string(usb_source?"USB: ":"SD: ")+path);
-    else if(page==Page::Homebrew)SetTitleSubHeading(std::string(usb_source?"USB Homebrew  /  ":"SD timing apps  /  ")+path);
+    else if(page==Page::Homebrew)SetTitleSubHeading(std::string(usb_source?"USB Homebrew  /  ":"SD Homebrew  /  ")+path);
     else if(page==Page::Mods)SetTitleSubHeading("USB Mods  /  "+mod_folder);
     else if(page==Page::ModFolders)SetTitleSubHeading("Choose USB Atmosphere folder  /  X: Use folder");
     else if(page==Page::Installed)SetTitleSubHeading("Installed games  /  R Repair USB games  /  Left and right change page");
@@ -1024,8 +1012,8 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
         }
     }else if(page==Page::More){
         Text(vg,64,122,28,NVG_ALIGN_LEFT|NVG_ALIGN_TOP,fg,"More");
-        const char* names[]={"PC transfer","Cartridges","Homebrew apps","Save backups","Game mods","Help & recovery"};
-        const char* desc[]={"Send files between your\nPC and Switch.","View a cartridge or\nsave a copy.","Open apps and create\nHOME shortcuts.","Back up or restore\nyour game saves.","Manage mods for\nyour games.","Repair tools, guides\nand app updates."};
+        const char* names[]={"PC transfer","Cartridges","Ports & homebrew","Save backups","Game mods","Help & recovery"};
+        const char* desc[]={"Send files between your\nPC and Switch.","View a cartridge or\nsave a copy.","Manage port files, mods\nand HOME shortcuts.","Back up or restore\nyour game saves.","Manage mods for\nyour games.","Repair tools, guides\nand app updates."};
         const view::MenuIcon symbols[]={view::MenuIcon::MorePc,view::MenuIcon::MoreCartridge,view::MenuIcon::Homebrew,view::MenuIcon::MoreSave,view::MenuIcon::Mods,view::MenuIcon::MoreHelp};
         static_assert(std::size(names)==view::MoreCount && std::size(desc)==view::MoreCount && std::size(symbols)==view::MoreCount);
         for(size_t i=0;i<view::MoreCount;++i){
@@ -1124,7 +1112,7 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
         BoundedLine(vg,{54,602,1172,31},16,muted,detail);
     }else{
         const bool browsing=page==Page::Files || page==Page::Homebrew;
-        const auto heading=page==Page::Cleanup?std::string("Cleanup - ")+(cleanup_tickets?"Unused tickets":nexus::TargetName(cleanup_target)):page==Page::Homebrew?std::string(usb_source?"Homebrew apps on USB":"SD apps for startup timing"):std::string(usb_source?"Install from USB":"Install from SD");
+        const auto heading=page==Page::Cleanup?std::string("Cleanup - ")+(cleanup_tickets?"Unused tickets":nexus::TargetName(cleanup_target)):page==Page::Homebrew?std::string(usb_source?"Homebrew apps on USB":"Homebrew apps on SD"):std::string(usb_source?"Install from USB":"Install from SD");
         Text(vg,54,111,26,NVG_ALIGN_LEFT|NVG_ALIGN_TOP,fg,heading.c_str());
         path_line(page==Page::Cleanup?"Select an item to review. Saves and system files are kept.":path);
         if(!Count()){Text(vg,640,320,25,NVG_ALIGN_CENTER,fg,page==Page::Cleanup?"Nothing to clean up":"This folder is empty. Press B to go back.");return;}

@@ -43,7 +43,6 @@ struct OwoConfig {
     // Never replace an existing application or remove its save data.
     bool port_shortcut{};
     // Opt-in, separately identified SD8 startup measurement launcher.
-    bool startup_timing{};
 };
 
 auto install_forwarder(OwoConfig& config, NcmStorageId storage_id) -> Result;

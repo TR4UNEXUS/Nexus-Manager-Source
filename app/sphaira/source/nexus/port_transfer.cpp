@@ -99,7 +99,7 @@ public:
         R_TRY(Check());R_TRY(nexus::CheckUsbMutationAllowed());nexus::Space space{};
         if(plan.source_usb){R_TRY(nexus::QueryPhysicalSd(space));}else{R_TRY(client.GetSpace(plan.generation,space));}
         R_UNLESS(required<=space.free && space.free-required>=32*1024*1024,MAKERESULT(2,30));
-        if(!plan.source_usb){NexusVsdStatus vsd{};R_TRY(client.VirtualSdStatus(vsd));
+        if(!plan.source_usb&&plan.create_launcher){NexusVsdStatus vsd{};R_TRY(client.VirtualSdStatus(vsd));
             nexus_vsd::Profile profile{};R_UNLESS(nexus_vsd::Parse(plan.Destination(plan.nro),profile),Invalid);
             R_UNLESS(!nexus_vsd::UsbRoot(profile)||(vsd.reserved&NEXUS_VSD_CAP_USB_ROOT),nexus::Unavailable);}
         return 0;
@@ -205,17 +205,24 @@ std::string PortTransferPreview(const Plan& p){
     std::string text=p.name+"\n\n";
     for(const auto& root:p.roots)text+=(p.source_usb?"usb:":"sdmc:")+p.Source(root)+"\n  -> "+(p.source_usb?"sdmc:":"usb:")+p.Destination(root)+"\n";
     if(!p.retained_roots.empty())text+="\nShared runtime: source files will be kept for other ports.\n";
-    text+="\n"+utils::formatSizeStorage(p.bytes)+" — all files and subfolders included.\nA new HOME shortcut will launch the destination copy.\n\n";
-    text+=p.move?"Source files are removed after the copy is verified and its shortcut is created.":"The original folder is kept.";
+    text+="\n"+utils::formatSizeStorage(p.bytes)+" — all files and subfolders included.\n";
+    text+=p.create_launcher?"A new HOME shortcut will launch the destination copy.\n\n":"No forwarder is required. HOME shortcuts are managed separately.\n\n";
+    text+=p.move?"Source files are removed only after the destination is verified.":"The original folder is kept.";
     return text;
+}
+Result InspectPortFiles(ui::ProgressBox* p,Plan& plan,std::string& detail){
+    R_UNLESS(!plan.application&&!plan.create_launcher&&!plan.roots.empty(),nexus::Invalid);
+    PortIO io(p,plan);R_TRY(io.Open());detail="Reading the complete port folders";R_TRY(Inventory(io,plan));
+    detail=PortTransferPreview(plan);return 0;
 }
 Result TransferPort(ui::ProgressBox* p,const Plan& plan,Report& report){
     report={};PortIO io(p,plan);R_TRY(io.Open());
     // A preview cannot authorize a changed launcher target.
-    Game current;R_TRY(InspectGame(p,plan.application,current));
+    if(plan.application){Game current;R_TRY(InspectGame(p,plan.application,current));
     std::string path=current.forwarder_path;if(path.starts_with("sdmc:"))path.erase(0,5);
     R_UNLESS(current.forwarder_migratable && current.usb_forwarder==plan.source_usb && path==plan.nro && current.forwarder_args==plan.args &&
         (!plan.source_usb||current.forwarder_usb_path==plan.Source(plan.nro)),nexus::Invalid);
+    }else R_UNLESS(!plan.create_launcher,nexus::Invalid);
     const auto rc=Execute(io,plan,report);nexus::Log("port-transfer",rc,report.removed);
     return rc;
 }

@@ -31,7 +31,7 @@ inline std::string DefaultRoot(std::string_view nro){
 }
 struct Entry {std::string path;std::uint64_t size{};bool directory{};auto operator<=>(const Entry&)const=default;};
 struct Plan {
-    bool source_usb{},move{};
+    bool source_usb{},move{},create_launcher{true};
     std::uint64_t generation{},application{},bytes{};
     unsigned address_space{3};
     std::string name,nro,args,source_root,destination_root;
@@ -45,10 +45,10 @@ struct Report {
     Phase phase{Phase::Preparing};std::string path,detail;std::size_t copied{},reused{},removed{},retained{};bool launcher{};
     std::string Message(bool move)const{
         if(phase==Phase::Complete)return std::string(move?"Port move complete.":"Port copy complete. Both file copies were kept.")+
-            "\nA new HOME shortcut was created for the destination. The old shortcut was kept; remove it in System Settings after testing the new one."+
-            (retained?"\nShared runtime files were kept on the source for other ports.":"")+"\n\nPort saves/settings inside the selected folders were included. Console save data was not changed.";
+            (launcher?"\nA new HOME shortcut was created for the destination. The old shortcut was kept; remove it in System Settings after testing the new one.":"\nFiles are ready on the destination. HOME shortcuts were not changed. You can create a destination shortcut separately.")+
+            (retained?"\nShared runtime files were kept on the source for other ports.":"")+"\n\nPort saves/settings inside the selected folders were included. Console save data was not changed."+(detail.empty()?"":"\n"+detail);
         return "Port transfer stopped"+(path.empty()?std::string{}:" at "+path)+".\n"+detail+
-            (removed?"\nSome source files were removed. The verified destination and new shortcut were kept.":"\nThe original files were kept.")+
+            (removed?"\nSome source files were removed. The verified destination was kept.":"\nThe original files were kept.")+
             (launcher?"\nThe new destination shortcut was installed.":"\nDo not use an incomplete destination as a finished port.");
     }
 };
@@ -160,10 +160,12 @@ template<class IO> auto Execute(IO& io,const Plan& plan,Report& report){
         if(auto rc=HashFile(io,!plan.source_usb,plan.Destination(e.path),e.size,hash,buffer,progress))return rc;
         if(hash!=hashes[i])return R{IO::Invalid};
     }
-    report.phase=Phase::Launcher;report.path.clear();report.detail="Creating the destination HOME shortcut";
-    progress.Start(Phase::Launcher);io.Progress(progress);
-    if(auto rc=io.InstallLauncher())return rc;
-    report.launcher=true;
+    if(plan.create_launcher){
+        report.phase=Phase::Launcher;report.path.clear();report.detail="Creating the destination HOME shortcut";
+        progress.Start(Phase::Launcher);io.Progress(progress);
+        if(auto rc=io.InstallLauncher())return rc;
+        report.launcher=true;
+    }
     if(plan.move){
         report.phase=Phase::CheckingMove;report.detail="Rechecking both copies before removing source files";
         progress.Start(Phase::CheckingMove,plan.bytes*2);io.Progress(progress);

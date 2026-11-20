@@ -2,7 +2,6 @@
 #include "nexus/homebrew.hpp"
 #include "nexus/vsd_policy.hpp"
 #include "nexus/library.hpp"
-#include "nexus/startup_timing_protocol.h"
 #include "nacp_compat.hpp"
 #include "owo.hpp"
 #include "fs.hpp"
@@ -88,24 +87,7 @@ Result ScanHomebrew(ui::ProgressBox* p,std::vector<Game>& games){
     std::ranges::sort(result,[](const Game& a,const Game& b){return strcasecmp(a.name.c_str(),b.name.c_str())<0;});
     games.insert(games.end(),std::make_move_iterator(result.begin()),std::make_move_iterator(result.end()));R_SUCCEED();
 }
-Result CheckStartupTimingSupport(){
-    R_TRY(smInitialize());
-    u8 present=0;const auto name=smEncodeName("ams:usb");
-    const auto detected=hosversionAtLeast(12,0,0)?tipcDispatchInOut(smGetServiceSessionTipc(),65100,name,present):serviceDispatchInOut(smGetServiceSession(),65100,name,present);
-    if(R_FAILED(detected) || !present){smExit();return R_FAILED(detected)?detected:nexus::Unavailable;}
-    Service service{};
-    const auto opened=smGetService(&service,"ams:usb");
-    if(R_FAILED(opened)){smExit();return opened;}
-    NexusStartupSnapshot snapshot{};const u32 slot=0;
-    const auto rc=serviceDispatchIn(&service,NEXUS_STARTUP_QUERY,slot,
-        .buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},
-        .buffers={{&snapshot,sizeof(snapshot)}});
-    serviceClose(&service);smExit();R_TRY(rc);
-    R_UNLESS(snapshot.magic==NEXUS_STARTUP_MAGIC && snapshot.version==NEXUS_STARTUP_VERSION,nexus::Unavailable);
-    R_SUCCEED();
-}
-Result CreateHomebrewForwarder(ui::ProgressBox* p,const Item& item,u64 gen,bool timing){
-    if(timing)R_TRY(CheckStartupTimingSupport());
+Result CreateHomebrewForwarder(ui::ProgressBox* p,const Item& item,u64 gen){
     Game game;R_TRY(ReadHomebrew(item,gen,game));
     nexus::Client c;R_TRY(c.Check(gen));NexusVsdStatus status{};R_TRY(c.VirtualSdStatus(status));
     nexus_vsd::Profile profile{};R_UNLESS(nexus_vsd::Parse(item.path,profile),nexus::Invalid);
@@ -113,8 +95,6 @@ Result CreateHomebrewForwarder(ui::ProgressBox* p,const Item& item,u64 gen,bool 
     OwoConfig cfg{};cfg.nro_path=std::string("sdmc:")+profile.logical;cfg.usb_path=item.path;
     cfg.name=game.name;cfg.author="Nexus Manager / Homebrew";cfg.address_space=ForwarderAddressSpace::Bit39;
     cfg.core_mode=CpuCoreMode::Four;
-    cfg.startup_timing=timing;
-    if(timing)cfg.name+=" [USB timing]";
     cfg.nacp.supported_language_flag=0xffff;
     cfg.nacp.accessible_program_index_flags=1;
     cfg.nacp.initial_program_index=0;
@@ -132,21 +112,6 @@ Result CreateHomebrewForwarder(ui::ProgressBox* p,const Item& item,u64 gen,bool 
     for(u64 off=0;off<a.code;){R_TRY(p->ShouldExitResult());const auto size=std::min<u64>(buffer.size(),a.code-off);
         R_TRY(ReadExact(c,gen,item.path,off,buffer.data(),size));sha256ContextUpdate(&hash,buffer.data(),size);off+=size;p->UpdateTransfer(off,a.code);}
     cfg.usb_nro_hash.resize(32);sha256ContextGetHash(&hash,cfg.usb_nro_hash.data());R_TRY(c.Check(gen));
-    return install_forwarder(p,cfg,NcmStorageId_BuiltInUser);
-}
-Result CreateSdTimingForwarder(ui::ProgressBox* p,const Item& item){
-    R_TRY(CheckStartupTimingSupport());
-    R_UNLESS(!item.directory && item.path.size()<256 && nexus_vsd::Nro(item.path),nexus::Invalid);
-    nexus::Space physical{};R_TRY(nexus::QueryPhysicalSd(physical));
-    NroEntry entry{};R_TRY(nro_parse(item.path.c_str(),entry));
-    OwoConfig cfg{};cfg.startup_timing=true;cfg.nro_path="sdmc:"+item.path;
-    cfg.name=std::string(entry.GetName())+" [SD timing]";cfg.author="Nexus Manager / Homebrew";
-    cfg.address_space=ForwarderAddressSpace::Bit39;cfg.core_mode=CpuCoreMode::Four;
-    cfg.nacp.supported_language_flag=0xffff;cfg.nacp.accessible_program_index_flags=1;
-    std::strcpy(cfg.nacp.display_version,"1.0.0");
-    cfg.icon=nro_get_icon(item.path.c_str(),entry.icon_size,entry.icon_offset);
-    if(!cfg.icon.empty())cfg.icon=ImageNormalizeIcon(cfg.icon);
-    if(cfg.icon.empty()){fs::FsStdio rom;R_TRY(rom.read_entire_file("romfs:/usb-loader-icon.jpg",cfg.icon));}
     return install_forwarder(p,cfg,NcmStorageId_BuiltInUser);
 }
 Result ListHomebrew(const std::string& path,std::vector<Item>& items,u64& generation,bool usb) {

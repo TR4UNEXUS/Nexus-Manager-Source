@@ -48,10 +48,6 @@ foreach($mode in @('normal','open-fail','create-fail','write-fail','timed','unre
   & "$out/hbl_trace_tests.exe" $mode
   if($LASTEXITCODE){throw "Loader trace tests failed: $mode"}
 }
-& C:/devkitPro/msys2/usr/bin/gcc.exe -std=c11 -O1 -Wall -Wextra -Werror "-I$app/tests/hbl_mock" "-I$app/sphaira/include" "-I$app/hbl/source" "$app/tests/hbl_timing_tests.c" "$app/hbl/source/nexus_timing.c" -o "$out/hbl_timing_tests.exe"
-if($LASTEXITCODE){throw 'Loader timing test compile failed'}
-& "$out/hbl_timing_tests.exe"
-if($LASTEXITCODE){throw 'Loader timing tests failed'}
 & C:/devkitPro/msys2/usr/bin/g++.exe -std=c++20 -O1 -Wall -Wextra -Werror -DNEXUS_PATH_CHECKS "-I$app/tests/startup_mock" "-I$app/sphaira/include" "$app/tests/startup_trace_tests.cpp" "$app/sphaira/source/nexus/startup_trace.cpp" -o "$out/startup_trace_tests.exe"
 if($LASTEXITCODE){throw 'App startup trace test compile failed'}
 foreach($mode in @('normal','open-fail','create-fail','file-open-fail','write-fail','exit-write-fail')){

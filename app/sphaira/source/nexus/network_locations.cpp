@@ -303,7 +303,9 @@ Result RunInstallQueue(SessionPtr session,const std::vector<SelectedNetworkFile>
     for(auto& row:report)if(!Canonical(row.file.path)||!nexus::package::Supported(row.file.path)||row.file.size<16||row.file.size>MaxBytes||!paths.insert(row.file.path).second){
         row.state=NetworkQueueRecord::State::Failed;row.result=nexus::Invalid;row.detail="This selection is no longer valid. Browse the NAS and select the file again.";return row.result;
     }
+    u64 all_bytes{},finished_bytes{};for(const auto& row:report)all_bytes+=row.file.size;
     for(size_t i=0;i<report.size();++i){
+        ui::ProgressScope package_scope(progress,nexus::WorkPart(finished_bytes,all_bytes),nexus::WorkPart(finished_bytes+report[i].file.size,all_bytes));finished_bytes+=report[i].file.size;
         auto& row=report[i];
         progress->SetImage(0).SetTitle(Leaf(row.file.path)).SetProgressNote({});
         progress->SetActionName("Install "+std::to_string(i+1)+" / "+std::to_string(report.size())+" from "+session->protocol);

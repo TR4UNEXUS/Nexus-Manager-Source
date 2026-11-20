@@ -52,12 +52,13 @@ int main(int argc,char** argv){
     journal.ContentFile("9d66e704ff9c4ef28a03fd955a6701ce.nca","Program","Writing NCA",3200ULL*1048576,3200ULL*1048576,11'000'000'000);
     journal.ContentBytes(1256ULL*1048576,3200ULL*1048576);
     auto state=journal.Read(211'000'000'000);Cursor cursor;
-    transferui::InstallView view{true,"Writing NCA","Receiving from PC",90*1048576,120*1048576,false,false,false};
+    transferui::InstallView view{true,"Writing NCA","Receiving from PC",7500,10000,true,false,false};
     nvgBeginFrame(vg,1280,720,1);transferui::Draw(vg,{42,106,1196,533},state,cursor,view);nvgEndFrame(vg);
     assert(capture::text.size()>=20);
+    assert(std::any_of(capture::text.begin(),capture::text.end(),[](const auto& line){return line.text=="Overall 75%";}));
     std::ofstream svg(argv[2]);svg<<"<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720'><rect width='1280' height='720' fill='#090f1d'/><rect x='42' y='106' width='1196' height='533' rx='18' fill='#141e32' stroke='#2c3a54'/><text x='56' y='50' font-family='Segoe UI' font-size='23' fill='white'>NEXUS MANAGER</text>";
     for(const auto& text:capture::text)svg<<"<text x='"<<text.x<<"' y='"<<text.y+text.font<<"' font-family='Segoe UI' font-size='"<<text.font<<"' fill='white'>"<<Xml(text.text)<<"</text>";
-    svg<<"<rect x='66' y='382' width='1148' height='5' rx='2' fill='#434e73'/><rect x='66' y='382' width='451' height='5' rx='2' fill='#6e9df4'/><text x='580' y='684' font-family='Segoe UI' font-size='20' fill='white'>Ⓑ Stop task</text></svg>";svg.close();
+    svg<<"<rect x='66' y='382' width='1008' height='5' rx='2' fill='#434e73'/><rect x='66' y='382' width='756' height='5' rx='2' fill='#6e9df4'/><text x='580' y='684' font-family='Segoe UI' font-size='20' fill='white'>â’· Stop task</text></svg>";svg.close();
     // Oversized and multilingual filenames and error messages stay in their
     // own rows; log timestamps do not overlap message text or the footer.
     for(int scenario=0;scenario<4;++scenario){

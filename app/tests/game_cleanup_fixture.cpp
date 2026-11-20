@@ -1,6 +1,7 @@
 // Host adapters. The plan, scan and mutation functions below are extracted
 // unchanged from production. No console filesystem or network is accessed.
 #include "nexus/game_cleanup_core.hpp"
+#include "nexus/task_progress.hpp"
 #include "nexus/nx_Policy.hpp"
 #include "nexus/safety.hpp"
 #include "nexus/usb_import_diagnostic.hpp"
@@ -36,8 +37,8 @@ struct NcmContentMetaKey{u64 id{};u32 version{};u8 type{},install_type{};};
 struct NcmContentStorage{nexus::Target target{};};struct NcmContentMetaDatabase{};
 namespace sphaira::ncm {struct ContentStorageRecord{NcmContentMetaKey key;u8 storage_id{};};}
 namespace sphaira::ui {struct ProgressBox {bool cancel{};Result ShouldExitResult(){return cancel?Cancelled:0;}
-    void SetTitle(const std::string&){}void SetProgressNote(const std::string&){}void SetOverallTransfer(u64,u64,const std::string&,bool){}
-};}
+    void NewTransfer(const std::string&){}void SetTitle(const std::string&){}void SetProgressNote(const std::string&){}void SetOverallTransfer(u64,u64,const std::string&,bool){}
+};struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};}
 namespace sphaira::fs {struct FsNativeSd{Result CreateDirectoryRecursively(const char*){return 0;}};}
 namespace nexus {
 constexpr Result Invalid=::Invalid,Unavailable=102;

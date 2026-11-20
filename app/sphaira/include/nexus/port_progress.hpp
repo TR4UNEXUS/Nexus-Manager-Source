@@ -51,7 +51,7 @@ struct Progress {
     std::string Note() const {
         if(phase==Phase::Verifying || phase==Phase::CheckingMove || phase==Phase::Removing)
             return std::string("Checked ")+ByteSize(done)+" / "+ByteSize(extent)+"   |   Keep storage connected";
-        if(phase==Phase::Complete)return "All files verified; destination shortcut created";
+        if(phase==Phase::Complete)return "All destination files verified";
         return "Game size "+ByteSize(total)+"   |   Keep storage connected";
     }
 };

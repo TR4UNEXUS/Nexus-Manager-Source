@@ -60,9 +60,14 @@ inline void Draw(NVGcontext* vg,const Vec4& rect,const nexus::transfer::activity
         const double fraction=file.size?std::clamp(double(file.bytes)/double(file.size),0.0,1.0):0;
         metrics=Amount(file.bytes)+" / "+Amount(file.size)+"    |    "+std::to_string(unsigned(fraction*100))+"%";
         if(file.rate.sampled){char rate[64]{};std::snprintf(rate,sizeof(rate),"    |    %.2f MiB/s",file.rate.bytes_per_second/1048576.0);metrics+=rate;}
-        Bar(vg,x,y+276,w,fraction);
     }else metrics=file.name.empty()?"Waiting for content":"Current operation: "+file.phase;
     Line(vg,x,y+244,w,17,metrics);
+    // The file counter remains useful detail; the only bar tracks the whole install.
+    if(install.active&&install.weighted&&install.size>0){
+        const double overall=std::clamp(double(install.offset)/double(install.size),0.0,1.0);
+        Bar(vg,x,y+276,w-140,overall);
+        Line(vg,x+w-130,y+263,130,15,"Overall "+std::to_string(unsigned(overall*100))+"%");
+    }
     auto stage=file.measuring?file.phase:(install.active?install.stage:state.stage);
     if(install.stopping)stage="Stopping safely. Waiting for storage to finish.";
     else if(install.slow)stage="Storage is taking longer than usual. Keep it connected.";

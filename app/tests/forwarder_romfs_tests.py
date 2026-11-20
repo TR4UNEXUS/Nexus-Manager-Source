@@ -101,8 +101,6 @@ int main(int argc,char** argv){try{
         {"/nexusUsbPath",bytes("/switch/nfsmw-nx/nfsmw-nx.nro")},{"/nexusNroHash",std::vector<u8>(32,0xAB)}};
     check(usb,argc>1?argv[1]:nullptr);
     check({usb[0],usb[1]}); // ordinary HOME app, two files
-    auto timed=usb;timed.push_back({"/nexusStartupTiming",{1,0,0,0}});check(timed);
-    check({usb[0],usb[1],timed.back()}); // timed SD uses the same marker, no USB fields
     check({{"/control.nacp",std::vector<u8>(0x4000,0x4E)},{"/icon_AmericanEnglish.dat",std::vector<u8>(17431,0xDA)}});
     std::mt19937 rng(601);
     for(unsigned trial=0;trial<2000;++trial){FileEntries entries;

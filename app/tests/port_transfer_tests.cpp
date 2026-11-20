@@ -1,4 +1,6 @@
 #include "nexus/port_transfer_core.hpp"
+#include "nexus/port_files_plan.hpp"
+#include "ui/port_library_layout.hpp"
 #include "nexus/library.hpp"
 #include "nexus/port_catalog.hpp"
 #ifdef NDEBUG
@@ -27,7 +29,7 @@ struct Fake {
         assert(p.copied==written_bytes);
         if(!progress.empty())assert(p.Percent()>=progress.back().Percent());
         if(p.phase!=Phase::Complete)assert(p.Percent()<100);
-        else assert(launcher && Complete());
+        else assert((!plan.create_launcher||launcher) && Complete());
         progress.push_back(p);
     }
     Result Stat(bool u,const std::string& p,Entry& e,bool& exists){if(auto r=Check())return r;auto it=Store(u).find(p);exists=it!=Store(u).end();if(exists)e={p,it->second.dir?0:it->second.data.size(),it->second.dir};return 0;}
@@ -42,7 +44,7 @@ struct Fake {
     bool Complete(){for(const auto& e:plan.entries){auto& s=Store(!plan.source_usb);auto it=s.find(plan.Destination(e.path));if(it==s.end()||it->second.dir!=e.directory)return false;if(!e.directory&&it->second.data!=original.at(plan.Source(e.path)).data)return false;}return true;}
     std::map<std::string,Node> original;
     Result InstallLauncher(){if(auto r=Check())return r;assert(Complete());launcher=true;++installs;if(installed)installed(*this);return 0;}
-    Result RemoveSource(const std::string& p,std::uint64_t size){if(auto r=Check())return r;assert(launcher&&Complete());auto& s=Store(plan.source_usb);assert(s.at(p).data.size()==size);s.erase(p);++removed;return 0;}
+    Result RemoveSource(const std::string& p,std::uint64_t size){if(auto r=Check())return r;assert((!plan.create_launcher||launcher)&&Complete());auto& s=Store(plan.source_usb);assert(s.at(p).data.size()==size);s.erase(p);++removed;return 0;}
 };
 Fake Fixture(bool usb=false,bool move=false){
     Fake f;f.plan.source_usb=usb;f.plan.move=move;f.plan.nro="/switch/left4dead/wine-nx-runtime.nro";f.plan.roots={"/switch/left4dead"};
@@ -59,13 +61,30 @@ int main(){
         assert(!FindKnownPort(0,"/switch/wine/wine-nx-runtime.nro"));
         for(const auto& k:KnownPorts)if(k.shared)assert(FindKnownPort(0,k.nro,k.args)==&k);
     }
+    {Plan plan;assert(FilesPlan(false,"/switch/test/test.nro",{"/switch/test","/switch/test/data","/Games/Test"},"",plan));
+        assert(!plan.application&&!plan.create_launcher&&plan.roots.size()==2&&plan.Destination(plan.nro)=="/switch/test/test.nro");
+        assert(FilesPlan(true,"/homebrew/test/sdmc/ports/game/game.nro",{"/homebrew/test/sdmc/ports/game","/homebrew/test/sdmc/data/game"},"",plan));
+        assert(plan.nro=="/ports/game/game.nro"&&plan.Source(plan.nro)=="/homebrew/test/sdmc/ports/game/game.nro"&&plan.roots[1]=="/data/game");
+        assert(FilesPlan(false,"/ports/game/game.nro",{"/ports/game"},"/homebrew/test/sdmc",plan));
+        assert(plan.Destination(plan.nro)=="/homebrew/test/sdmc/ports/game/game.nro");
+        assert(!FilesPlan(false,"/switch/test.nro",{"/switch"},"",plan));
+        assert(!FilesPlan(false,"/switch/test.nro",{"/atmosphere/contents/0100b00b51230000"},"",plan));
+        assert(!FilesPlan(true,"/homebrew/test/sdmc/test/test.nro",{"/switch/other"},"",plan));
+    }
+    {using namespace nexus::portgrid;
+        assert(std::string(Filter(0))=="SD card + USB drive");
+        assert(Navigate(0,13,-6)==0&&Navigate(6,13,-6)==0&&Navigate(11,13,1)==12&&Start(12)==12);
+        assert(Navigate(11,12,6)==11&&Navigate(0,0,1)==0);
+        for(size_t n=0;n<PageSize;++n){const auto r=Card(n);assert(r.x>=54&&r.x+r.w<=1226&&r.y>=180&&r.y+r.h<=590);
+            for(size_t i=0;i<n;++i){const auto a=Card(i);assert(a.x+a.w<=r.x||r.x+r.w<=a.x||a.y+a.h<=r.y||r.y+r.h<=a.y);}}
+    }
     assert(DefaultRoot("/switch/left4dead/wine-nx-runtime.nro")=="/switch/left4dead");
     assert(DefaultRoot("/switch/game.nro")=="/switch/game.nro");
     assert(DefaultRoot("/ports/quake/bin/quake.nro")=="/ports/quake/bin");
     for(auto bad:{"/","/switch","/Nintendo/Contents/a","/atmosphere/x","/SWITCH/NEXUSMANAGER/x","/switch/a/../b","/switch/a?b","/switch/a.","/switch/a//b"})assert(!Safe(bad));
     assert(Safe("/switch/left4dead/drive_c/Left 4 Dead/left4dead.exe"));assert(!Within("/switch/ab","/switch/a"));
-    for(bool usb:{false,true})for(bool move:{false,true}){
-        auto f=Fixture(usb,move);Report r;assert(!Execute(f,f.plan,r));assert(r.phase==Phase::Complete&&f.launcher&&f.Complete());
+    for(bool usb:{false,true})for(bool move:{false,true})for(bool shortcut:{false,true}){
+        auto f=Fixture(usb,move);f.plan.create_launcher=shortcut;Report r;assert(!Execute(f,f.plan,r));assert(r.phase==Phase::Complete&&f.launcher==shortcut&&f.Complete());
         assert(f.progress.back().copied==f.plan.bytes && f.progress.back().reused==0 && f.progress.back().Percent()==100);
         // Full destination readback remains mandatory; redundant pre-copy and
         // temporary-file hash passes must not return as the game grows.
@@ -73,12 +92,14 @@ int main(){
         assert(f.buffer_requests==1 && f.flushes==5);
         assert(f.Store(usb).contains("/switch/unrelated.nro"));assert(move?f.removed==4:f.Store(usb)==f.original);
         const auto count=f.steps;
-        for(unsigned at=1;at<=count;++at){auto fault=Fixture(usb,move);fault.fail_at=at;Report report;assert(Execute(fault,fault.plan,report));
+        for(unsigned at=1;at<=count;++at){auto fault=Fixture(usb,move);fault.plan.create_launcher=shortcut;fault.fail_at=at;Report report;assert(Execute(fault,fault.plan,report));
             assert(fault.progress.back().phase!=Phase::Complete);
-            if(!fault.launcher)assert(fault.Store(usb)==fault.original);
-            if(fault.removed)assert(fault.launcher&&fault.Complete());
+            if(shortcut&&!fault.launcher)assert(fault.Store(usb)==fault.original);
+            if(fault.removed)assert((!shortcut||fault.launcher)&&fault.Complete());
         }
-        std::cout<<(usb?"USB -> SD":"SD -> USB")<<(move?" move":" copy")<<": "<<count<<" injected failure points passed\n";
+        assert(shortcut?f.installs==1:f.installs==0);
+        assert(r.Message(move).find(shortcut?"new HOME shortcut was created":"HOME shortcuts were not changed")!=std::string::npos);
+        std::cout<<(shortcut?"With launcher: ":"Files only: ")<<(usb?"USB -> SD":"SD -> USB")<<(move?" move":" copy")<<": "<<count<<" injected failure points passed\n";
     }
     {auto f=Fixture();auto& d=f.Store(true);d[f.plan.nro]={false,{6,7,0,9}};auto before=d;Report r;assert(Execute(f,f.plan,r)==Fake::Conflict);assert(d==before&&!f.writes&&!f.launcher);}
     {auto f=Fixture();f.usb=f.sd;Report r;assert(!Execute(f,f.plan,r));assert(r.reused==4&&!f.writes);

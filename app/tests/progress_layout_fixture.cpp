@@ -121,7 +121,7 @@ int main(int argc,char** argv){
         if(network)assert(nexus::progressui::Within(layout.note,above_footer)&&layout.metric.y+layout.metric.h<layout.note.y&&layout.note.y+layout.note.h<layout.footer_y);
         if(cover)assert(layout.cover.x+layout.cover.w<layout.column.x);
         NVGcontext v;box.Draw(&v,&theme);assert(v.saved.empty());
-        bool rate{},units{};for(const auto& item:v.draws){
+        bool rate{},units{},overall_note{},working{};for(const auto& item:v.draws){
             if(item.kind=="text"||item.kind=="body"){
                 assert(item.colour=="#ffffff");
                 if(item.clip.y>=layout.action.y){
@@ -131,9 +131,12 @@ int main(int argc,char** argv){
                 }
                 if(item.text.find("NAS download:")!=std::string::npos)rate=true;
                 if(item.text.find("MB/s")!=std::string::npos)units=true;
+                if(item.text=="Overall task progress")overall_note=true;
+                if(item.text=="Working...")working=true;
             }
         }
-        assert(!network||rate);if(!network&&!long_text&&mode==0)assert(units);
+        assert(!network||rate);if(!network&&!long_text&&mode==0)assert(overall_note&&!units);
+        if(!network&&!long_text&&mode==4)assert(working);
         if(!long_text&&mode==0){
             for(const auto& item:v.draws)if(item.text==box.m_action||item.text==box.m_title||item.text==box.m_transfer){
                 if(cover)assert(Near(item.rect.x,layout.column.x));else assert(Near(item.rect.x+item.rect.w/2,layout.column.x+layout.column.w/2));
@@ -146,5 +149,5 @@ int main(int argc,char** argv){
         if(cover&&!network&&mode==0&&!long_text)Svg(std::string(argv[1])+"/cover-transfer.svg",v);
         ++cases;tick=1'000'000'000;
     }
-    std::cout<<"Production progress layout: "<<cases<<" cover/network/long-text/warning/detail/empty-progress cases, centered columns, clipping, wrapping, footer clearance and speed units passed\n";
+    std::cout<<"Production progress layout: "<<cases<<" cover/network/long-text/warning/detail/empty-progress cases, centered columns, clipping, wrapping, footer clearance, overall progress and unknown-total status passed\n";
 }

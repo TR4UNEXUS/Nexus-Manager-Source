@@ -1,3 +1,4 @@
+#include "nexus/task_progress.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -7,7 +8,7 @@
 #include <span>
 #include <string>
 #include <vector>
-using u8=std::uint8_t;using u32=std::uint32_t;using u64=std::uint64_t;using s32=std::int32_t;using Result=u32;
+using u8=std::uint8_t;using u32=std::uint32_t;using u64=std::uint64_t;using s32=std::int32_t;using s64=std::int64_t;using Result=u32;
 #define R_TRY(call) do{const auto result_=(call);if(result_)return result_;}while(0)
 #define R_UNLESS(condition,result) do{if(!(condition))return result;}while(0)
 #define R_SUCCEEDED(result) ((result)==0)
@@ -23,10 +24,10 @@ Result ncmContentMetaDatabaseHas(int*,bool* out,const NcmContentMetaKey* key){*o
 struct SavedBool{bool value{true};bool Get()const{return value;}};
 struct SavedFilters{SavedBool m_ticket_only,m_skip_base,m_skip_patch,m_skip_addon,m_skip_data_patch,m_skip_ticket;} saved;
 struct App{static SavedFilters* GetApp(){return &saved;}};
-namespace ui {struct ProgressBox{};}
+namespace ui {struct ProgressBox{};struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};}
 namespace source {struct Base{};}
 namespace container {struct CollectionEntry{std::string name;u64 id{};u32 version{};u8 kind{};};using Collections=std::vector<CollectionEntry>;}
-struct NcaCollection:container::CollectionEntry{u8 type{};};
+struct NcaCollection:container::CollectionEntry{u8 type{};s64 size{};};
 struct CnmtCollection:NcaCollection{std::vector<NcaCollection> ncas;NcmContentMetaKey key;};
 struct TikCollection{};
 // OUTCOME_PRODUCTION

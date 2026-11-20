@@ -1900,7 +1900,9 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
         }
     }
 
+    size_t title_index{};
     for (auto& cnmt : cnmts) {
+        ui::ProgressScope title_scope(pbox,nexus::WorkPart(title_index,cnmts.size()),nexus::WorkPart(title_index+1,cnmts.size()));++title_index;
         ON_SCOPE_EXIT(
             yati->Cleanup(cnmt);
             for (auto& nca : cnmt.ncas) {
@@ -1908,7 +1910,7 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
             }
         );
 
-        R_TRY(yati->InstallCnmtNca(tickets, cnmt, collections));
+        {ui::ProgressScope meta_scope(pbox,0,200);R_TRY(yati->InstallCnmtNca(tickets, cnmt, collections));}
 
         u32 latest_version_num;
         bool skip = false;
@@ -1922,9 +1924,13 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
         }
 
         log_write("installing nca's\n");
+        u64 total{},done{};for(const auto& nca:cnmt.ncas)total+=std::max<s64>(nca.size,1);
         for (auto& nca : cnmt.ncas) {
-            R_TRY(yati->InstallNca(tickets, nca));
+            const auto weight=std::max<s64>(nca.size,1);
+            ui::ProgressScope content_scope(pbox,200+nexus::WorkPart(done,total,8800),200+nexus::WorkPart(done+weight,total,8800));
+            R_TRY(yati->InstallNca(tickets, nca));done+=weight;
         }
+        ui::ProgressScope finish_scope(pbox,9000,10000);
 
         R_TRY(yati->ImportTickets(tickets));
         R_TRY(yati->RemoveInstalledNcas(cnmt));
@@ -1972,7 +1978,11 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
 
     std::ranges::sort(collections, sorter);
 
+    u64 package_work{},package_done{};for(const auto& entry:collections)package_work+=std::max<s64>(entry.size,1);
     for (const auto& collection : collections) {
+        const auto weight=std::max<s64>(collection.size,1);
+        ui::ProgressScope content_scope(pbox,nexus::WorkPart(package_done,package_work,9000),nexus::WorkPart(package_done+weight,package_work,9000));
+        package_done+=weight;
         if (collection.name.ends_with(".nca") || collection.name.ends_with(".ncz")) {
             auto& nca = ncas.emplace_back(NcaCollection{collection});
             if (collection.name.ends_with(".cnmt.nca") || collection.name.ends_with(".cnmt.ncz")) {
@@ -2034,7 +2044,10 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
         }
     }
     pbox->TransferEvent("CNMT hashes and content sizes checked.");
+    size_t finished_titles{};
     for (auto& cnmt : cnmts) {
+        const auto title_index=finished_titles++;
+        ui::ProgressScope finish_scope(pbox,9000+nexus::WorkPart(title_index,cnmts.size(),1000),9000+nexus::WorkPart(finished_titles,cnmts.size(),1000));
         u32 latest_version_num;
         bool skip = false;
         R_TRY(yati->GetLatestVersion(cnmt, latest_version_num, skip));

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "nexus/task_progress.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -65,6 +66,7 @@ void swkbdConfigSetSubText(SwkbdConfig*,const char*){}
 Result swkbdShow(SwkbdConfig*,char*,size_t){return Cancelled;}void swkbdClose(SwkbdConfig*){}
 int ini_puts(const char*,const char*,const char*,const char*){return 1;}
 namespace sphaira::ui {
+struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};
 enum class ProgressBoxOption{None};
 enum class Button{X};struct Action {std::string label;std::function<void()> callback;};
 struct Row{std::string label;std::function<void()> callback;virtual ~Row()=default;};

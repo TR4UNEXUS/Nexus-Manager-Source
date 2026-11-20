@@ -22,6 +22,7 @@ private:
     u64 source_generation{},destination_generation{},usb_generation{},sd_generation{};
     bool sd_open{},device_open{},vsd_available{};FsFileSystem sd{};FsDeviceOperator device{};
     std::array<u8,16> cid{};nexus::Client client;
+    u64 work_total{},work_done{};
     FsFile read_file{},write_file{};bool read_open{},write_open{};std::string read_path,write_path,stage,final,reviewed_root,progress_path,progress_action;u64 progress_done{};
     template<class F> ::Result SdPath(const std::string& path,F&& call){
         std::array<char,FS_MAX_PATH> buffer{};R_UNLESS(Canonical(path)&&path.size()<buffer.size(),nexus::Invalid);
@@ -81,13 +82,16 @@ public:
         return 0;
     }
     size_t BufferSize()const{return std::min<size_t>(1024*1024,usb_generation?client.TransferLimit():1024*1024);}
+    void BeginWork(u64 total){work_total=std::max<u64>(total,1);work_done=0;if(progress)progress->SetDetailedProgress(0,"Preparing files",{},"Overall task progress");}
+    void ReadProgress(u64 count){if(!work_total||!progress)return;work_done=std::min(work_total,work_done+count);
+        progress->SetDetailedProgress(nexus::WorkPart(work_done,work_total,98),progress_action+" / "+progress_path,{},"Overall task progress");}
     void Progress(const char* action,const std::string& path,u64 done,u64 total){
         if(!progress)return;
         if(progress_path!=path||progress_action!=action||done<progress_done){progress_path=path;progress_action=action;progress->NewTransfer(path);}
         progress_done=done;
         progress->SetTitle(path).SetActionName(action);
-        if(progress_action=="Removing")progress->UpdateTransfer(0,0).SetProgressNote(std::to_string(done)+" of "+std::to_string(total)+" reviewed items removed");
-        else progress->UpdateTransfer(done,total).SetProgressNote("Progress for the current item. Keep both storage devices connected.");
+        if(progress_action=="Removing"&&!work_total)progress->SetOverallTransfer(done,std::max<u64>(total,1),"Deleting / "+path,true).SetProgressNote(std::to_string(done)+" of "+std::to_string(total)+" items removed");
+        else if(!work_total)progress->NewTransfer(path);
     }
     void EndRead(){if(read_open)fsFileClose(&read_file);read_open=false;read_path.clear();}
     Result Stat(bool usb,const std::string& path,Entry& e,bool& exists){
@@ -112,9 +116,10 @@ public:
     }
     Result Read(bool usb,const std::string& path,u64 off,void* data,size_t size,u64& actual){
         actual=0;R_TRY(Check());R_UNLESS(Canonical(path)&&size<=UINT64_MAX-off,Invalid);
-        if(usb)return client.Read(usb_generation,path,off,data,size,actual);
-        R_UNLESS(sd_open,Invalid);if(!read_open||read_path!=path||off==0){EndRead();R_TRY(SdPath(path,[&](const char* native){return fsFsOpenFile(&sd,native,FsOpenMode_Read,&read_file);}));read_open=true;read_path=path;}
-        return fsFileRead(&read_file,off,data,size,FsReadOption_None,&actual);
+        if(usb){R_TRY(client.Read(usb_generation,path,off,data,size,actual));}
+        else {R_UNLESS(sd_open,Invalid);if(!read_open||read_path!=path||off==0){EndRead();R_TRY(SdPath(path,[&](const char* native){return fsFsOpenFile(&sd,native,FsOpenMode_Read,&read_file);}));read_open=true;read_path=path;}
+            R_TRY(fsFileRead(&read_file,off,data,size,FsReadOption_None,&actual));}
+        ReadProgress(actual);return 0;
     }
     Result Preflight(u64 bytes){
         R_TRY(Mutation(destination_usb));nexus::Space space{};
@@ -209,14 +214,14 @@ Result PrepareDelete(ui::ProgressBox* p,const Selection& selection,DeletePlan& p
     plan={};detail="This item is protected, has an ambiguous name, or the storage changed. Refresh File manager before trying again.";
     const bool stage=StagePath(selection.item.path);R_UNLESS(Safe(selection.item.path)||stage,nexus::Invalid);
     IO io(p,selection.usb,selection.generation,false,0,false,selection.item.path);R_TRY(io.Open());
-    detail="Reading and checking the exact items to review for deletion. Nothing has been removed.";R_TRY(Prepare(io,selection.usb,selection.item.path,plan.snapshot,stage));
+    detail="Listing the selected files and folders. File contents are not read.";R_TRY(Inventory(io,selection.usb,selection.item.path,plan.snapshot,stage));
     R_UNLESS(plan.snapshot.entries[0].directory==selection.item.directory&&(!selection.item.directory?plan.snapshot.entries[0].size==selection.item.size:true),nexus::Invalid);
     plan.source=selection;plan.prepared=true;detail=DeletePreview(plan);return 0;
 }
 Result Delete(ui::ProgressBox* p,const DeletePlan& plan,Report& report){
     report={};report.detail="The prepared deletion is no longer valid";
     auto run=[&]()->Result{R_UNLESS(plan.prepared&&plan.snapshot.root==plan.source.item.path,nexus::Invalid);
-        IO io(p,plan.source.usb,plan.source.generation,false,0,false,plan.source.item.path);R_TRY(io.Open());return nexus::files::Delete(io,plan.source.usb,plan.snapshot,report);};
+        IO io(p,plan.source.usb,plan.source.generation,false,0,false,plan.source.item.path);R_TRY(io.Open());return nexus::files::QuickDelete(io,plan.source.usb,plan.snapshot,report);};
     const auto rc=run();if(R_FAILED(rc))Failure(report,false,true,{});return rc;
 }
 }

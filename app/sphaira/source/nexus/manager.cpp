@@ -481,6 +481,8 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
         size_t active{};
         return batch::Run(report,[&]{return p->ShouldExitResult();},check,
             [&](const batch::Entry& e){
+                u64 total{},done{};for(size_t j=0;j<report.items.size();++j){const auto size=std::max<u64>(report.items[j].entry.size,1);total+=size;if(j<active)done+=size;}
+                ui::ProgressScope package_scope(p,nexus::WorkPart(done,total),nexus::WorkPart(done+std::max<u64>(e.size,1),total));
                 nexus::install::Diagnostic detail;
                 const auto result=Install(p,usb,source_generation,e.path,report.target,destination_generation,&detail);
                 report.items[active].detail=R_FAILED(result)?detail.text:detail.completion;
