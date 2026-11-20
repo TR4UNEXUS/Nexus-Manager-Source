@@ -83,7 +83,7 @@ public:
     }
     size_t BufferSize()const{return std::min<size_t>(1024*1024,usb_generation?client.TransferLimit():1024*1024);}
     void BeginWork(u64 total){work_total=std::max<u64>(total,1);work_done=0;if(progress)progress->SetDetailedProgress(0,"Preparing files",{},"Overall task progress");}
-    void ReadProgress(u64 count){if(!work_total||!progress)return;work_done=std::min(work_total,work_done+count);
+    void ReadProgress(u64 count){if(progress)progress->AddTransferBytes(count);if(!work_total||!progress)return;work_done=std::min(work_total,work_done+count);
         progress->SetDetailedProgress(nexus::WorkPart(work_done,work_total,98),progress_action+" / "+progress_path,{},"Overall task progress");}
     void Progress(const char* action,const std::string& path,u64 done,u64 total){
         if(!progress)return;

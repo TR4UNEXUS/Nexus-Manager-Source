@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_library_startup.hpp"
+#include "nexus/routing_backup.hpp"
 #include "nexus/usb_import.hpp"
 #include "nexus/lifecycle.hpp"
 #include "nexus/nx_Client.hpp"
@@ -35,6 +36,7 @@ UsbLibraryStartupResult ReadStartupLibrary(){
         out.detail="Could not check the previous USB repair state. Keep any recovery backups and open Repair USB games to review it.";
         return out;
     }
+    if(R_SUCCEEDED(MissingRoutingWithConsoleBackup(out.console_backup_available))&&out.console_backup_available)return out;
     UsbImportScan scan;
     const auto rc=ScanUsbImports(nullptr,scan,status.generation,&startup_library.cancel,false);
     if(Stopped())return {};
@@ -95,7 +97,7 @@ bool TakeUsbLibraryStartupCheck(UsbLibraryStartupResult& out){
     // A result may have waited behind a browser/dialog. Do not report the
     // previous drive's games after unplugging or replacing it. Recovery of an
     // existing SD journal is deliberately independent of USB availability.
-    if(!startup_library.result.pending&&(startup_library.result.affected_games||R_FAILED(startup_library.result.result))){
+    if(!startup_library.result.pending&&(startup_library.result.console_backup_available||startup_library.result.affected_games||R_FAILED(startup_library.result.result))){
         nexus::Client usb;nexus::Status status{};
         if(R_FAILED(usb.Query(status))||!status.Available()||status.generation!=startup_library.generation){
             startup_library.result={};out={};return true;

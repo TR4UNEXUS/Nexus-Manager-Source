@@ -63,7 +63,7 @@ size_t Write(char* bytes,size_t size,size_t count,void* ptr){
 }
 int Progress(void* ptr,curl_off_t total,curl_off_t done,curl_off_t,curl_off_t){
     auto* request=static_cast<Request*>(ptr);if(request->Stopped())return 1;
-    if(request->progress && total>0)request->progress->UpdateTransfer(done,total);
+    if(request->progress && total>0)request->progress->UpdateTransferBytes(done,total);
     return 0;
 }
 bool AllowedRedirect(std::string_view url){

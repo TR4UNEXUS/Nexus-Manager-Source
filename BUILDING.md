@@ -10,7 +10,7 @@ sh tools/setup-libnx.sh
 sh build-nexus-wsl.sh
 ```
 
-`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.22 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
+`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.24 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
 
 The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro`. No console key is embedded in the default build. Keep raw USB mounting disabled: Nexus firmware owns the drive.
 
@@ -20,9 +20,11 @@ The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro
 
 ## Tests
 
-Use a host C++20 compiler and Python 3. The library import tests also link OpenSSL (`libssl-dev` on Debian/Ubuntu):
+Use a host C++20 compiler and Python 3. The library import tests also link OpenSSL (`libssl-dev` on Debian/Ubuntu). Progress-layout tests also require FreeType and pkg-config (`libfreetype6-dev` and `pkg-config`):
 
 ```sh
+python3 tests/run_ticket_snapshot_tests.py
+python3 tests/run_progress_layout_tests.py
 python3 tests/run_port_icon_cache_tests.py
 python3 tests/run_port_library_tests.py
 python3 tests/run_port_manager_tests.py

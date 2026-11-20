@@ -794,7 +794,7 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                 log_write("setting placeholder size: %zu\n", t->write_size.load());
                 R_TRY(ncmContentStorageSetPlaceHolderSize(std::addressof(cs), std::addressof(t->nca->placeholder_id), t->write_size));
 
-                if (!config.ignore_distribution_bit && header.distribution_type == nca::DistributionType_GameCard) {
+                if (header.distribution_type == nca::DistributionType_GameCard) {
                     header.distribution_type = nca::DistributionType_System;
                     t->nca->modified = true;
                 }
@@ -952,6 +952,7 @@ Result Yati::writeFuncInternal(ThreadData* t) {
             const auto wsize = std::min<s64>(t->read_buffer_size, buf.size() - off);
             R_TRY(destination->Write(cs,t->nca->placeholder_id,t->nca->usb_path,t->write_size,t->write_offset,buf.data()+off,wsize));
 
+            pbox->AddTransferBytes(wsize);
             off += wsize;
             t->write_offset += wsize;
             ueventSignal(t->GetProgressEvent());
@@ -1136,7 +1137,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
             R_TRY(nca::DecryptHeader(&nca.header,keys,nca.header));
             R_UNLESS(info.size==nca.header.size,nexus::Invalid);
             R_TRY(VerifyReusedNca(nca));R_TRY(HasRequiredTicket(nca.header,tickets));
-            if(!config.ignore_distribution_bit && nca.header.distribution_type==nca::DistributionType_GameCard){
+            if(nca.header.distribution_type==nca::DistributionType_GameCard){
                 // A correct original hash does not make cartridge-only data
                 // suitable for installed use. Do not report a successful fix
                 // while silently reusing the old broken copy.
@@ -1389,7 +1390,7 @@ Result Yati::FindContent(const NcmPackagedContentInfo& packed, u64 owner,
                     (header.content_type==expected_type || (expected_type==nca::ContentType_Data && header.content_type==nca::ContentType_PublicData));
                 if (!candidate) break;
             }
-            sha256ContextUpdate(&hash,buffer.data(),count);off+=count;pbox->UpdateTransfer(off,expected_size);
+            sha256ContextUpdate(&hash,buffer.data(),count);off+=count;pbox->AddTransferBytes(count);pbox->UpdateTransfer(off,expected_size);
         }
         if (!candidate) continue;
         u8 digest[32];sha256ContextGetHash(&hash,digest);
@@ -1732,7 +1733,7 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
             }
             hash.Update(buffer.data(),count,keys.header_key);
             if(exact_output_hash)sha256ContextUpdate(&output_hash,buffer.data(),count);
-            off+=count;pbox->ContentBytes(off,size);
+            off+=count;pbox->AddTransferBytes(count);pbox->ContentBytes(off,size);
             // Keep completion pending until hash, size and registration pass.
             pbox->UpdateTransfer(std::min(completed+off,total-std::max<u64>(1,total/1000)),total);
         }
@@ -1923,6 +1924,9 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
             continue;
         }
 
+        if(!source->IsStream())std::stable_sort(cnmt.ncas.begin(),cnmt.ncas.end(),[](const auto& a,const auto& b){
+            return (a.type==NcmContentType_Control)>(b.type==NcmContentType_Control);
+        });
         log_write("installing nca's\n");
         u64 total{},done{};for(const auto& nca:cnmt.ncas)total+=std::max<s64>(nca.size,1);
         for (auto& nca : cnmt.ncas) {
@@ -2141,7 +2145,7 @@ Result InspectExisting(ui::ProgressBox* pbox,u64 generation,CnmtCollection& cnmt
             for(u64 off=0;off<stat.size;){
                 R_TRY(pbox->ShouldExitResult());R_TRY(usb.Check(generation));const auto count=std::min<u64>(buffer.size(),stat.size-off);
                 R_TRY(usb.Read(generation,path,off,buffer.data(),count,got));R_UNLESS(got==count,nexus::Invalid);
-                hash.Update(buffer.data(),count,keys.header_key);off+=count;pbox->UpdateTransfer(off,stat.size);
+                hash.Update(buffer.data(),count,keys.header_key);off+=count;pbox->AddTransferBytes(count);pbox->UpdateTransfer(off,stat.size);
             }
             const void* expected=entry.has_expected_hash?static_cast<const void*>(entry.expected_hash):&entry.content_id;
             R_UNLESS(hash.Matches(expected,entry.has_expected_hash?32:16),Result_YatiInvalidNcaSha256);
@@ -2251,7 +2255,7 @@ Result ManagerVerifyPublishedContent(Yati& yati,const CnmtCollection& cnmt){
             R_TRY(yati.pbox->ShouldExitResult());R_TRY(yati.destination->Validate());
             const auto count=std::min<s64>(buffer.size(),size-offset);
             R_TRY(ncmContentStorageReadContentIdFile(&yati.cs,buffer.data(),count,&nca->content_id,offset));
-            sha256ContextUpdate(&hash,buffer.data(),count);offset+=count;yati.pbox->UpdateTransfer(offset,size);
+            sha256ContextUpdate(&hash,buffer.data(),count);offset+=count;yati.pbox->UpdateTransferBytes(offset,size);
         }
         u8 digest[32];sha256ContextGetHash(&hash,digest);R_UNLESS(!memcmp(digest,nca->hash,sizeof(digest)),nexus::Invalid);
     }
@@ -2344,7 +2348,7 @@ Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const f
     for(s64 offset=0;offset<size;){
         R_TRY(pbox->ShouldExitResult());const auto count=std::min<s64>(buffer.size(),size-offset);u64 got{};
         R_TRY(source.Read(buffer.data(),offset,count,&got));R_UNLESS(got==u64(count),nexus::Invalid);
-        sha256ContextUpdate(&package_hash,buffer.data(),count);offset+=count;pbox->UpdateTransfer(offset,size);
+        sha256ContextUpdate(&package_hash,buffer.data(),count);offset+=count;pbox->UpdateTransferBytes(offset,size);
     }
     std::array<u8,32> package_digest{};sha256ContextGetHash(&package_hash,package_digest.data());
     R_UNLESS(manager_update::DigestMatches(package_digest,expected_sha256),nexus::Invalid);
@@ -2448,7 +2452,10 @@ Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const f
 Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path, const ConfigOverride& override) {
     if(override.diagnostic)override.diagnostic->Clear();
     auto source = std::make_unique<source::File>(fs, path);
-    R_TRY(source->GetOpenResult());
+    const auto open_result=source->GetOpenResult();
+    if(R_FAILED(open_result) && override.diagnostic && nexus::package::SplitPart(path.s))
+        override.diagnostic->text="Split XCI could not be opened. Keep every numbered part in the same folder, choose the first part (.xc0 or .xci.00), and check that no parts are missing or empty. The original files were not changed.";
+    R_TRY(open_result);
     s64 source_size{-1};
     if (R_FAILED(source->GetSize(&source_size))) {
         source_size = -1;
@@ -2467,6 +2474,10 @@ Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::
     }
 
     std::unique_ptr<container::Base> container;
+    if(nexus::package::SplitPart(path.s) && !source->HasJoinedParts()) {
+        if(override.diagnostic)override.diagnostic->text="This is one part of a split XCI. Put all parts in the same folder on SD or USB and choose the first part in Install games. A single part cannot be streamed as a complete game.";
+        return Result_XciInvalidHeader;
+    }
     const auto kind = nexus::package::Classify(path.s);
     if (kind == nexus::package::Kind::Nsp || kind == nexus::package::Kind::Nsz) {
         container = std::make_unique<container::Nsp>(source, source_size);

@@ -32,17 +32,23 @@ template<class IO> std::uint32_t Run(IO& io, Report& report) {
         return 0;
     }
     size_t missing{};for(const auto& image:snapshot)if(!image.exists)++missing;
+    if(indexes.titles.empty()&&indexes.mappings.empty()&&indexes.content.empty()){
+        report={"No USB game links are saved in this system. This is normal when no USB games are installed.\n\nTo check games already stored on the drive, choose Installed games > Repair USB games. Nothing was changed.",true};
+        return 0;
+    }
     bool incomplete=indexes.titles.empty() || indexes.mappings.empty() || indexes.content.empty();
     for(const auto& [id,alias]:indexes.titles){(void)alias;if(!indexes.mappings.contains(id))incomplete=true;}
     for(const auto& [id,ids]:indexes.mappings){
         if(!indexes.titles.contains(id))incomplete=true;
-        for(const auto& content:ids)if(repair::Nonzero(content) && !indexes.content.contains(content))incomplete=true;
+        for(const auto& content:ids)if(!repair::Nonzero(content) || !indexes.content.contains(content))incomplete=true;
     }
     report.offer_scan=true;
     if(missing || incomplete)
         report.detail="USB is connected. The game library may have missing entries. Choose Repair library to check for safe repairs.";
     else report.detail="USB is connected and its game library can be read.";
-    report.detail+="\n\nGame files have not been fully checked. For a game that will not start, select it in My games and choose Check and repair.\n\nNothing was changed.";
+    report.detail+="\n\nSaved game links: "+std::to_string(indexes.titles.size())+"\nContent links: "+std::to_string(indexes.content.size());
+    if(missing==3)report.detail+="\n\nIf the atmosphere folder was deleted, open Help & recovery > USB library backup to check this system's recovery copy.";
+    report.detail+="\n\nGame files have not been fully checked. For a game that will not start, select it in Installed games and choose Check and repair.\n\nNothing was changed.";
     return 0;
 }
 }

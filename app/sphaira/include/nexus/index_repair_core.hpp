@@ -13,7 +13,7 @@ struct Indexes {
     std::set<Id> content;
     bool operator==(const Indexes&) const = default;
 };
-inline constexpr size_t MaxFile=16+registration::MaxContent*16, MaxJournal=512*1024;
+inline constexpr size_t MaxFile=16+registration::MaxContent*16, MaxJournal=16*1024*1024;
 inline std::uint32_t Get32(const Bytes& b,size_t p){
     std::uint32_t v=0;for(int i=0;i<4;++i)v|=std::uint32_t(b[p+i])<<(8*i);return v;
 }

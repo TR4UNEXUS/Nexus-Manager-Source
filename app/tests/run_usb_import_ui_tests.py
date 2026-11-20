@@ -26,14 +26,13 @@ startup_header = (root / 'sphaira/include/nexus/usb_library_startup.hpp').read_t
 startup_header = '\n'.join(line for line in startup_header.splitlines()
                            if not line.lstrip().startswith('#'))
 fixture = fixture.replace('// USB_LIBRARY_STARTUP_HEADER', startup_header)
-cases = cases.replace('// STARTUP_USB_PRODUCTION',
-                      function(menu, 'void Menu::OpenUsbRepair()') + '\n' +
-                      function(menu, 'bool Menu::PollUsbLibraryStartup()'))
-assert menu.index('if(PollUsbLibraryStartup())return;', menu.index('void Menu::Update(')) < menu.index('MenuBase::Update(c,touch);', menu.index('void Menu::Update('))
+cases = cases.replace('// STARTUP_USB_PRODUCTION',function(menu, 'void Menu::OpenUsbRepair()'))
+assert 'PollUsbLibraryStartup' not in menu and 'StartUsbLibraryStartupCheck()' not in menu
+assert 'USB games need attention' not in menu
 assert 'StopUsbLibraryStartupCheck();' in function(production, 'void DisplayUsbImport()')
 actions_start = menu.index('    if(page==Page::Installed){', menu.index('void Menu::SetupActions()'))
-actions_end = menu.index('    }else if(page==Page::Mods)', actions_start)
-cases = cases.replace('// LIBRARY_INSTALLED_ACTIONS', menu[menu.index('\n', actions_start)+1:actions_end])
+actions = function(menu[actions_start:], '    if(page==Page::Installed){')
+cases = cases.replace('// LIBRARY_INSTALLED_ACTIONS', actions[actions.index('{')+1:-1])
 touch_start = menu.index('            if(touch->in_range({850,110,376,46}))')
 cases = cases.replace('// LIBRARY_IMPORT_TOUCH', menu[touch_start:menu.index('\n', touch_start)])
 draw_start = menu.index('        Text(vg,54,116,28,', menu.index('void Menu::Draw('))

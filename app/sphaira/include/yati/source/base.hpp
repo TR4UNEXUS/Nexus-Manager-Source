@@ -16,6 +16,8 @@ struct Base {
         return ReadExact(*this, buf, off, size, Result_YatiInvalidNcaReadSize);
     }
 
+    virtual bool HasJoinedParts() const { return false; }
+
     virtual bool IsStream() const {
         return false;
     }

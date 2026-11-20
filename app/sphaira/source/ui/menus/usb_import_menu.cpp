@@ -122,7 +122,7 @@ const char* FriendlyStatus(UsbImportStatus status,bool selected){
     switch(status){case UsbImportStatus::Ready:return selected?"Ready to repair":"Not selected";
         case UsbImportStatus::AlreadyRegistered:return selected?"Included in family repair":"Already on this system";
         case UsbImportStatus::Incomplete:return "Needs checking";
-        case UsbImportStatus::TicketMissing:return "Needs game permissions";}
+        case UsbImportStatus::TicketMissing:return "Ticket not found in system";}
     return "Needs checking";
 }
 std::string ItemDetails(const UsbImportTitle& item,bool selected,const std::string& family_reason){
@@ -132,7 +132,7 @@ std::string ItemDetails(const UsbImportTitle& item,bool selected,const std::stri
         case UsbImportStatus::Ready:text+=selected?"Ready to verify and repair with this game's USB updates and DLC. The existing USB files will be reused.":family_reason.empty()?"This item is not part of the current repair plan. A newer version or a native registration can take priority.":"This item is ready individually, but its whole game family must pass the checks before any member is repaired.";break;
         case UsbImportStatus::AlreadyRegistered:text+=selected?"This USB item is already healthy. It is included so the base game, updates and DLC stay together while this family is repaired.":"This item is already registered on this system. Its current registration will be kept.";break;
         case UsbImportStatus::Incomplete:text+="This item cannot be added safely yet. Read the check below before retrying.";break;
-        case UsbImportStatus::TicketMissing:text+="The files are present, but this system needs their game permissions. On the original SD card/system where the game works, use Prepare USB. If that system is unavailable or preparation cannot provide the permission, reinstall from your original backup.";break;
+        case UsbImportStatus::TicketMissing:text+="The required ticket was not found in the current system ticket database. USB stores only optional backup copies. This check does not prove a working game is broken. If the game will not launch, use Prepare USB on the original system or reinstall from your original backup. Do not delete a working game because of this result.";break;
     }
     if(!family_reason.empty())text+="\n\nGame family not selected: "+family_reason;
     if(!item.reason.empty())text+="\n\nCheck: "+item.reason;
@@ -219,7 +219,7 @@ void Preview(std::shared_ptr<UsbImportScan> scan){
     if(scan->titles.empty()){
         details=(scan->nca_files||scan->unreadable_ncas?std::string("Content files are present, but the scan could not read any supported game details. The drive is not necessarily empty."):std::string("No installed USB games were found."))+"\n\nThis tool adds games already installed on USB. For NSP, NSZ, XCI or XCZ files, use Install games instead.\n\n"+scan->detail;
     }else if(!counts.ready)details+=plan.summary.affected_games?"\n\nNo complete game family is ready to repair. Browse the items to see what they need, or use Prepare USB for missing permissions.":"\n\nNo USB game family needs repair. Existing registrations will be kept.";
-    rows.push_back({scan->titles.empty()?"No games ready to add":"Scan summary",scan->titles.empty()?"Open for the scan findings and next steps":note,details});
+    rows.push_back({scan->titles.empty()?"No installed USB games found":"Scan summary",scan->titles.empty()?"Open for the scan findings and next steps":note,details});
     for(const auto index:counts.order){
         const auto& item=scan->titles[index];
         const bool known=item.record.key.id&&Kind(item.record.key.type)!=view::Kind::Unknown;
@@ -229,14 +229,14 @@ void Preview(std::shared_ptr<UsbImportScan> scan){
         const auto family=counts.family[index].empty()?item.name:counts.family[index];
         rows.push_back({known?family:"Unrecognised content",subtitle,ItemDetails(item,counts.selected[index],reason)});
     }
-    auto menu=std::make_unique<ReviewMenu>("Use games from this USB",summary,note,std::move(rows));
-    menu->SetSecondary("Prepare USB",[scan]{PreparationHelp(scan);});
+    auto menu=std::make_unique<ReviewMenu>("Repair USB games",summary,note,std::move(rows));
+    if(!scan->titles.empty())menu->SetSecondary("Prepare USB",[scan]{PreparationHelp(scan);});
     if(counts.ready&&plan.summary.repairable_games)menu->SetPrimary("Repair ready games",[scan,counts,families=plan.summary.repairable_games,ptr=menu.get()]{
         auto consumed=std::make_shared<bool>();
         App::Push<OptionBox>("Repair "+std::to_string(families)+(families==1?" game?\n\n":" games?\n\n")+view::ReadyBreakdown(counts)+"\n\nNexus verifies the USB files and backs up this system's game records first. Each family's USB base game, updates and DLC are handled together, including healthy USB members. Native registrations are kept. Game files and saves stay in place. Blocked families are skipped and listed in the report.\n\nGame permissions added during repair remain installed after a rollback. Keep SD and USB connected, then fully restart the Switch afterward.","Cancel","Repair games",0,[scan,ptr,consumed](auto choice){
             if(*consumed)return;*consumed=true;
             if(!choice||*choice!=1||ptr->ShouldPop())return;ptr->SetPop();auto result=std::make_shared<UsbImportResult>();
-            App::Push<ProgressBox>(0,"Add games to HOME","Verifying and registering existing files",[scan,result](ProgressBox* p){return ImportUsbLibrary(p,*scan,*result);},[result](Result rc){
+            App::Push<ProgressBox>(0,"Repair USB games","Verifying and registering existing files",[scan,result](ProgressBox* p){return ImportUsbLibrary(p,*scan,*result);},[result](Result rc){
                 if(R_FAILED(rc)&&result->detail.empty())result->detail="The import could not finish. Review the diagnostic and per-item outcomes before trying again.";
                 ResultPage(result,rc);
             },ProgressBoxOption::None,nexus::safety::Operation::MayWrite);

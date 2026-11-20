@@ -35,7 +35,7 @@ option(ENABLE_DEVOPTAB_WEBDAV "" OFF)
 # it also adds 230k to binary size, and i don't think anyone will use it.
 option(ENABLE_DEVOPTAB_SFTP "" OFF)
 
-set(sphaira_VERSION 0.2.22)
+set(sphaira_VERSION 0.2.23)
 
 project(sphaira
     VERSION ${sphaira_VERSION}
@@ -92,6 +92,8 @@ add_executable(sphaira
     source/nexus/file_manager.cpp
     source/ui/menus/manager_tools_menu.cpp
     source/nexus/dump.cpp
+    source/nexus/routing_backup.cpp
+    source/ui/menus/routing_backup_menu.cpp
     source/nexus/index_recovery.cpp
     source/nexus/usb_import.cpp
     source/nexus/usb_import_scan.cpp

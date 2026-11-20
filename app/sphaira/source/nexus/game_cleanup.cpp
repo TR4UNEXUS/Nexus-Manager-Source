@@ -270,7 +270,7 @@ Result ReadRights(ui::ProgressBox* p,const Inventory& i,std::map<Id,Rights>& rig
     }
     return session.Check();
 }
-Result MissingTicketGames(ui::ProgressBox* p,const Inventory& i,std::set<u64>& missing){
+[[maybe_unused]] Result MissingTicketGames(ui::ProgressBox* p,const Inventory& i,std::set<u64>& missing){
     missing.clear();TicketList tickets,after;R_TRY(ReadTickets(p,tickets));std::map<Id,Rights> rights;R_TRY(ReadRights(p,i,rights));
     R_TRY(ReadTickets(p,after));R_UNLESS(tickets==after,Invalid);
     for(const auto& ref:i.references)if(core::UserApplication(ref.application))for(const auto& id:ref.content){
@@ -449,19 +449,19 @@ Result ScanUnusedTickets(ui::ProgressBox* p,CleanupScan& scan){
 }
 Result ScanCleanup(ui::ProgressBox* p,Target target,CleanupScan& scan){
     scan={};Inventory i;R_TRY(ReadInventory(p,target,i));const auto physical=PhysicalIds(i);
-    std::set<u64> missing;const auto ticket_result=MissingTicketGames(p,i,missing);R_TRY(p->ShouldExitResult());
-    if(R_FAILED(ticket_result)){missing.clear();nexus::Log("cleanup-ticket-check",ticket_result);}
-    std::set<u64> families=missing;
+    // Ticket availability is not proof that content is stale. In particular,
+    // never offer an installed HOME game for deletion because a permission
+    // lookup or an optional ticket backup was missing.
+    std::set<u64> families;
     for(const auto& r:i.references)if(core::UserApplication(r.application)&&!i.home.contains(r.application))families.insert(r.application);
     for(auto app:families){const auto selected=core::Select(app,i.references,physical);u64 size{};for(const auto& id:selected.remove)size+=i.files.at(id).size;
         if(selected.remove.empty()&&std::none_of(i.records.begin(),i.records.end(),[&](const auto& r){return r.application==app;}))continue;
-        scan.items.push_back({CleanupKind::Game,target,app,i.generation,size,{},AppName(i,app)+(missing.contains(app)?" - Ticket missing":""),
-            missing.contains(app)?"A base game, update or DLC file needs a ticket that is missing in this system. Reinstall from your original backup or use USB repair to keep playing; delete this copy only if unwanted.":"Not on HOME in this system. May belong to another SD card or emuMMC. Review before deleting."});}
+        scan.items.push_back({CleanupKind::Game,target,app,i.generation,size,{},AppName(i,app),
+            "Not on HOME in this system. This does not mean the game is broken or unwanted; it may belong to another SD card or emuMMC. Review before deleting.",true});}
     if(!i.usb_unknown)for(const auto& id:core::Unreferenced(i.references,physical)){
         const auto& f=i.files.at(id);scan.items.push_back({CleanupKind::Content,target,0,i.generation,f.size,f.id,"Unreferenced file "+HexId(&f.id),"No game metadata on this storage references this NCA. Select only if you no longer need it."});}
     for(const auto& [id,size]:i.placeholders)scan.items.push_back({CleanupKind::Placeholder,target,0,i.generation,size,Content(id),"Unfinished install "+HexId(id.data()),"Could be a paused download. Close all installers and delete only if the install is no longer wanted."});
     scan.detail=std::to_string(scan.items.size())+" items to review. Nothing selected or deleted automatically. Saves, tickets, mods, homebrew folders and system files are kept.";
-    if(R_FAILED(ticket_result))scan.detail+=" Some content permissions could not be checked; missing-ticket games may not be listed. This is not proof that their tickets are present.";
     scan.detail+=" Use Cleanup > Unused tickets to check the system ticket database.";
     if(i.usb_unknown)scan.detail+=" Some USB metadata could not be identified. Game/content deletion is blocked until it can be read; unfinished installs can still be reviewed.";
     return 0;
@@ -477,6 +477,10 @@ static Result PrepareGameRemoval(ui::ProgressBox* p,const CleanupItem& item,Game
     }
     auto state=std::make_shared<RemovalState>();R_TRY(ReadInventory(p,item.target,state->before,item.kind!=CleanupKind::Game));const auto& i=state->before;
     if(item.generation)R_UNLESS(item.generation==i.generation,nexus::Unavailable);
+    if(item.kind==CleanupKind::Game&&item.cleanup_only&&i.home.contains(item.application)){
+        plan.detail="This game is now on HOME. It is no longer eligible for cleanup, so no files were removed. Use Installed games if you intentionally want to uninstall it.";
+        return Invalid;
+    }
     std::set<Id> ids;
     if(item.kind==CleanupKind::Placeholder){const auto found=i.placeholders.find(Identity(item.content));R_UNLESS(found!=i.placeholders.end()&&found->second==item.bytes,Invalid);plan.bytes=found->second;plan.files=1;}
     else{
@@ -582,7 +586,7 @@ Digest RemovalFingerprint(const GameRemovalPlan& plan){
     Sha256Context hash;sha256ContextCreate(&hash);
     const auto add=[&](const void* data,size_t size){sha256ContextUpdate(&hash,data,size);};
     const auto number=[&](u64 value){add(&value,sizeof(value));};
-    number(static_cast<u64>(plan.item.kind));number(static_cast<u64>(plan.item.target));number(plan.item.application);number(plan.item.generation);
+    number(static_cast<u64>(plan.item.kind));number(static_cast<u64>(plan.item.target));number(plan.item.application);number(plan.item.generation);number(plan.item.cleanup_only);
     add(&plan.item.content,sizeof(plan.item.content));number(plan.files);number(plan.bytes);number(plan.shared);number(plan.records);
     if(plan.state){
         for(const auto& file:plan.state->files){add(&file.id,16);number(file.size);}

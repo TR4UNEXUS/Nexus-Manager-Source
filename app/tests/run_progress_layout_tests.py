@@ -23,6 +23,6 @@ with tempfile.TemporaryDirectory(prefix='nexus-progress-layout-') as directory:
         binary=work/('layout'+opt)
         subprocess.run(['g++','-std=c++20',opt,'-UNDEBUG','-Wall','-Wextra','-Werror',
             '-Wno-unused-parameter','-Wno-misleading-indentation','-fsanitize=undefined',
-            '-I',str(root/'sphaira/include'),str(generated),'-o',str(binary)],check=True)
-        subprocess.run([str(binary),str(output)],check=True)
+            '-I',str(root/'sphaira/include'),str(generated),'-o',str(binary),*subprocess.check_output(['pkg-config','--cflags','--libs','freetype2'],text=True).split()],check=True)
+        subprocess.run([str(binary),str(output),str(root/'assets/romfs/fonts/DejaVuSans-Bold.ttf')],check=True)
 print('SVG layout probes:',output)

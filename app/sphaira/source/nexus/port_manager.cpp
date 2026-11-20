@@ -80,7 +80,7 @@ public:
     Result NewText(const std::string& path,const std::string& text){R_TRY(Create(path,text.size()));R_TRY(Write(path,0,text.data(),text.size()));R_TRY(Flush());std::string read;R_TRY(Text(path,read));R_UNLESS(read==text,Bad);return 0;}
     Result Hash(const std::string& path,u64 size,std::string& out){Info i;R_TRY(Stat(path,i));R_UNLESS(i.exists&&!i.directory&&i.size==size,Bad);Sha256Context sha;sha256ContextCreate(&sha);std::vector<u8> buffer(256*1024);
         if(progress&&!quiet_hash)progress->NewTransfer(path);
-        for(u64 off=0;off<size;){const auto n=std::min<u64>(buffer.size(),size-off);u64 got{};R_TRY(Read(path,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&sha,buffer.data(),n);off+=n;if(progress&&!quiet_hash)progress->UpdateTransfer(off,size);}
+        for(u64 off=0;off<size;){const auto n=std::min<u64>(buffer.size(),size-off);u64 got{};R_TRY(Read(path,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&sha,buffer.data(),n);off+=n;if(progress&&!quiet_hash)progress->UpdateTransferBytes(off,size);}
         u8 hash[32];sha256ContextGetHash(&sha,hash);out=nexusapp::HexId(hash);R_TRY(Stat(path,i));R_UNLESS(i.exists&&!i.directory&&i.size==size,Bad);return Check();}
 };
 using Json=std::unique_ptr<yyjson_doc,decltype(&yyjson_doc_free)>;
@@ -256,7 +256,7 @@ Result CreateShortcut(ui::ProgressBox* p,Port& port){
         if(R_SUCCEEDED(nexusapp::ReadHomebrewIcon(game,cfg.icon)))cfg.icon=ImageNormalizeIcon(cfg.icon);
         std::array<u8,128> header{};u64 got{};R_TRY(disk.Read(port.nro,0,header.data(),header.size(),got));R_UNLESS(got==header.size(),Bad);nexus::library::Assets assets{};R_UNLESS(nexus::library::Header(header,info.size,assets),Bad);
         ui::ProgressScope executable(p,0,3000);Sha256Context hash;sha256ContextCreate(&hash);std::vector<u8> buffer(256*1024);p->NewTransfer("Checking the port executable");
-        for(u64 off=0;off<assets.code;){const auto n=std::min<u64>(buffer.size(),assets.code-off);R_TRY(disk.Read(port.nro,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&hash,buffer.data(),n);off+=n;p->UpdateTransfer(off,assets.code);}cfg.usb_nro_hash.resize(32);sha256ContextGetHash(&hash,cfg.usb_nro_hash.data());
+        for(u64 off=0;off<assets.code;){const auto n=std::min<u64>(buffer.size(),assets.code-off);R_TRY(disk.Read(port.nro,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&hash,buffer.data(),n);off+=n;p->UpdateTransferBytes(off,assets.code);}cfg.usb_nro_hash.resize(32);sha256ContextGetHash(&hash,cfg.usb_nro_hash.data());
     }else{NroEntry entry{};R_TRY(nro_parse(port.nro.c_str(),entry));cfg.icon=nro_get_icon(port.nro.c_str(),entry.icon_size,entry.icon_offset);if(!cfg.icon.empty())cfg.icon=ImageNormalizeIcon(cfg.icon);}
     if(cfg.icon.empty()){fs::FsStdio rom;R_TRY(rom.read_entire_file("romfs:/usb-loader-icon.jpg",cfg.icon));}
     R_TRY(disk.Check());{ui::ProgressScope install(p,port.usb?3000:0,10000);R_TRY(install_forwarder(p,cfg,NcmStorageId_BuiltInUser));}auto updated=port;
@@ -294,7 +294,7 @@ int ZCALLBACK ZipError(voidpf,voidpf stream){return static_cast<ZipReader*>(stre
 Result CopyPayload(ui::ProgressBox* p,Disk& source,Disk& dest,const std::string& from,const std::string& to,u64 size,std::string& hash){
     Sha256Context sha;sha256ContextCreate(&sha);R_TRY(dest.Create(to,size));
     {ui::ProgressScope copy(p,0,5000);std::vector<u8> buffer(256*1024);p->NewTransfer(from);
-        for(u64 off=0;off<size;){const auto n=std::min<u64>(buffer.size(),size-off);u64 got{};R_TRY(source.Read(from,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&sha,buffer.data(),n);R_TRY(dest.Write(to,off,buffer.data(),n));off+=n;p->UpdateTransfer(off,size);}
+        for(u64 off=0;off<size;){const auto n=std::min<u64>(buffer.size(),size-off);u64 got{};R_TRY(source.Read(from,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&sha,buffer.data(),n);R_TRY(dest.Write(to,off,buffer.data(),n));off+=n;p->UpdateTransferBytes(off,size);}
         R_TRY(dest.Flush());}
     u8 digest[32];sha256ContextGetHash(&sha,digest);hash=nexusapp::HexId(digest);
     {ui::ProgressScope check(p,5000,7500);std::string original;R_TRY(source.Hash(from,size,original));R_UNLESS(original==hash,Bad);}
@@ -341,7 +341,7 @@ Result ImportMod(ui::ProgressBox* p,const Port& port,const std::string& root,con
         u64 done{},total{};for(const auto& file:plan.files)total+=std::max<u64>(file.size,1);
         for(size_t i=0;i<entries.size();++i){auto& file=plan.files[i];const auto weight=std::max<u64>(file.size,1);ui::ProgressScope range(p,nexus::WorkPart(done,total,9500),nexus::WorkPart(done+weight,total,9500));done+=weight;R_UNLESS(unzGoToFilePos64(zip,&entries[i].position)==UNZ_OK&&unzOpenCurrentFile(zip)==UNZ_OK,Bad);bool open=true;struct Current{unzFile f;bool& open;~Current(){if(open)unzCloseCurrentFile(f);}}current{zip,open};
             const auto destination=plan.store+"/payload/"+file.relative;R_TRY(target.Create(destination,file.size));Sha256Context sha;sha256ContextCreate(&sha);{ui::ProgressScope extract(p,0,7000);p->NewTransfer(file.relative);
-            for(u64 off=0;off<file.size;){R_TRY(source.Check());const auto n=std::min<u64>(buffer.size(),file.size-off);const auto got=unzReadCurrentFile(zip,buffer.data(),n);R_UNLESS(got>0&&static_cast<u64>(got)<=n,Bad);sha256ContextUpdate(&sha,buffer.data(),got);R_TRY(target.Write(destination,off,buffer.data(),got));off+=got;p->UpdateTransfer(off,file.size);}
+            for(u64 off=0;off<file.size;){R_TRY(source.Check());const auto n=std::min<u64>(buffer.size(),file.size-off);const auto got=unzReadCurrentFile(zip,buffer.data(),n);R_UNLESS(got>0&&static_cast<u64>(got)<=n,Bad);sha256ContextUpdate(&sha,buffer.data(),got);R_TRY(target.Write(destination,off,buffer.data(),got));off+=got;p->UpdateTransferBytes(off,file.size);}
             R_UNLESS(unzReadCurrentFile(zip,buffer.data(),1)==0,Bad);const auto crc=unzCloseCurrentFile(zip);open=false;R_UNLESS(crc==UNZ_OK&&!reader.error,Bad);R_TRY(target.Flush());}u8 digest[32];sha256ContextGetHash(&sha,digest);file.hash=nexusapp::HexId(digest);{ui::ProgressScope verify(p,7000,10000);std::string check;R_TRY(target.Hash(destination,file.size,check));R_UNLESS(check==file.hash,Bad);}
         }
     }

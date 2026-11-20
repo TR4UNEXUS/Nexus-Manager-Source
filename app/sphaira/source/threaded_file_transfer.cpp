@@ -489,6 +489,7 @@ Result ThreadData::writeFuncInternal() {
             R_TRY(this->SetPullBuf(buf, buf.size()));
         } else {
             R_TRY(this->wfunc(buf.data(), this->write_offset, buf.size()));
+            pbox->AddTransferBytes(size);
         }
 
         this->write_offset += size;
@@ -554,6 +555,7 @@ Result TransferInternal(ui::ProgressBox* pbox, s64 size, const ReadCallback& rfu
             }
 
             R_TRY(wfunc(buf.data(), offset, bytes_read));
+            pbox->AddTransferBytes(bytes_read);
 
             offset += bytes_read;
             pbox->UpdateTransfer(offset, size);

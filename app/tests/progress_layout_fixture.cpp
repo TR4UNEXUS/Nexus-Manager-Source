@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/progress_layout.hpp"
+#include "nexus/progress_presentation.hpp"
 #include "nexus/network_rate.hpp"
 #include "nexus/progress_safety.hpp"
 #include "nexus/transfer_activity.hpp"
@@ -9,6 +10,8 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #include <iostream>
 #include <string>
 #include <vector>
@@ -17,57 +20,69 @@ using Vec4=nexus::progressui::Rect;using ProgressRect=Vec4;
 struct NVGcolor{const char* value;};
 enum {NVG_ALIGN_LEFT=1,NVG_ALIGN_CENTER=2,NVG_ALIGN_TOP=8,NVG_ALIGN_MIDDLE=16};
 enum ThemeEntryID{ThemeEntryID_TEXT,ThemeEntryID_PROGRESSBAR_BACKGROUND,ThemeEntryID_LINE_SEPARATOR};
-struct Theme{NVGcolor GetColour(ThemeEntryID id){return {id==ThemeEntryID_TEXT?"#ffffff":"#49305e"};}};
-struct DrawItem{std::string kind,text,colour;Vec4 rect,clip;float font{};};
-struct State{float font=18,line_height=1.2f;int align=NVG_ALIGN_LEFT|NVG_ALIGN_TOP;Vec4 clip{0,0,1280,720};};
+struct Theme{NVGcolor GetColour(ThemeEntryID id){return {id==ThemeEntryID_TEXT?"#ffffff":"#29334d"};}};
+struct DrawItem{std::string kind,text,colour;Vec4 rect,clip;float font{};bool bold{};};
+int nvgFindFont(void*,const char*){return 1;}
+struct App{static int GetDefaultImage(){return 1;}};
+struct State{bool bold{};float font=18,line_height=1.2f;int align=NVG_ALIGN_LEFT|NVG_ALIGN_TOP;Vec4 clip{0,0,1280,720};};
 struct NVGcontext{State state;std::vector<State> saved;std::vector<DrawItem> draws;};
 namespace transferui {
 // INSTALL_VIEW_PRODUCTION
 void Draw(NVGcontext*,Vec4,const nexus::transfer::activity::Snapshot&,const nexus::transfer::activity::Cursor&,const InstallView&){assert(false&&"Ordinary progress must not open the PC activity view");}
 }
+void nvgFontFace(NVGcontext* v,const char*){v->state.bold=true;}
 struct NVGtextRow{const char* start{};const char* end{};const char* next{};float width{};};
 std::string operator""_i18n(const char* text,std::size_t size){return std::string(text,size);}
-float Width(const char* start,const char* end,float font){float out{};for(auto p=start;p<end;++p)if((static_cast<unsigned char>(*p)&0xc0)!=0x80)out+=font*0.53f;return out;}
-std::vector<NVGtextRow> Lines(const char* start,const char* end,float width,float font){
+FT_Library font_library{};FT_Face font_regular{},font_bold{};
+float Width(const char* start,const char* end,float font,bool bold=false){
+    auto face=bold?font_bold:font_regular;assert(!FT_Set_Char_Size(face,0,FT_F26Dot6(font*64),72,72));float out{};
+    for(auto p=start;p<end;){
+        unsigned cp=static_cast<unsigned char>(*p++),remaining{};
+        if(cp>=0xf0){cp&=7;remaining=3;}else if(cp>=0xe0){cp&=15;remaining=2;}else if(cp>=0xc0){cp&=31;remaining=1;}
+        while(remaining--&&p<end)cp=(cp<<6)|(static_cast<unsigned char>(*p++)&63);
+        assert(!FT_Load_Char(face,cp,FT_LOAD_NO_HINTING|FT_LOAD_NO_BITMAP));out+=float(face->glyph->advance.x)/64;
+    }return out;
+}
+std::vector<NVGtextRow> Lines(const char* start,const char* end,float width,float font,bool bold=false){
     std::vector<NVGtextRow> rows;if(!end)end=start+strlen(start);auto p=start;
     while(p<end){auto first=p,last=p,space=p;float w{};
         while(p<end&&*p!='\n'){
             auto next=p+1;while(next<end&&(static_cast<unsigned char>(*next)&0xc0)==0x80)++next;
-            const auto add=Width(p,next,font);if(w+add>width&&p>first)break;
+            const auto add=Width(p,next,font,bold);if(w+add>width&&p>first)break;
             if(*p==' ')space=p;w+=add;p=next;last=p;
         }
         if(p<end&&*p!='\n'&&space>first){last=space;p=space+1;}
         else if(p<end&&*p=='\n')++p;
-        rows.push_back({first,last,p,Width(first,last,font)});
+        rows.push_back({first,last,p,Width(first,last,font,bold)});
     }return rows;
 }
 void nvgSave(NVGcontext* v){v->saved.push_back(v->state);}void nvgRestore(NVGcontext* v){assert(!v->saved.empty());v->state=v->saved.back();v->saved.pop_back();}
 void nvgIntersectScissor(NVGcontext* v,float x,float y,float w,float h){auto& c=v->state.clip;const auto right=std::min(c.x+c.w,x+w),bottom=std::min(c.y+c.h,y+h);c.x=std::max(c.x,x);c.y=std::max(c.y,y);c.w=std::max(0.f,right-c.x);c.h=std::max(0.f,bottom-c.y);}
 void nvgFontSize(NVGcontext* v,float f){v->state.font=f;}void nvgTextAlign(NVGcontext* v,int a){v->state.align=a;}void nvgTextLineHeight(NVGcontext* v,float h){v->state.line_height=h;}
-void nvgTextBounds(NVGcontext* v,float x,float y,const char* text,const char* end,float* b){b[0]=x;b[1]=y;b[2]=x+Width(text,end?end:text+strlen(text),v->state.font);b[3]=y+v->state.font*1.2f;}
-void nvgTextBoxBounds(NVGcontext* v,float x,float y,float width,const char* text,const char* end,float* b){const auto rows=Lines(text,end,width,v->state.font);b[0]=x;b[1]=y;b[2]=x+width;b[3]=y+rows.size()*v->state.font*v->state.line_height;}
-int nvgTextBreakLines(NVGcontext* v,const char* text,const char* end,float width,NVGtextRow* out,int maximum){const auto rows=Lines(text,end,width,v->state.font);const int count=std::min<int>(rows.size(),maximum);std::copy_n(rows.begin(),count,out);return count;}
+void nvgTextBounds(NVGcontext* v,float x,float y,const char* text,const char* end,float* b){b[0]=x;b[1]=y;b[2]=x+Width(text,end?end:text+strlen(text),v->state.font,v->state.bold);b[3]=y+v->state.font*1.2f;}
+void nvgTextBoxBounds(NVGcontext* v,float x,float y,float width,const char* text,const char* end,float* b){const auto rows=Lines(text,end,width,v->state.font,v->state.bold);b[0]=x;b[1]=y;b[2]=x+width;b[3]=y+rows.size()*v->state.font*v->state.line_height;}
+int nvgTextBreakLines(NVGcontext* v,const char* text,const char* end,float width,NVGtextRow* out,int maximum){const auto rows=Lines(text,end,width,v->state.font,v->state.bold);const int count=std::min<int>(rows.size(),maximum);std::copy_n(rows.begin(),count,out);return count;}
 int nvgCreateImageMem(NVGcontext*,int,const unsigned char*,std::size_t){return 1;}
 namespace gfx{
 void dimBackground(NVGcontext*){}
 void drawText(NVGcontext* v,float x,float y,float font,NVGcolor colour,const char* text,int align){
-    const auto width=Width(text,text+strlen(text),font);if(align&NVG_ALIGN_CENTER)x-=width/2;
-    v->draws.push_back({"text",text,colour.value,{x,y,width,font*1.2f},v->state.clip,font});
+    const auto width=Width(text,text+strlen(text),font,v->state.bold);if(align&NVG_ALIGN_CENTER)x-=width/2;
+    v->draws.push_back({"text",text,colour.value,{x,y,width,font*1.2f},v->state.clip,font,v->state.bold});
 }
 void drawTextBox(NVGcontext* v,float x,float y,float font,float width,NVGcolor colour,const char* text,int align){
-    for(const auto& row:Lines(text,nullptr,width,font)){
+    for(const auto& row:Lines(text,nullptr,width,font,v->state.bold)){
         const auto at=x+((align&NVG_ALIGN_CENTER)?(width-row.width)/2:0);
-        v->draws.push_back({"body",std::string(row.start,row.end),colour.value,{at,y,row.width,font*1.2f},v->state.clip,font});y+=font*v->state.line_height;
+        v->draws.push_back({"body",std::string(row.start,row.end),colour.value,{at,y,row.width,font*1.2f},v->state.clip,font,v->state.bold});y+=font*v->state.line_height;
     }
 }
 void drawRect(NVGcontext* v,Vec4 r,NVGcolor c,float=0){v->draws.push_back({"rect",{},c.value,r,v->state.clip});}
 void drawRect(NVGcontext* v,float x,float y,float w,float h,NVGcolor c,float=0){drawRect(v,{x,y,w,h},c);}
 void drawImage(NVGcontext* v,float x,float y,float w,float h,int,float){v->draws.push_back({"cover",{},"#45305f",{x,y,w,h},v->state.clip});}
-void drawSpinner(NVGcontext* v,Theme*,float x,float y,float radius,double){v->draws.push_back({"spinner",{},"#f239df",{x-radius,y-radius,radius*2,radius*2},v->state.clip});}
+void drawSpinner(NVGcontext* v,Theme*,float x,float y,float radius,double){v->draws.push_back({"spinner",{},"#668cff",{x-radius,y-radius,radius*2,radius*2},v->state.clip});}
 }
 namespace nexusdialog{
-NVGcolor Accent(){return {"#f239df"};}
-void Panel(NVGcontext* v,Vec4 r){gfx::drawRect(v,r,{"#160c25"});}
+NVGcolor Accent(){return {"#668cff"};}
+void Panel(NVGcontext* v,Vec4 r){gfx::drawRect(v,r,{"#101525"});}
 void Brand(NVGcontext* v,float x,float y,const char*){gfx::drawText(v,x,y,14,{"#ffffff"},"NEXUS MANAGER    / TRANSFER",NVG_ALIGN_LEFT|NVG_ALIGN_TOP);}
 }
 struct ScrollingText{void Reset(const std::string&){}void Draw(NVGcontext* v,bool,float x,float y,float width,float font,int align,NVGcolor c,const std::string& text){nvgSave(v);nvgIntersectScissor(v,x,0,width,720);gfx::drawText(v,x-10,y,font,c,text.c_str(),align);nvgRestore(v);}};
@@ -77,13 +92,13 @@ namespace utils{std::string formatSizeNetwork(s64){return "50.33 MB";}}
 struct Button{Vec4 rect;void Draw(NVGcontext* v,Theme*){v->draws.push_back({"footer","B   Stop task","#ffffff",rect,v->state.clip,20});}};
 struct Clock{unsigned GetSeconds(){return 0;}void Update(){}};
 struct ProgressBox{
-    Vec4 m_pos{180,127.5,920,465};int m_mutex{};std::vector<u8> m_image_data;Clock m_timestamp;
+    Vec4 m_pos{160,120,960,480};int m_mutex{};std::vector<u8> m_image_data;Clock m_timestamp;
     s64 m_size=35438546392,m_offset=1063156392,m_last_offset=1063156392,m_speed=50330000;bool m_overall=true,m_finishing=false;
     std::string m_action="Moving: SD -> USB",m_title="The Legend of Zelda: Breath of the Wild",m_transfer="Copying to USB - file 6 of 12",m_progress_note,m_byte_detail;
-    nexus::network::RateMeter m_network_rate;int m_image{},m_image_pending{};bool m_is_image_pending{},m_own_image{},stopping{};
+    nexus::network::RateMeter m_network_rate,m_transfer_rate;int m_image{},m_image_pending{};bool m_is_image_pending{},m_own_image{},stopping{};
     ScrollingText m_scroll_action,m_scroll_title,m_scroll_transfer;nexus::safety::ProgressState m_safety;
     nexus::safety::Operation m_operation=nexus::safety::Operation::MayWrite;
-    bool m_transfer_log{},m_detailed{};nexus::transfer::activity::Cursor m_activity_cursor;
+    bool m_transfer_log{},m_detailed{},m_show_details{};nexus::transfer::activity::Cursor m_activity_cursor;
     float GetX(){return m_pos.x;}float GetY(){return m_pos.y;}float GetW(){return m_pos.w;}float GetH(){return m_pos.h;}
     bool ShouldExit(){return stopping;}void FreeImage(){m_image=0;}
     std::vector<Button> GetFooterButtons(){return {{{m_pos.x+360,m_pos.y+m_pos.h-40,200,24}}};}
@@ -98,16 +113,19 @@ void Svg(const std::string& path,const NVGcontext& v){
     unsigned id=0;for(const auto& item:v.draws){const auto& r=item.rect;const auto& c=item.clip;
         out<<"<clipPath id='c"<<id<<"'><rect x='"<<c.x<<"' y='"<<c.y<<"' width='"<<c.w<<"' height='"<<c.h<<"'/></clipPath><g clip-path='url(#c"<<id<<")'>";
         ++id;
-        if(item.kind=="text"||item.kind=="body"||item.kind=="footer")out<<"<text x='"<<r.x<<"' y='"<<r.y+item.font<<"' font-family='DejaVu Sans,sans-serif' font-size='"<<item.font<<"' fill='"<<item.colour<<"'>"<<Escape(item.text)<<"</text>";
+        if(item.kind=="text"||item.kind=="body"||item.kind=="footer")out<<"<text x='"<<r.x<<"' y='"<<r.y+item.font<<"' font-family='DejaVu Sans,sans-serif' font-weight='"<<(item.bold?700:400)<<"' font-size='"<<item.font<<"' fill='"<<item.colour<<"'>"<<Escape(item.text)<<"</text>";
         else if(item.kind=="spinner")out<<"<circle cx='"<<r.x+r.w/2<<"' cy='"<<r.y+r.h/2<<"' r='"<<r.w/2<<"' stroke='"<<item.colour<<"' fill='none'/>";
         else out<<"<rect x='"<<r.x<<"' y='"<<r.y<<"' width='"<<r.w<<"' height='"<<r.h<<"' rx='8' fill='"<<item.colour<<"' stroke='#604276'/>";
         out<<"</g>";
     }out<<"</svg>";
 }
 int main(int argc,char** argv){
-    assert(argc==2);Theme theme;unsigned cases{};
+    assert(argc==3);assert(!FT_Init_FreeType(&font_library));
+    assert(!FT_New_Face(font_library,"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",0,&font_regular));
+    assert(!FT_New_Face(font_library,argv[2],0,&font_bold));
+    Theme theme;unsigned cases{};
     for(bool cover:{false,true})for(bool network:{false,true})for(int mode=0;mode<5;++mode)for(bool long_text:{false,true}){
-        ProgressBox box;box.m_image=cover?1:0;box.m_safety.Touch(tick);
+        ProgressBox box;box.m_image=cover?1:0;box.m_safety.Touch(tick);box.m_transfer_rate.Begin(0);box.m_transfer_rate.Add(20*1024*1024);
         if(network){box.m_network_rate.Begin(0);box.m_network_rate.Add(15*1024*1024);box.m_progress_note="Reading from NAS. Keep the network and storage connected.";}
         if(mode==1)box.stopping=true;if(mode==2)box.m_safety.Touch(0),tick=20'000'000'000;
         if(mode==3)box.m_byte_detail="Copied 1024.00 GiB / 2048.00 GiB\nVerifying the installed game files";
@@ -116,12 +134,13 @@ int main(int argc,char** argv){
         const auto layout=nexus::progressui::Make(box.m_pos,cover,network);const Vec4 above_footer{box.GetX()+32,box.GetY()+52,box.GetW()-64,layout.footer_y-box.GetY()-52};
         for(const auto& row:{layout.action,layout.title,layout.stage,layout.status,layout.advice,layout.bar,layout.percent,layout.metric})assert(nexus::progressui::Within(row,above_footer));
         assert(layout.action.y+layout.action.h<layout.title.y&&layout.title.y+layout.title.h<layout.stage.y&&layout.stage.y+layout.stage.h<layout.status.y);
-        assert(layout.status.y+layout.status.h<layout.advice.y&&layout.advice.y+layout.advice.h<layout.bar.y-13);
+        assert(layout.status.y+layout.status.h<layout.advice.y&&layout.advice.y+layout.advice.h<layout.bar.y);
         assert(layout.bar.y+layout.bar.h<layout.metric.y&&layout.metric.y+layout.metric.h<layout.footer_y);
-        if(network)assert(nexus::progressui::Within(layout.note,above_footer)&&layout.metric.y+layout.metric.h<layout.note.y&&layout.note.y+layout.note.h<layout.footer_y);
         if(cover)assert(layout.cover.x+layout.cover.w<layout.column.x);
         NVGcontext v;box.Draw(&v,&theme);assert(v.saved.empty());
-        bool rate{},units{},overall_note{},working{};for(const auto& item:v.draws){
+        bool rate{};unsigned bars{},titles{};
+        for(const auto& item:v.draws){
+            if(item.kind=="rect"&&Near(item.rect.y,layout.bar.y)&&Near(item.rect.h,12))++bars;
             if(item.kind=="text"||item.kind=="body"){
                 assert(item.colour=="#ffffff");
                 if(item.clip.y>=layout.action.y){
@@ -129,19 +148,14 @@ int main(int argc,char** argv){
                     assert(item.clip.y+item.clip.h<layout.footer_y+0.02f);
                     if(item.kind=="body")assert(nexus::progressui::Within(item.rect,item.clip));
                 }
-                if(item.text.find("NAS download:")!=std::string::npos)rate=true;
-                if(item.text.find("MB/s")!=std::string::npos)units=true;
-                if(item.text=="Overall task progress")overall_note=true;
-                if(item.text=="Working...")working=true;
+                if(item.text.find("MiB/s")!=std::string::npos)rate=true;
+                if(Near(item.clip.y,layout.title.y))++titles;
+                assert(item.text.find("Overall task progress")==std::string::npos);
+                assert(item.text.find("NAS download:")==std::string::npos);
             }
         }
-        assert(!network||rate);if(!network&&!long_text&&mode==0)assert(overall_note&&!units);
-        if(!network&&!long_text&&mode==4)assert(working);
-        if(!long_text&&mode==0){
-            for(const auto& item:v.draws)if(item.text==box.m_action||item.text==box.m_title||item.text==box.m_transfer){
-                if(cover)assert(Near(item.rect.x,layout.column.x));else assert(Near(item.rect.x+item.rect.w/2,layout.column.x+layout.column.w/2));
-            }
-        }
+        assert(rate&&titles&&bars==2); // One track + its fill, never per-file bars.
+        if(cover)assert(layout.cover.w>=176);
         if(!long_text&&mode==0&&!cover&&!network)Svg(std::string(argv[1])+"/centered-transfer.svg",v);
         if(cover&&network&&long_text&&mode==0)Svg(std::string(argv[1])+"/cover-network-long-text.svg",v);
         if(!cover&&network&&mode==1&&!long_text)Svg(std::string(argv[1])+"/stopping-network.svg",v);

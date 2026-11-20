@@ -1,3 +1,4 @@
+#include "nexus/routing_backup.hpp"
 #include "ui/progress_box.hpp"
 #include "ui/transfer_activity.hpp"
 #include "ui/option_box.hpp"
@@ -122,17 +123,20 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
         }});
     }
 
-    m_pos.w = 920.f;
-    m_pos.h = 465.f;
+    m_pos.w = 960.f;
+    m_pos.h = 480.f;
     m_pos.x = (SCREEN_WIDTH / 2.f) - (m_pos.w / 2.f);
     m_pos.y = (SCREEN_HEIGHT / 2.f) - (m_pos.h / 2.f);
 
     m_transfer_log=option==ProgressBoxOption::TransferLog;
     if(m_transfer_log){
-        m_pos={24,80,1232,624};
+
         SetAction(Button::UP,Action{[this]{m_activity_cursor.Scroll(nexus::transfer::activity::Get().Read(),-1);}});
         SetAction(Button::DOWN,Action{[this]{m_activity_cursor.Scroll(nexus::transfer::activity::Get().Read(),1);}});
-        SetAction(Button::Y,Action{[this]{m_activity_cursor.Follow();}});
+        SetAction(Button::Y,Action{[this]{
+            m_show_details=!m_show_details;m_activity_cursor.Follow();
+            m_pos=m_show_details?Vec4{24,80,1232,624}:Vec4{160,120,960,480};
+        }});
     }
 
     // create cancel event.
@@ -140,6 +144,7 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
 
     m_thread_data.pbox = this;
     m_thread_data.callback = callback;
+    m_transfer_rate.Begin(armTicksToNs(armGetSystemTick()));
     m_safety.Touch(armGetSystemTick());
     m_protected = m_operation == nexus::safety::Operation::MayWrite;
     if (m_protected) nexusWatchdogProtect();
@@ -208,11 +213,6 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     mutexLock(&m_mutex);
     std::vector<u8> image_data{};
     std::swap(m_image_data, image_data);
-    if (m_timestamp.GetSeconds()) {
-        m_timestamp.Update();
-        m_speed = m_offset - m_last_offset;
-        m_last_offset = m_offset;
-    }
 
     const auto action = m_action;
     const auto title = m_title;
@@ -222,7 +222,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     const auto overall = m_overall;
     const auto detailed = m_detailed;
     const auto progress_note = m_progress_note;
-    const auto byte_detail = m_byte_detail;
+    const auto payload = m_transfer_rate.Sample(armTicksToNs(armGetSystemTick()));
     const auto network = m_network_rate.Sample(armTicksToNs(armGetSystemTick()));
     auto image = m_image;
 
@@ -241,8 +241,8 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     }
 
     gfx::dimBackground(vg);
-    if(m_transfer_log){
-        nexusdialog::Panel(vg,m_pos);
+    if(m_transfer_log&&m_show_details){
+        nexusdialog::Panel(vg,{24,80,1232,624});
         const transferui::InstallView view{true,transfer,progress_note,offset,size,overall||detailed,ShouldExit(),
             m_safety.Slow(armGetSystemTick(),armNsToTicks(15ULL*1000*1000*1000))};
         transferui::Draw(vg,{42,106,1196,533},nexus::transfer::activity::Get().Read(),m_activity_cursor,view);
@@ -252,6 +252,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     nexusdialog::Panel(vg,m_pos);
     nexusdialog::Brand(vg,GetX()+32,GetY()+22,"/  TRANSFER");
 
+    if(!image&&action.find("Install")!=std::string::npos)image=App::GetDefaultImage();
     const auto layout=nexus::progressui::Make({GetX(),GetY(),GetW(),GetH()},image!=0,network.active);
     const auto colour=theme->GetColour(ThemeEntryID_TEXT);
     const Vec4 prog_bar{layout.bar.x,layout.bar.y,layout.bar.w,layout.bar.h};
@@ -262,53 +263,40 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     nvgIntersectScissor(vg,GetX(),GetY(),GetW(),GetH());
     if(image)gfx::drawImage(vg,layout.cover.x,layout.cover.y,layout.cover.w,layout.cover.h,image,12);
 
-    DrawProgressLine(vg,m_scroll_action,layout.action,action,26,layout.centered,colour);
-    DrawProgressLine(vg,m_scroll_title,layout.title,title,22,layout.centered,colour);
-    DrawProgressLine(vg,m_scroll_transfer,layout.stage,transfer,18,layout.centered,colour);
+    DrawProgressLine(vg,m_scroll_action,layout.action,action,20,layout.centered,colour);
+    nvgSave(vg);
+    if(nvgFindFont(vg,"ProgressBold")>=0)nvgFontFace(vg,"ProgressBold");
+    DrawProgressBody(vg,layout.title,title,32,layout.centered,colour);
+    nvgRestore(vg);
+    DrawProgressLine(vg,m_scroll_transfer,layout.stage,nexus::progressui::Status(transfer,action),22,layout.centered,colour);
 
     const bool stopping=ShouldExit();
     const bool slow=m_safety.Slow(armGetSystemTick(),armNsToTicks(15ULL*1000*1000*1000));
     if(stopping||slow){
-        const auto message=stopping
-            ? "Stopping safely. Waiting for the current storage request to finish."
-            : "The drive is taking longer than usual. Please keep it connected.";
-        const auto advice=m_safety.CanClose(m_operation,nexusWatchdogCanExit())
-            ? "This is a read-only check. X: Close app, or keep waiting."
-            : "Please wait for the result before unplugging or closing the app.";
-        DrawProgressBody(vg,layout.status,message,18,layout.centered,colour);
-        DrawProgressBody(vg,layout.advice,advice,17,layout.centered,colour);
-    }else if(!byte_detail.empty()){
-        DrawProgressBody(vg,layout.status,byte_detail,22,layout.centered,colour);
-    }else if(overall){
-        DrawProgressBody(vg,layout.status,"Overall progress. Keep storage connected.",18,layout.centered,colour);
+        DrawProgressBody(vg,layout.status,stopping?"Stopping safely. Please wait.":"The drive is taking longer than usual.",18,true,colour);
+        DrawProgressBody(vg,layout.advice,m_safety.CanClose(m_operation,nexusWatchdogCanExit())
+            ?"Keep waiting, or press X to close this read-only check."
+            :"Keep storage connected until the task finishes.",17,true,colour);
     }
 
-    if(!has_progress){gfx::drawSpinner(vg,theme,layout.spinner_x,layout.spinner_y,13,armTicksToNs(armGetSystemTick())/1e+9);}
+    // One bar for the entire task. Unknown totals use a moving segment rather
+    // than pretending that the current file is the entire operation.
+    gfx::drawRect(vg,prog_bar,theme->GetColour(ThemeEntryID_PROGRESSBAR_BACKGROUND),5);
     if(has_progress){
-        gfx::drawRect(vg,prog_bar,theme->GetColour(ThemeEntryID_PROGRESSBAR_BACKGROUND),5);
         const auto fraction=std::clamp(double(offset)/double(size),0.0,1.0);
-        const u32 percentage=fraction*100.0;
         gfx::drawRect(vg,prog_bar.x,prog_bar.y,fraction*prog_bar.w,prog_bar.h,nexusdialog::Accent(),5);
-        char percent[16]{};std::snprintf(percent,sizeof(percent),"%u%%",percentage);
-        DrawProgressBody(vg,layout.percent,percent,18,false,colour);
-        gfx::drawSpinner(vg,theme,layout.spinner_x,layout.spinner_y,13,armTicksToNs(armGetSystemTick())/1e+9);
-    }
-
-    std::string metric;
-    if(network.active){
-        char text[160]{};
-        if(network.sampled)
-            std::snprintf(text,sizeof(text),"NAS download: %.2f MiB/s  |  Received: %.1f MiB",network.bytes_per_second/(1024.0*1024.0),double(network.received)/(1024.0*1024.0));
-        else
-            std::snprintf(text,sizeof(text),"NAS download: measuring...  |  Received: %.1f MiB",double(network.received)/(1024.0*1024.0));
-        DrawProgressBody(vg,layout.metric,text,20,layout.centered,colour);
-        DrawProgressBody(vg,layout.note,progress_note,16,layout.centered,colour);
+        char percent[16]{};std::snprintf(percent,sizeof(percent),"%u%%",unsigned(fraction*100.0));
+        DrawProgressBody(vg,layout.percent,percent,20,false,colour);
     }else{
-        if(!progress_note.empty())metric=progress_note;
-        else if(!has_progress)metric="Working...";
-        else metric="Overall task progress";
-        DrawProgressBody(vg,layout.metric,metric,18,layout.centered,colour);
+        const auto phase=std::fmod(double(armTicksToNs(armGetSystemTick()))/2e9,2.0);
+        const auto fraction=phase<=1?phase:2-phase;
+        gfx::drawRect(vg,prog_bar.x+fraction*prog_bar.w*0.8,prog_bar.y,prog_bar.w*0.2,prog_bar.h,nexusdialog::Accent(),5);
     }
+    const auto rate=network.active?network:payload;
+    char speed[80]{};
+    if(rate.active&&rate.sampled)std::snprintf(speed,sizeof(speed),"%s: %.2f MiB/s",network.active?"Download speed":"Speed",rate.bytes_per_second/(1024.0*1024.0));
+    else std::snprintf(speed,sizeof(speed),"Speed: measuring...");
+    DrawProgressBody(vg,layout.metric,speed,24,true,colour);
 
     nvgRestore(vg);
 
@@ -339,8 +327,9 @@ auto ProgressBox::GetFooterButtons() const -> Widget::uiButtons {
         buttons.emplace_back(std::move(item));
     };
 
+    if(m_transfer_log)add_button(Button::Y,m_show_details?"Simple view":"Details",m_pos.x+m_pos.w*0.25f);
     if(m_screen_toggle_enabled)add_button(Button::Y, "Screen off", m_pos.x + m_pos.w * 0.25f);
-    add_button(Button::B, m_stop_source.stop_requested()?"Stopping...":"Stop task", m_pos.x + m_pos.w * (m_screen_toggle_enabled?0.75f:0.5f));
+    add_button(Button::B, m_stop_source.stop_requested()?"Stopping...":"Stop task", m_pos.x + m_pos.w * ((m_screen_toggle_enabled||m_transfer_log)?0.75f:0.5f));
     return buttons;
 }
 
@@ -350,6 +339,10 @@ auto ProgressBox::SetActionName(const std::string& action)  -> ProgressBox& {
     m_action = action;
     m_safety.Touch(armGetSystemTick());
     return *this;
+}
+
+void ProgressBox::SetItem(const std::string& title){
+    SCOPED_MUTEX(&m_mutex);m_title=title;m_image_data.clear();m_image_pending=0;m_is_image_pending=true;m_byte_cursor.Reset();
 }
 
 auto ProgressBox::SetTitle(const std::string& title)  -> ProgressBox& {
@@ -363,6 +356,7 @@ auto ProgressBox::SetTitle(const std::string& title)  -> ProgressBox& {
 auto ProgressBox::NewTransfer(const std::string& transfer) -> ProgressBox& {
     if(m_transfer_log)nexus::transfer::activity::Get().Stage(transfer);
     SCOPED_MUTEX(&m_mutex);m_safety.Touch(armGetSystemTick());
+    m_byte_cursor.Reset();
     if(m_detailed&&m_task_progress.parents.empty())return *this;
     m_transfer=transfer;
     if(!m_overall){m_size=0;m_offset=0;m_last_offset=0;m_timestamp.Update();}
@@ -371,6 +365,7 @@ auto ProgressBox::NewTransfer(const std::string& transfer) -> ProgressBox& {
 
 auto ProgressBox::ResetTranfser() -> ProgressBox& {
     SCOPED_MUTEX(&m_mutex);
+    m_byte_cursor.Reset();
     if(m_overall)return *this;
     m_size = 0;
     m_offset = 0;
@@ -401,6 +396,17 @@ auto ProgressBox::SetProgressNote(const std::string& note) -> ProgressBox& {
     if(m_transfer_log&&!note.empty()&&note!=m_progress_note)nexus::transfer::activity::Get().Event(note);
     m_progress_note=note;
     return *this;
+}
+
+void ProgressBox::AddTransferBytes(u64 bytes){
+    if(!bytes)return;
+    SCOPED_MUTEX(&m_mutex);
+    m_transfer_rate.Add(bytes);m_safety.Touch(armGetSystemTick());
+}
+auto ProgressBox::UpdateTransferBytes(s64 offset,s64 size) -> ProgressBox& {
+    u64 bytes{};
+    {SCOPED_MUTEX(&m_mutex);if(offset>=0&&size>0)bytes=m_byte_cursor.Advance(offset,size);}
+    AddTransferBytes(bytes);return UpdateTransfer(offset,size);
 }
 
 void ProgressBox::BeginNetworkTransfer() {

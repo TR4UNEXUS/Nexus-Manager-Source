@@ -2,22 +2,21 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.22 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.22).
+This repository contains the 0.2.24 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.24).
 
 ## What's new
 
-- Browse ports in an icon grid with SD and USB labels. Both drives appear by default.
-- Recently viewed port icons stay cached while browsing, changing filters and returning from details. Press Y: Refresh to reload them.
-- Copy or move NRO ports between SD and USB without creating a HOME shortcut first. Linked data folders are included, and moves verify the copied files before removing the originals.
-- Manage port mods from existing folders or ZIP files. Enable a mod, disable it or restore the original files.
-- Delete port files and HOME shortcuts separately, with a warning about saves stored inside port folders.
-- Progress bars follow the whole task instead of restarting for each file.
-- Delete confirms first, then checks and removes the selection in one task. File and port deletion no longer hashes every file before removing it.
-- Removed the public startup timing tests and timing-shortcut creation.
+- USB library repair runs when you choose it. Removed the automatic startup warning and repeated Installed games prompts.
+- Empty drives and older update versions no longer trigger misleading repair advice. Unfinished checks are reported as unconfirmed.
+- Ticket checks use the current system's ticket records. A missing ticket backup on USB is not treated as a missing installed ticket.
+- Cleanup protects installed games and rechecks selections before removal. A ticket warning alone never makes an installed game eligible for cleanup. Explicit game deletion remains separate and keeps saved progress.
+- Installs, copies and moves show one overall progress bar and transfer speed. Game installs have a larger cover and bold title, with simple status text.
+- USB library backup tools can preview restoring missing routing links from the console-side backup provided by N4 firmware.
+- Improved local split-XCI handling and cartridge-content installation. Keep all parts together on SD or USB and select the first part.
 
-Earlier improvements include File manager copy/move/delete, storage-specific game deletion, Cleanup, direct FTP and NAS installs, and USB-library repair. The fixes for game deletion and XCI installation from 0.2.19 are included.
+Port management, icon caching, mod folders and ZIPs, File manager copy/move/delete, direct FTP and NAS installs, and automatic app updates remain included.
 
-The 0.2.22 build and automated checks passed. These changes still need testing on Switch hardware.
+The 0.2.24 build and automated checks passed, and the app was reported working in the N4R2 console test. Wider testing is still needed across libraries, drives and network servers.
 
 ## Getting started
 

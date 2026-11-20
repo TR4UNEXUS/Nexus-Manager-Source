@@ -92,7 +92,7 @@ int main() {
             assert(Classify("/Games/Test."+e)==kind);
         }
     }
-    for(const auto* bad:{"","a.nsp.bak","a.xc0","a.ns0","a.nsp.00","a.nro","a.nca",
+    for(const auto* bad:{"","a.nsp.bak","a.xc1","a.xci.01","a.ns0","a.nsp.00","a.nro","a.nca",
         "a.zip","a.rar","a.7z","a.msp","folder.xci/file","a.nsp/","a.nsp\\b"})assert(!Supported(bad));
     for(bool compressed:{false,true}) {
         for(std::size_t off:{0xf000,0x10000}) {
@@ -119,6 +119,22 @@ int main() {
     }
     assert(ParseXci(Cartridge(Hfs({{"normal",Secure()}})))==Result_XciSecurePartitionNotFound);
     assert(ParseXci(Cartridge(Hfs({{"secure",Secure()},{"secure",Secure()}})))==Result_XciInvalidHeader);
+    static_assert(Classify("/Games/Old.XC0")==Kind::Xci);
+    static_assert(Classify("/Games/Old.xci.00")==Kind::Xci);
+    for(const std::size_t prefix:{0,0x1000})for(const std::size_t root:{0x4000,0xf000,0x18000}) {
+        auto b=XciFixture(false,prefix+root);
+        Put(b,prefix+0x100,u32(0x44414548));
+        Put(b,prefix+0x130,u64(root));Put(b,prefix+0x138,u64(0x100));
+        // Cart capacity may exceed the trimmed file; referenced bytes may not.
+        Put(b,prefix+0x118,u64(128ULL*1024*1024*1024));
+        assert(ParseXci(b)==0 && ParseXci(b,-1)==0);
+        for(const u64 invalid:{0ULL,0x100ULL,0xffffffffffffffffULL}) {
+            auto bad=b;Put(bad,prefix+0x130,invalid);assert(ParseXci(bad)!=0);
+        }
+        auto bad=b;Put(bad,prefix+0x138,u64(b.size()));assert(ParseXci(bad)!=0);
+        bad=b;Put(bad,prefix+0x138,u64(16));assert(ParseXci(bad)!=0);
+        bad=b;Put(bad,prefix+root,u32(0));assert(ParseXci(bad)!=0);
+    }
     const auto original=XciFixture();
     for(auto length:{std::size_t(0),std::size_t(0xefff),std::size_t(0xf007),original.size()-1}) {
         auto b=original;b.resize(length);assert(ParseXci(b)!=0);

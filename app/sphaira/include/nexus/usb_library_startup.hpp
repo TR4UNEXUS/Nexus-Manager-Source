@@ -7,7 +7,7 @@
 namespace sphaira::nexusapp {
 struct UsbLibraryStartupResult {
     Result result{};
-    bool pending{};
+    bool pending{},console_backup_available{};
     std::size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{};
     std::string detail;
 };

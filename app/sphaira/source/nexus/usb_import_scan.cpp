@@ -76,11 +76,38 @@ struct Session {
         if(R_SUCCEEDED(rc)){out.data.resize(size);rc=fsFileRead(&file,0,out.data.data(),out.data.size(),FsReadOption_None,&got);}
         fsFileClose(&file);R_TRY(rc);R_UNLESS(got==out.data.size(),nexus::Invalid);out.exists=true;return Check();
     }
-    Result Open(u64 expected,bool ownership_only=false){
+    Result Probe(u64 expected){
         R_TRY(Cancelled());
         stage="checking the connected USB drive";
         nexus::Status status{};R_TRY(usb.Query(status));R_UNLESS(status.Available()&&(!expected||status.generation==expected),nexus::Unavailable);
         scan.generation=status.generation;
+        return Check();
+    }
+    Result ReadTicketSnapshot(std::vector<FsRightsId>& out){
+        out.clear();stage="reading current-system game permissions";
+        for(bool personal:{false,true}){
+            R_TRY(Check());s32 count{},written{},after{};
+            R_TRY(personal?es::CountPersonalizedTicket(&count):es::CountCommonTicket(&count));
+            R_UNLESS(count>=0&&count<=65536,nexus::Invalid);std::vector<FsRightsId> page(count);
+            if(count)R_TRY(personal?es::ListPersonalizedTicket(&written,page.data(),count):es::ListCommonTicket(&written,page.data(),count));
+            R_TRY(personal?es::CountPersonalizedTicket(&after):es::CountCommonTicket(&after));
+            R_UNLESS(written==count&&after==count,nexus::Invalid);
+            std::sort(page.begin(),page.end(),[](const auto& a,const auto& b){return std::memcmp(&a,&b,sizeof(a))<0;});
+            for(size_t i=0;i<page.size();++i){
+                R_UNLESS(es::IsRightsIdValid(page[i])&&(!i||std::memcmp(&page[i-1],&page[i],sizeof(page[i]))),nexus::Invalid);
+            }
+            out.insert(out.end(),page.begin(),page.end());
+        }
+        std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){return std::memcmp(&a,&b,sizeof(a))<0;});
+        return Check();
+    }
+    Result CheckTicketsUnchanged(){
+        std::vector<FsRightsId> current;R_TRY(ReadTicketSnapshot(current));
+        R_UNLESS(current.size()==tickets.size()&&std::equal(current.begin(),current.end(),tickets.begin(),[](const auto& a,const auto& b){return !std::memcmp(&a,&b,sizeof(a));}),nexus::Invalid);
+        return 0;
+    }
+    Result Open(u64 expected,bool ownership_only=false){
+        R_TRY(Probe(expected));
         if(ownership_only){
             stage="opening the content-header key service";R_TRY(splCryptoInitialize());spl_open=true;
             R_TRY(keys::parse_keys(keys,false));return Check();
@@ -110,16 +137,7 @@ struct Session {
         auto result=keys::parse_keys(keys,false);
         if(R_FAILED(result))scan.detail="The system could not open its content-header key. No game files or registrations were changed.";
         R_TRY(result);
-        for(int personalised=0;personalised<2;++personalised){
-            stage="reading current-system game permissions";
-            s32 count{},written{};
-            R_TRY(personalised?es::CountPersonalizedTicket(&count):es::CountCommonTicket(&count));
-            R_UNLESS(count>=0&&count<=65536,nexus::Invalid);
-            if(!count)continue;
-            std::vector<FsRightsId> page(count);
-            R_TRY(personalised?es::ListPersonalizedTicket(&written,page.data(),count):es::ListCommonTicket(&written,page.data(),count));
-            R_UNLESS(written==count,nexus::Invalid);tickets.insert(tickets.end(),page.begin(),page.end());
-        }
+        R_TRY(ReadTicketSnapshot(tickets));
         stage="listing the existing SD content metadata";installed.resize(16384);s32 total{},written{};
         R_TRY(ncmContentMetaDatabaseList(&db,&total,&written,installed.data(),installed.size(),NcmContentMetaType_Unknown,0,0,UINT64_MAX,NcmContentInstallType_Full));
         R_UNLESS(total>=0&&written==total&&written<=static_cast<s32>(installed.size()),nexus::Invalid);installed.resize(written);
@@ -280,7 +298,7 @@ Result NativeRecord(Session& s,const yati::ExistingUsbRecord& record,NcmStorageI
     }
     healthy=true;return s.Check();
 }
-Result BadgeHealthy(Session& s,u64 application,bool& healthy){
+[[maybe_unused]] Result BadgeHealthy(Session& s,u64 application,bool& healthy){
     healthy=true;nexus::repair::Image disabled;
     R_TRY(s.ReadSd("/atmosphere/usb_badges/disabled",disabled,16));if(disabled.exists)return 0;
     for(unsigned variant=0;variant<(hosversionAtLeast(21,0,0)?2u:1u);++variant){
@@ -296,6 +314,12 @@ Result BadgeHealthy(Session& s,u64 application,bool& healthy){
 }
 Result Classify(Session& s,UsbImportTitle& row){
     auto& record=row.record;bool incomplete{},native_content{};std::set<Id> rights_seen;
+    // Old metadata may remain after an update. It is not a broken current
+    // game and must not trigger ticket recovery or a downgrade attempt.
+    for(const auto& key:s.installed)if(key.id==record.key.id&&key.type==record.key.type&&key.version>record.key.version){
+        row.status=UsbImportStatus::AlreadyRegistered;row.registration=UsbImportRegistration::Superseded;
+        row.reason="A newer version is already registered. This older USB copy is kept and does not need repair.";return s.Check();
+    }
     for(const auto& content:record.content){
         R_TRY(s.Check());u64 expected{};ncmContentInfoSizeToU64(&content.info,&expected);
         const auto it=s.headers.find(ContentId(content.info.content_id));
@@ -319,7 +343,7 @@ Result Classify(Session& s,UsbImportTitle& row){
         R_TRY(s.Check());UsbTicketPair pair;const auto rc=LoadUsbTicketPair(s.scan.generation,rights,pair);
         if(rc==MissingUsbTicket||rc==InvalidUsbTicket){
             row.status=UsbImportStatus::TicketMissing;
-            row.reason=rc==InvalidUsbTicket?"Ticket missing: the saved ticket is invalid or belongs to another console. Reinstall from your original backup.":"Ticket missing: reinstall from your original backup. This system has no ticket and no usable ticket was saved on this USB drive.";
+            row.reason=rc==InvalidUsbTicket?"The required ticket was not found in the current system. The USB backup cannot be used for this console. Reinstall from your original backup; do not delete a working game.":"The required ticket was not found in the current system. No usable backup is available on USB. Reinstall from your original backup if this game cannot launch; do not delete a working game.";
             return 0;
         }
         R_TRY(rc);row.archived_tickets.push_back(rights);
@@ -368,10 +392,13 @@ Result Classify(Session& s,UsbImportTitle& row){
         record.installed_meta=std::move(raw);
         const bool home=s.home_applications.contains(record.application_id)&&std::any_of(applications->begin(),applications->end(),[&](const auto& r){return r.storage_id==NcmStorageId_SdCard&&SameKey(r.key,record.key);});
         if(home&&row.archived_tickets.empty()&&routing==nexus::repair::MergeResult::Intact){
-            bool badge=true;if(record.key.type==NcmContentMetaType_Application)R_TRY(BadgeHealthy(s,record.application_id,badge));
             row.registration=UsbImportRegistration::Usb;
-            if(badge){row.status=UsbImportStatus::AlreadyRegistered;row.reason="Content metadata, HOME records, USB routing and current-system permissions are present. This item can be verified with any other member of its game family that needs repair.";return 0;}
-            row.status=UsbImportStatus::Ready;row.reason="Registration and permissions are present, but the HOME USB icon cache is missing or damaged. The whole USB game family will be verified before refreshing it.";return s.Check();
+            // HOME badge images are cosmetic. A missing cache must not offer
+            // another full game repair after registration already succeeded.
+            // The separate Refresh HOME USB icons action owns that retry.
+            row.status=UsbImportStatus::AlreadyRegistered;
+            row.reason="Game files, HOME records, USB links and permissions are present. No game repair is needed. Missing USB labels on HOME can be refreshed separately.";
+            return s.Check();
         }
     }
     row.status=UsbImportStatus::Ready;
@@ -567,7 +594,7 @@ std::string CanonicalUsbContentPath(const NcmContentId& id){
     u8 hash[32]{};sha256CalculateHash(hash,&id,sizeof(id));char directory[32]{};
     std::snprintf(directory,sizeof(directory),"/registered/%08X/",static_cast<unsigned>(hash[0]));return std::string(directory)+HexId(&id)+".nca";
 }
-const char* UsbImportStatusText(UsbImportStatus status){switch(status){case UsbImportStatus::Ready:return "Ready to import";case UsbImportStatus::AlreadyRegistered:return "Already registered";case UsbImportStatus::Incomplete:return "Incomplete on drive";case UsbImportStatus::TicketMissing:return "Ticket missing";}return "Incomplete on drive";}
+const char* UsbImportStatusText(UsbImportStatus status){switch(status){case UsbImportStatus::Ready:return "Ready to import";case UsbImportStatus::AlreadyRegistered:return "Already registered";case UsbImportStatus::Incomplete:return "Incomplete on drive";case UsbImportStatus::TicketMissing:return "Ticket not found in system";}return "Incomplete on drive";}
 
 UsbLibraryPlan PlanUsbLibrary(const UsbImportScan& scan){
     UsbLibraryPlan plan;plan.selected.resize(scan.titles.size());plan.family_reason.resize(scan.titles.size());
@@ -606,10 +633,10 @@ UsbLibrarySummary SummarizeUsbLibrary(const UsbImportScan& scan){return PlanUsbL
 Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected_generation,const std::atomic_bool* cancel,bool names,bool ownership_only){
     scan={};Session s(progress,scan,cancel);
     const auto operation=[&]()->Result{
-    if(progress){progress->SetTitle("Scan USB game library");progress->NewTransfer("Reading this system's registrations");}R_TRY(s.Open(expected_generation,ownership_only));
+    if(progress){progress->SetTitle("Scan USB game library");progress->NewTransfer("Finding installed USB files");}R_TRY(s.Probe(expected_generation));
     s.stage="listing registered USB content files";
     std::vector<nexus::Entry> directories;const auto list_result=s.usb.List(scan.generation,"/registered",directories);
-    if(list_result==MissingUsb){scan.complete=true;scan.detail="No registered content folder was found on this USB drive. Nothing was changed.";return 0;}R_TRY(list_result);
+    if(list_result==MissingUsb){R_TRY(s.Check());scan.complete=true;scan.detail="No registered content folder was found on this USB drive. Nothing was changed.";return 0;}R_TRY(list_result);
     R_UNLESS(directories.size()<=MaxFiles,nexus::Invalid);
     std::vector<File> files;std::set<Id> seen_files;
     for(const auto& directory:directories){
@@ -626,7 +653,14 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
             files.push_back(std::move(file));
         }
     }
-    scan.nca_files=files.size();if(progress)progress->NewTransfer("Reading USB content headers");
+    scan.nca_files=files.size();
+    if(files.empty()){
+        R_TRY(s.Check());scan.complete=true;
+        scan.detail=scan.unreadable_ncas?"Content files were found in unexpected locations. Nothing was changed; review the drive before attempting repair.":"No installed USB game content was found. No repair is needed. Package files such as NSP, NSZ and XCI belong in Install games.";
+        return 0;
+    }
+    R_TRY(s.Open(scan.generation,ownership_only));
+    if(progress)progress->NewTransfer("Reading USB content headers");
     s.stage="reading and identifying USB content headers";
     std::vector<File> metas;
     for(size_t i=0;i<files.size();++i){
@@ -669,17 +703,19 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
             other.reason=row.reason="More than one metadata NCA claims this title and version. Reinstall from your original backup to resolve the conflict.";
         }
     }
-    s.stage="reconciling all registered game-family members";R_TRY(ReconcileFamilyMembers(s));R_TRY(CheckBaseGames(s));if(names){if(progress)progress->NewTransfer("Reading game names");R_TRY(ReadTitleNames(s));}R_TRY(s.Check());scan.complete=true;
+    s.stage="reconciling all registered game-family members";R_TRY(ReconcileFamilyMembers(s));R_TRY(CheckBaseGames(s));if(names){if(progress)progress->NewTransfer("Reading game names");R_TRY(ReadTitleNames(s));}R_TRY(s.CheckTicketsUnchanged());R_TRY(s.Check());scan.complete=true;
     scan.detail="The scan read USB content directly. No game files, tickets, HOME records or SD routing indexes were changed. Import checks content hashes before registration. Optional delta fragments are not installed game content.";
     return 0;
     };
     const auto result=operation();
     if(R_FAILED(result)&&scan.detail.empty())scan.detail=nexus::usbimport::FailureDetail(s.stage,result,"No game files, permissions or registrations were changed.");
+    if(R_FAILED(result)){scan.complete=false;if(!ownership_only)scan.titles.clear();}
     return result;
 }
 
 
 std::string UsbImportPreview(const UsbImportScan& scan){
+    if(!scan.complete)return "USB check could not finish. Game health and ticket status are not confirmed. Nothing was changed.\n\n"+scan.detail;
     size_t ready{},registered{},incomplete{},tickets{};
     for(const auto& row:scan.titles)switch(row.status){case UsbImportStatus::Ready:++ready;break;case UsbImportStatus::AlreadyRegistered:++registered;break;case UsbImportStatus::Incomplete:++incomplete;break;case UsbImportStatus::TicketMissing:++tickets;break;}
     std::string result="USB library preview\n\n"+std::to_string(ready)+" ready to import; "+std::to_string(registered)+" already registered; "+std::to_string(incomplete)+" incomplete or conflicting; "+std::to_string(tickets)+" missing tickets.\n\n";

@@ -7,6 +7,7 @@
 #include "nexus/network_rate.hpp"
 #include "nexus/transfer_activity.hpp"
 #include "nexus/task_progress.hpp"
+#include "nexus/progress_presentation.hpp"
 #include <functional>
 #include <span>
 #include <stop_token>
@@ -41,6 +42,7 @@ struct ProgressBox final : Widget {
 
     auto SetActionName(const std::string& action) -> ProgressBox&;
     auto SetTitle(const std::string& title) -> ProgressBox&;
+    void SetItem(const std::string& title);
     auto NewTransfer(const std::string& transfer) -> ProgressBox&;
     // zeros the saved offset.
     auto ResetTranfser() -> ProgressBox&;
@@ -57,9 +59,12 @@ struct ProgressBox final : Widget {
     // Explicit installer telemetry; generic/weighted progress is never treated
     // as NCA bytes. Other progress dialogs do not write into the PC journal.
     void TransferEvent(const std::string& text){if(m_transfer_log)nexus::transfer::activity::Get().Event(text);}
-    void ContentFile(const std::string& name,const std::string& kind,const std::string& phase,u64 size,u64 packed=0){if(m_transfer_log)nexus::transfer::activity::Get().ContentFile(name,kind,phase,size,packed);}
+    void ContentFile(const std::string& name,const std::string& kind,const std::string& phase,u64 size,u64 packed=0){NewTransfer(phase);if(m_transfer_log)nexus::transfer::activity::Get().ContentFile(name,kind,phase,size,packed);}
     void ContentBytes(u64 offset,u64 size){if(m_transfer_log)nexus::transfer::activity::Get().ContentBytes(offset,size);}
-    void ContentPhase(const std::string& phase){if(m_transfer_log)nexus::transfer::activity::Get().ContentPhase(phase);}
+    void ContentPhase(const std::string& phase){NewTransfer(phase);if(m_transfer_log)nexus::transfer::activity::Get().ContentPhase(phase);}
+    // Successful payload bytes, separate from the weighted overall bar.
+    void AddTransferBytes(u64 bytes);
+    auto UpdateTransferBytes(s64 offset,s64 size) -> ProgressBox&;
     void BeginNetworkTransfer();
     void AddNetworkBytes(u64 bytes);
     void EndNetworkTransfer();
@@ -90,9 +95,9 @@ struct ProgressBox final : Widget {
             }
 
             if (dltotal) {
-                this->UpdateTransfer(dlnow, dltotal);
+                this->UpdateTransferBytes(dlnow, dltotal);
             } else {
-                this->UpdateTransfer(ulnow, ultotal);
+                this->UpdateTransferBytes(ulnow, ultotal);
             }
 
             return true;
@@ -143,7 +148,8 @@ private:
     bool m_detailed{};
     bool m_finishing{};
     TimeStamp m_timestamp{};
-    nexus::network::RateMeter m_network_rate{};
+    nexus::network::RateMeter m_network_rate{},m_transfer_rate{};
+    nexus::progressui::ByteCursor m_byte_cursor;
     std::vector<u8> m_image_data{};
     int m_image_pending{};
     bool m_is_image_pending{};
@@ -156,7 +162,7 @@ private:
     int m_image{};
     bool m_own_image{};
     bool m_screen_toggle_enabled{};
-    bool m_transfer_log{};
+    bool m_transfer_log{},m_show_details{};
     nexus::transfer::activity::Cursor m_activity_cursor;
 };
 

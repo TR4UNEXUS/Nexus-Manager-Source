@@ -207,6 +207,9 @@ public:
     Result Check(){if(progress)R_TRY(progress->ShouldExitResult());R_UNLESS(nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
         if(generation){R_TRY(client.Check(generation));NexusVsdStatus status{};R_TRY(client.VirtualSdStatus(status));R_UNLESS(!(status.flags&(NEXUS_VSD_ACTIVE|NEXUS_VSD_ARMED)),nexus::Unavailable);}return 0;}
     size_t BufferSize()const{return std::min<size_t>(256*1024,client.TransferLimit());}
+    u64 work_total{},work_done{};
+    void BeginWork(u64 total){work_total=std::max<u64>(total,1);work_done=0;if(progress)progress->SetDetailedProgress(0,"Preparing files",{},{});}
+    void ReadProgress(u64 count){if(!progress)return;progress->AddTransferBytes(count);if(work_total){work_done=std::min(work_total,work_done+count);progress->SetDetailedProgress(nexus::WorkPart(work_done,work_total,98),progress_action,{},{});}}
     void Progress(const char* action,const std::string& path,u64 done,u64 total){if(!progress)return;if(progress_path!=path||progress_action!=action){progress->NewTransfer(path);progress_path=path;progress_action=action;}
         progress->SetTitle(path).SetActionName(action).UpdateTransfer(done,total).SetProgressNote("Keep the network and USB drive connected. The network source is kept.");}
     void EndRead(){source.EndRead();}
@@ -219,8 +222,8 @@ public:
         else {const auto error=source.List(path,names);R_TRY(Check());R_UNLESS(!error,IoError);}
         return 0;}
     Result Read(bool usb,const std::string& path,u64 offset,void* data,size_t count,u64& actual){actual=0;R_UNLESS(Canonical(path)&&offset<=MaxBytes&&count<=MaxBytes-offset,Invalid);R_TRY(Check());
-        if(usb)return client.Read(generation,path,offset,data,count,actual);
-        const auto error=source.Read(path,offset,data,count,actual);R_TRY(Check());R_UNLESS(!error,IoError);return 0;}
+        if(usb){R_TRY(client.Read(generation,path,offset,data,count,actual));ReadProgress(actual);return 0;}
+        const auto error=source.Read(path,offset,data,count,actual);R_TRY(Check());R_UNLESS(!error,IoError);ReadProgress(actual);return 0;}
     Result Preflight(u64 bytes){R_TRY(Check());nexus::Space space{};R_TRY(client.GetSpace(generation,space));R_UNLESS(bytes<=space.free&&space.free-bytes>=32*1024*1024,MAKERESULT(2,30));return 0;}
     Result NewStage(bool directory,u64 size,std::string& out){R_UNLESS(Safe(final),Invalid);std::array<u8,16> nonce{};randomGet(nonce.data(),nonce.size());stage=Child(Parent(final),std::string(StagePrefix)+nexusapp::HexId(nonce.data(),nonce.size()));
         Entry e;bool exists{};R_TRY(Stat(true,stage,e,exists));R_UNLESS(!exists,Conflict);out=stage;return directory?Directory(true,stage):Create(true,stage,size);}
@@ -305,6 +308,7 @@ Result RunInstallQueue(SessionPtr session,const std::vector<SelectedNetworkFile>
     }
     u64 all_bytes{},finished_bytes{};for(const auto& row:report)all_bytes+=row.file.size;
     for(size_t i=0;i<report.size();++i){
+        progress->SetItem(report[i].file.path);
         ui::ProgressScope package_scope(progress,nexus::WorkPart(finished_bytes,all_bytes),nexus::WorkPart(finished_bytes+report[i].file.size,all_bytes));finished_bytes+=report[i].file.size;
         auto& row=report[i];
         progress->SetImage(0).SetTitle(Leaf(row.file.path)).SetProgressNote({});

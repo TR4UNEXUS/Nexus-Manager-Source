@@ -24,6 +24,7 @@ struct RecoveryIssue {
     u32 version{};
 };
 struct RecoveryPlan {
+    u64 console_backup_sequence{};
     u64 only_application{};
     u64 generation{};
     nexus::recovery::Maps maps;
@@ -41,6 +42,8 @@ struct RecoveryPlan {
 };
 Result ScanUsbRecovery(ui::ProgressBox*, RecoveryPlan&, u64 only_application=0);
 Result ApplyUsbRecovery(ui::ProgressBox*, RecoveryPlan&);
+Result ScanConsoleRoutingRestore(ui::ProgressBox*, RecoveryPlan&);
+Result ApplyConsoleRoutingRestore(ui::ProgressBox*, RecoveryPlan&);
 Result ReadUsbRoutingContent(std::set<std::array<u8,16>>&);
 Result UsbRoutingReferences(const std::set<std::array<u8,16>>&,bool&);
 Result RemoveDeletedUsbRouting(ui::ProgressBox*,u64 generation,const std::vector<NcmContentId>&,

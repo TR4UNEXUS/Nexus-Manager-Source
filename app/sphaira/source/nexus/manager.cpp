@@ -113,7 +113,7 @@ struct TransferProgress {
     void Show(){box->SetOverallTransfer(work.Offset(),work.Total(),label,finishing);}
     bool Begin(u64 bytes){if(!work.Begin(bytes))return false;label="Preparing files";Show();return true;}
     void Pass(const std::string& name){label=name;Show();}
-    bool Advance(u64 bytes){if(!work.Advance(bytes))return false;Show();return true;}
+    bool Advance(u64 bytes){if(!work.Advance(bytes))return false;box->AddTransferBytes(bytes);Show();return true;}
     void Finish(unsigned percent,const std::string& name){
         if(work.Finish(percent)){finishing=true;label=name;Show();}
     }
@@ -490,7 +490,7 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
             },
             [&](size_t i,bool starting){
                 if(starting){active=i;p->SetActionName("Install "+std::to_string(i+1)+" / "+std::to_string(report.items.size())+" / "+nexus::TargetName(report.target));
-                    p->SetTitle(report.items[i].entry.name);p->NewTransfer("Opening package");}
+                    p->SetItem(report.items[i].entry.name);p->NewTransfer("Opening package");}
                 else save_report();
             });
     }();

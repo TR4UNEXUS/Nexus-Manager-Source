@@ -25,6 +25,7 @@ for name in names:
 fixture = r'''
 #include "nexus/transfer_activity.hpp"
 #include "nexus/task_progress.hpp"
+#include "nexus/progress_presentation.hpp"
 #include <cassert>
 #include <cstdint>
 #include <string>
@@ -38,7 +39,7 @@ struct ProgressBox {
     s64 m_size{}, m_offset{}, m_last_offset{}, m_speed{};
     bool m_overall{}, m_finishing{}, m_detailed{},m_transfer_log{};
     std::string m_title, m_transfer, m_progress_note, m_byte_detail;
-    Clock m_timestamp; Safety m_safety; nexus::TaskProgress m_task_progress;
+    nexus::progressui::ByteCursor m_byte_cursor;Clock m_timestamp; Safety m_safety; nexus::TaskProgress m_task_progress;
     DECLARATIONS
 };
 METHODS
@@ -46,9 +47,12 @@ int main(){
     ProgressBox box;
     box.SetTitle("Left 4 Dead");
     box.SetDetailedProgress(35,"Copying game files","Copied 0.5 MB / 5.0 GB","18.0 MB/s");
+    assert(box.m_byte_cursor.Advance(4096,4096)==4096);
     // These are real child-workflow calls used during shortcut installation.
     box.NewTransfer("Creating Program").UpdateTransfer(0,8);
+    assert(box.m_byte_cursor.Advance(4096,4096)==4096); // same-sized file still contributes bytes
     box.ResetTranfser();
+    assert(box.m_byte_cursor.Advance(4096,4096)==4096); // overall weights are independent
     box.SetOverallTransfer(100,100,"Child complete",true);
     box.SetProgressNote("Child note");box.SetTitle("Child title");
     assert(box.m_size==10000 && box.m_offset==3500);

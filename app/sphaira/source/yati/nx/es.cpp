@@ -534,28 +534,27 @@ Result PatchTicket(std::vector<u8>& ticket, std::vector<u8>& cert_chain, u8 key_
     R_SUCCEED();
 }
 
-Result GetCommonTickets(std::vector<FsRightsId>& out) {
-    s32 count;
-    R_TRY(es::CountCommonTicket(&count));
-
-    s32 written;
-    out.resize(count);
-    R_TRY(es::ListCommonTicket(&written, out.data(), out.size()));
-    out.resize(written);
-
-    R_SUCCEED();
+// A successful query must describe the complete current ES list. Do not pass
+// an uninitialised output count back to the ES list command or publish a
+// partial list as proof that a ticket is absent.
+static Result ReadInstalledTickets(bool personalised,std::vector<FsRightsId>& out) {
+    out.clear();s32 count{},written{},after{};
+    R_TRY(personalised?CountPersonalizedTicket(&count):CountCommonTicket(&count));
+    R_UNLESS(count>=0&&count<=65536,MAKERESULT(Module_Libnx,LibnxError_BadInput));
+    std::vector<FsRightsId> page(count);
+    if(count)R_TRY(personalised?ListPersonalizedTicket(&written,page.data(),count):ListCommonTicket(&written,page.data(),count));
+    R_TRY(personalised?CountPersonalizedTicket(&after):CountCommonTicket(&after));
+    R_UNLESS(written==count&&after==count,MAKERESULT(Module_Libnx,LibnxError_BadInput));
+    std::sort(page.begin(),page.end(),[](const auto& a,const auto& b){return std::memcmp(&a,&b,sizeof(a))<0;});
+    for(size_t i=0;i<page.size();++i)
+        R_UNLESS(IsRightsIdValid(page[i])&&(!i||std::memcmp(&page[i-1],&page[i],sizeof(page[i]))),MAKERESULT(Module_Libnx,LibnxError_BadInput));
+    out=std::move(page);return 0;
 }
-
+Result GetCommonTickets(std::vector<FsRightsId>& out) {
+    return ReadInstalledTickets(false,out);
+}
 Result GetPersonalisedTickets(std::vector<FsRightsId>& out) {
-    s32 count;
-    R_TRY(es::CountPersonalizedTicket(&count));
-
-    s32 written;
-    out.resize(count);
-    R_TRY(es::ListPersonalizedTicket(&written, out.data(), out.size()));
-    out.resize(written);
-
-    R_SUCCEED();
+    return ReadInstalledTickets(true,out);
 }
 
 Result IsRightsIdCommon(const FsRightsId& id, bool* out) {

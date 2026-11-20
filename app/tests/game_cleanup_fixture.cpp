@@ -183,12 +183,23 @@ int main(){using namespace sphaira::nexusapp;sphaira::ui::ProgressBox p;
     const auto unfinished=scan.items[0];assert(unfinished.kind==CleanupKind::Placeholder&&!PreviewGameRemoval(&p,unfinished,plan));assert(!ApplyGameRemoval(&p,plan,report)&&live.files.size()==5&&live.placeholders.empty());
     Reset();auto protected_app=Item();protected_app.application=0x0100000000000001;assert(PreviewGameRemoval(&p,protected_app,plan));protected_app.application=0x05004e584d470000ULL;assert(PreviewGameRemoval(&p,protected_app,plan));
     running_id=app;assert(PreviewGameRemoval(&p,Item(),plan));running_id=0x05004e584d470000ULL;
-    // Missing-ticket games remain reviewable even if HOME still lists them.
-    Reset();missing_tickets.insert(app);assert(!ScanCleanup(&p,Target::Sd,scan));
-    auto missing=std::find_if(scan.items.begin(),scan.items.end(),[](const auto& i){return i.application==app;});
-    assert(missing!=scan.items.end()&&missing->name.find("Ticket missing")!=std::string::npos);
-    ticket_error=Fault;assert(!ScanCleanup(&p,Target::Sd,scan));assert(std::none_of(scan.items.begin(),scan.items.end(),[](const auto& i){return i.application==app;}));
-    assert(scan.detail.find("could not be checked")!=std::string::npos);
+    // A ticket lookup cannot make an installed game a cleanup candidate.
+    for(auto target:{Target::Sd,Target::Internal,Target::Usb})for(Result error:{Result{0},Fault}){
+        Reset(target);missing_tickets.insert(app);ticket_error=error;
+        assert(!ScanCleanup(&p,target,scan));
+        assert(std::none_of(scan.items.begin(),scan.items.end(),[](const auto& i){return i.application==app;}));
+        assert(scan.detail.find("missing-ticket")==std::string::npos);
+        CleanupBatchPlan batch;assert(!PreviewCleanupBatch(&p,scan.items,batch));CleanupBatchReport removed;
+        assert(!ApplyCleanupBatch(&p,batch,removed));assert(live.files.contains(I(1))&&live.files.contains(I(2))&&live.files.contains(I(3)));
+    }
+    // A game registered after the cleanup preview must be protected, even if
+    // the content files and all content metadata are otherwise unchanged.
+    Reset();live.home.erase(app);assert(!ScanCleanup(&p,Target::Sd,scan));
+    auto stale=*std::find_if(scan.items.begin(),scan.items.end(),[](const auto& i){return i.application==app;});
+    assert(stale.cleanup_only&&!PreviewGameRemoval(&p,stale,plan));live.home.insert(app);
+    assert(ApplyGameRemoval(&p,plan,report)&&!deletes&&!db_removes&&!home_changes);
+    assert(report.detail.find("now on HOME")!=std::string::npos);
+    assert(!PreviewGameRemoval(&p,Item(),plan)); // explicit uninstall is still allowed
     // Deleting one complete duplicate must retain all shared HOME/meta records.
     for(auto target:{Target::Sd,Target::Usb}){Reset(target);for(const auto& r:live.records)keep.insert(r.key.id);
         assert(!PreviewGameRemoval(&p,Item(),plan)&&!plan.records);assert(!ApplyGameRemoval(&p,plan,report));

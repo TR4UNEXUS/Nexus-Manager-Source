@@ -24,7 +24,7 @@ struct Hash {
 class PortIO {
     ui::ProgressBox* p;const Plan& plan;fs::FsNativeSd sd;nexus::Client client;
     std::string stage,read_path,write_path;fs::File read_file,write_file;
-    Phase last_phase{Phase::Preparing};u64 copy_tick{},copy_start{};
+    u64 copy_start{};Phase current_phase{Phase::Preparing};
     Result Poll(){R_TRY(p->ShouldExitResult());R_UNLESS(nexus::lifecycle::CanPoll(),nexus::Unavailable);return 0;}
 public:
     using Result=::Result;using Hash=nexusapp::Hash;
@@ -41,14 +41,11 @@ public:
     size_t BufferSize(){return std::min<size_t>(4*1024*1024,client.TransferLimit());}
     Result Check(){R_TRY(Poll());return client.Check(plan.generation);}
     void Progress(const nexus::port::Progress& progress){
-        auto note=progress.Note();
-        if(progress.phase==Phase::Copying){
-            if(last_phase!=Phase::Copying){copy_tick=armGetSystemTick();copy_start=progress.copied;}
-            const double seconds=armTicksToNs(armGetSystemTick()-copy_tick)/1e9;
-            if(seconds>=1 && progress.copied>copy_start)
-                note=ByteSize(static_cast<u64>((progress.copied-copy_start)/seconds))+"/s   |   Game size "+ByteSize(progress.total);
-        }
-        last_phase=progress.phase;
+        current_phase=progress.phase;
+        const auto note=progress.Note();
+        const auto transferred=progress.copied;
+        if(transferred>copy_start)p->AddTransferBytes(transferred-copy_start);
+        copy_start=transferred;
         p->SetTitle(plan.name);
         const auto stage_text=std::string(progress.Stage())+(progress.path.empty()?"":" - "+progress.path);
         p->SetDetailedProgress(progress.Percent(),stage_text,progress.Bytes(),note);
@@ -81,9 +78,9 @@ public:
     Result Read(bool usb,const std::string& path,u64 off,void* data,size_t count,u64& actual){
         // The engine checks generation once per chunk; USB Read also checks it
         // atomically in the storage owner. Avoid a second status IPC here.
-        R_TRY(Poll());if(usb)return client.Read(plan.generation,path,off,data,count,actual);
+        R_TRY(Poll());if(usb){R_TRY(client.Read(plan.generation,path,off,data,count,actual));if(current_phase!=Phase::Copying)p->AddTransferBytes(actual);return 0;}
         if(read_path!=path || off==0){EndRead();R_TRY(sd.OpenFile(path,FsOpenMode_Read,&read_file));read_path=path;}
-        return read_file.Read(off,data,count,FsReadOption_None,&actual);
+        R_TRY(read_file.Read(off,data,count,FsReadOption_None,&actual));if(current_phase!=Phase::Copying)p->AddTransferBytes(actual);return 0;
     }
     Result Directory(bool usb,const std::string& path){
         R_UNLESS(path.size()<256 && nexus_vsd::Canonical(path),Invalid);

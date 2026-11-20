@@ -1921,6 +1921,12 @@ App::App(const char* argv0) {
         auto extended_font = nvgCreateFontMem(this->vg, "Extended", (unsigned char*)font_extended.address, font_extended.size, 0);
         nvgAddFallbackFontId(this->vg, standard_font, extended_font);
 
+        int progress_bold=-1;
+        if(R_SUCCEEDED(romfsInit())){
+            progress_bold=nvgCreateFont(this->vg,"ProgressBold","romfs:/fonts/DejaVuSans-Bold.ttf");
+            romfsExit();
+        }
+        if(progress_bold>=0){nvgAddFallbackFontId(this->vg,progress_bold,standard_font);nvgAddFallbackFontId(this->vg,progress_bold,extended_font);}
         constexpr PlSharedFontType lang_font[] = {
             PlSharedFontType_ChineseSimplified,
             PlSharedFontType_ExtChineseSimplified,
@@ -1934,6 +1940,7 @@ App::App(const char* argv0) {
                 std::snprintf(name, sizeof(name), "Lang_%u", font_lang.type);
                 auto lang_font = nvgCreateFontMem(this->vg, name, (unsigned char*)font_lang.address, font_lang.size, 0);
                 nvgAddFallbackFontId(this->vg, standard_font, lang_font);
+                if(progress_bold>=0)nvgAddFallbackFontId(this->vg,progress_bold,lang_font);
             } else {
                 log_write("failed plGetSharedFontByType(%d)\n", type);
             }

@@ -8,7 +8,7 @@
 namespace sphaira::yati::container {
 namespace {
 
-#define XCI_MAGIC std::byteswap(0x48454144)
+#define XCI_MAGIC 0x44414548u
 #define HFS0_MAGIC 0x30534648
 #define HFS0_ROOT_HEADER_OFFSET 0xF000
 #define HFS0_ROOT_HEADER_OFFSET_WITH_KEY_AREA (HFS0_ROOT_HEADER_OFFSET + 0x1000)
@@ -45,18 +45,43 @@ auto Xci::Hfs0::GetHfs0Data() const -> std::vector<u8> {
 
 Result Xci::ReadRootHeader(Root& out) {
     out = {};
+    // HEAD stores the actual HFS0 location. Older/trimmed dumps need not
+    // place it at 0xF000, and some prepend the optional 0x1000 key area.
+    // Cartridge capacity is not a minimum file size: trimmed padding is valid.
     s64 offset = HFS0_ROOT_HEADER_OFFSET;
+    bool declared = false;
+    u64 declared_header_size{};
+    for (const u64 prefix : {0ULL, 0x1000ULL}) {
+        u8 header[0x40]{};
+        const u64 at = prefix + 0x100;
+        R_UNLESS(m_source_size < 0 || (at <= u64(m_source_size) && sizeof(header) <= u64(m_source_size)-at), Result_XciInvalidHeader);
+        R_TRY(ReadExact(m_source, header, at, sizeof(header)));
+        u32 magic{}; std::memcpy(&magic, header, sizeof(magic));
+        if (magic != XCI_MAGIC) continue;
+        u64 root{}, header_size{}, absolute{};
+        std::memcpy(&root, header+0x30, sizeof(root));
+        std::memcpy(&header_size, header+0x38, sizeof(header_size));
+        R_UNLESS(root >= 0x200 && header_size >= sizeof(Hfs0Header) &&
+            Add(prefix, root, absolute) && absolute <= u64(INT64_MAX) &&
+            header_size <= u64(INT64_MAX)-absolute, Result_XciInvalidHeader);
+        R_UNLESS(m_source_size < 0 || (absolute <= u64(m_source_size) && header_size <= u64(m_source_size)-absolute), Result_XciInvalidHeader);
+        offset = absolute;
+        declared = true;
+        declared_header_size = header_size;
+        break;
+    }
     const auto read = [&]() -> Result {
         R_UNLESS(m_source_size < 0 || offset <= m_source_size, Result_XciInvalidHeader);
         return Hfs0GetPartition(m_source, offset, out.hfs0, m_source_size < 0 ? -1 : m_source_size-offset);
     };
     auto rc = read();
-    if (rc == Result_XciBadMagic) {
+    if (!declared && rc == Result_XciBadMagic) {
         // Dumps may contain a prepended 0x1000-byte key area.
         offset = HFS0_ROOT_HEADER_OFFSET_WITH_KEY_AREA;
         rc = read();
     }
     R_TRY(rc);
+    R_UNLESS(!declared || u64(out.hfs0.data_offset-offset) <= declared_header_size, Result_XciInvalidHeader);
     out.hfs0_offset = offset;
     R_SUCCEED();
 }

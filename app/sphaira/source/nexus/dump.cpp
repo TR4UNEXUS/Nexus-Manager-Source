@@ -313,8 +313,9 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
         std::vector<u8> buffer(1024*1024);
         std::array<u8,32> written_hash{},read_hash{};
         const auto cancel=[&]{return p->ShouldExitResult();};
-        const auto progress=[&](u64 off,u64 size){report.offset=off;p->UpdateTransfer(off,size);};
+        const auto progress=[&](u64 off,u64 size){report.offset=off;p->UpdateTransferBytes(off,size);};
         {
+            ui::ProgressScope copying(p,0,5000);
             R_TRY(output.OpenWrite());ON_SCOPE_EXIT(output.Close());
             Sha256Context hash;sha256ContextCreate(&hash);
             report.stage="Writing the NSP backup";p->NewTransfer(report.stage);report.offset=0;
@@ -328,6 +329,7 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
         }
         R_TRY(output.Commit());
         {
+            ui::ProgressScope verifying(p,5000,9800);
             R_TRY(output.OpenRead(pkg.size));ON_SCOPE_EXIT(output.Close());
             Sha256Context hash;sha256ContextCreate(&hash);
             report.stage="Verifying the saved backup";p->NewTransfer(report.stage);report.offset=0;
@@ -339,7 +341,8 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
         if(written_hash!=read_hash){report.detail="The saved backup did not match the bytes read from the game. Check the destination drive before retrying.";return Invalid;}
         R_TRY(cancel());
         if(source==nexus::Target::Usb){nexus::Client c;R_TRY(c.Check(gen));}
-        report.stage="Finishing the backup";
+        ui::ProgressScope finishing(p,9800,10000);
+        report.stage="Finishing the backup";p->NewTransfer(report.stage);
         R_TRY(output.Rename(final_path));report.renamed=true;
         if(destination==nexus::Target::Sd)owned=false;
         const auto commit=output.Commit();

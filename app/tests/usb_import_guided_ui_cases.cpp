@@ -42,7 +42,7 @@ void CancelOnce(std::optional<s64> choice){
 }
 namespace librarycheck {
 enum class Button{A,B,X,Y,R,SELECT,START};
-struct Action{std::string label;std::function<void()> callback;};
+struct Action{std::string label;std::function<void()> callback;Action()=default;Action(std::function<void()> cb):callback(std::move(cb)){}Action(std::string text,std::function<void()> cb):label(std::move(text)),callback(std::move(cb)){};};
 static unsigned entries{},managed{},moved{},refreshed{},helped{},exited{};
 namespace nexusapp{void DisplayUsbImport(){++entries;}}
 struct App{static void Exit(){++exited;}};
@@ -70,10 +70,10 @@ void DrawHeader(){const int vg{},fg{};// LIBRARY_IMPORT_DRAW
 }
 void Verify(){
     for(bool empty:{false,true}){Menu menu;if(!empty)menu.games.push_back(1);menu.Setup();
-        assert(menu.actions.size()==6); // B is shared by all pages outside this extracted block.
-        assert(menu.actions.at(Button::R).label=="Repair USB games");menu.actions.at(Button::R).callback();
-        menu.actions.at(Button::A).callback();menu.actions.at(Button::X).callback();menu.actions.at(Button::Y).callback();menu.actions.at(Button::SELECT).callback();menu.actions.at(Button::START).callback();}
-    assert(entries==2&&managed==2&&moved==2&&refreshed==2&&helped==2&&exited==2);
+        assert(menu.actions.size()==5&&!menu.actions.contains(Button::X)); // B is shared by all pages; Move was removed.
+        menu.actions.at(Button::R).callback();
+        menu.actions.at(Button::A).callback();menu.actions.at(Button::Y).callback();menu.actions.at(Button::SELECT).callback();menu.actions.at(Button::START).callback();}
+    assert(entries==2&&managed==2&&!moved&&refreshed==2&&helped==2&&exited==2);
     draws.clear();DrawHeader();assert(draws.size()==1);const auto r=draws[0].rect;
     assert(r.x==850&&r.y==110&&r.w==376&&r.h==46&&r.x+r.w<=1226&&r.y+r.h<174);
     assert(draws[0].text=="[Switch R]  Repair USB games");
@@ -90,40 +90,17 @@ struct Menu {
     Page page{Page::Home};
     bool HasFocus()const{return focused&&!App::option&&!App::progress&&!App::menu;}
     bool ShouldPop()const{return popped;}
-    void OpenUsbRepair();bool PollUsbLibraryStartup();
+    void OpenUsbRepair();
 };
 // STARTUP_USB_PRODUCTION
-void Ready(bool pending=false){startup_available=true;startup_result={};startup_result.pending=pending;startup_result.affected_games=3;startup_result.repairable_games=1;startup_result.blocked_games=2;startup_result.missing_ticket_games=2;}
 void Verify(){
-    // Read-only startup is once per launch; absence/error/healthy output is quiet.
-    for(unsigned state=0;state<2;++state){Case();Reset();Menu menu;startup_available=true;startup_result.detail=state?"Healthy":"No USB";
-        assert(!menu.PollUsbLibraryStartup()&&startup_starts==1&&startup_takes==1&&menu.startup_usb_handled&&!App::option&&!App::progress&&!mutations);
-        Ready();assert(!menu.PollUsbLibraryStartup()&&startup_starts==1&&startup_takes==1);
-    }
-    Case();Reset();Menu menu;assert(!menu.PollUsbLibraryStartup()&&!menu.startup_usb_handled&&startup_starts==1);assert(!menu.PollUsbLibraryStartup()&&startup_starts==1);Ready();assert(menu.PollUsbLibraryStartup()&&App::option&&startup_starts==1);
-    Case();Reset();Menu failed;startup_available=true;startup_result.result=Fault;startup_result.detail="The connected drive could not be checked safely";assert(failed.PollUsbLibraryStartup());assert(App::option->right=="Review USB check"&&Contains(App::option->message,startup_result.detail)&&Contains(App::option->message,Diagnostic(Fault)));App::Press(0);assert(!failed.PollUsbLibraryStartup()&&!mutations);
-    for(auto choice:{std::optional<s64>{},std::optional<s64>{0},std::optional<s64>{1}}){Case();Reset();Menu current;Ready();assert(current.PollUsbLibraryStartup());
-        assert(App::option->left=="Not now"&&App::option->right=="Review repairs"&&App::option->selected==0&&!scans&&!mutations);
-        assert(Contains(App::option->message,"Games needing attention: 3")&&Contains(App::option->message,"Games ready: 1")&&Contains(App::option->message,"Need checking: 2")&&Contains(App::option->message,"permissions on this system"));
-        auto replay=App::option->callback;App::Press(choice);replay(1);
-        const bool accepted=choice&&*choice==1;assert(bool(App::progress)==accepted&&startup_stops==unsigned(accepted)&&!mutations);
-        if(accepted){assert(!scans);App::Run();assert(scans==1&&pending_checks==1&&!imports&&!mutations);}
-        assert(!current.PollUsbLibraryStartup());
-    }
-    Case();Reset();Menu recovery;Ready(true);startup_result.result=Fault;startup_result.affected_games=0;assert(recovery.PollUsbLibraryStartup());
-    assert(App::option->right=="Review recovery"&&Contains(App::option->message,"recovery journal")&&!restores&&!mutations);pending_flag=true;App::Press(1);App::Run();assert(!scans&&App::Has("Restore backup")&&!restores&&!mutations);
-    // No modal/popped/background/limited-memory UI may begin or consume it.
-    for(unsigned blocked=0;blocked<6;++blocked){Case();Reset();Menu quiet;Ready();
-        if(blocked==0)quiet.focused=false;if(blocked==1)quiet.popped=true;if(blocked==2)nexus::lifecycle::poll_allowed=false;
-        if(blocked==3)App::applet=true;if(blocked==4)App::Push<OptionBox>("Other dialog","Close",[](auto){});
-        if(blocked==5)App::Push<sphaira::ui::ProgressBox>(0,"Existing operation","Working",[](auto*){return Result{};},[](Result){});
-        const auto options=App::option_pushes;assert(!quiet.PollUsbLibraryStartup()&&startup_starts==0&&startup_takes==0&&App::option_pushes==options&&!mutations);
-    }
-    for(auto page:{Page::Files,Page::Results}){Case();Reset();Menu browse;browse.page=page;Ready();assert(!browse.PollUsbLibraryStartup()&&startup_starts==1&&startup_takes==0&&!App::option);browse.page=Page::Installed;assert(browse.PollUsbLibraryStartup()&&startup_takes==1);App::Press(0);}
-    Case();Reset();Menu refreshing;refreshing.refresh_pending=true;Ready();assert(!refreshing.PollUsbLibraryStartup()&&startup_takes==0);refreshing.refresh_pending=false;assert(refreshing.PollUsbLibraryStartup());App::Press(0);
-    Case();Reset();Menu manual;Ready();manual.OpenUsbRepair();assert(manual.startup_usb_handled&&startup_stops==1&&!startup_available&&App::progress&&!scans&&!mutations);App::Run();assert(scans==1&&!mutations&&!manual.PollUsbLibraryStartup());
-    for(unsigned blocked=0;blocked<3;++blocked){Case();Reset();Menu manual;if(blocked==0)manual.focused=false;if(blocked==1)manual.popped=true;if(blocked==2)nexus::lifecycle::poll_allowed=false;manual.OpenUsbRepair();assert(!manual.startup_usb_handled&&!App::progress&&!startup_stops&&!mutations);}
+    Case();Reset();Menu manual;
+    assert(!startup_starts&&!startup_takes&&!App::option&&!App::progress&&!mutations);
+    manual.OpenUsbRepair();assert(startup_stops==1&&App::progress&&!scans&&!mutations);
+    App::Run();assert(scans==1&&!mutations&&!startup_starts&&!startup_takes);
+    for(unsigned blocked=0;blocked<3;++blocked){Case();Reset();Menu manual;if(blocked==0)manual.focused=false;if(blocked==1)manual.popped=true;if(blocked==2)nexus::lifecycle::poll_allowed=false;manual.OpenUsbRepair();assert(!App::progress&&!startup_stops&&!mutations);}
 }
+
 }
 int main(){
     Case();Reset();App::applet=true;DisplayUsbImport();assert(App::option&&!App::progress&&!App::menu&&!pending_checks);App::Press({});

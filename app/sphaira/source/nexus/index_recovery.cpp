@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/index_recovery.hpp"
+#include "nexus/routing_backup.hpp"
 #include "nexus/usb_import_scan.hpp"
 #include "yati/nx/content_hash.hpp"
 #include "yati/nx/keys.hpp"
@@ -518,6 +519,82 @@ Result RemoveDeletedUsbRouting(ui::ProgressBox* p,u64 generation,const std::vect
     R_UNLESS(plan.folder_exists,nexus::Invalid);plan.after=repair::Output(plan.before,before,after);
     RepairIO io{s};const repair::Journal journal{armGetSystemTick(),plan.before,plan.after};
     if(!repair::Publish(io,journal))return R_FAILED(io.rc)?io.rc:nexus::Invalid;
+    return 0;
+}
+}
+
+namespace sphaira::nexusapp {
+Result ScanConsoleRoutingRestore(ui::ProgressBox* p,RecoveryPlan& plan){
+    plan={};plan.detail="Could not prepare the console backup. No routing files were changed.";
+    nexus::routing_backup::Status status{};nexus::repair::Snapshot saved;
+    R_TRY(ReadConsoleRoutingBackup(p,saved,status));plan.console_backup_sequence=status.sequence;
+    Session s(p,plan);R_TRY(s.Open());R_TRY(s.FolderExists(plan.folder_exists));R_TRY(s.Snapshot(plan.before));
+    for(const auto& file:plan.before)if(file.exists)return s.Error(nexus::Invalid,"This SD card already has USB mapping files. Use Repair USB games to check them. Console restore only fills a missing set; it will not replace newer mappings.");
+    repair::Image pending;R_TRY(s.Read(repair::Pending,pending));R_UNLESS(!pending.exists,nexus::registration::RepairPending);
+    repair::Indexes maps;R_UNLESS(repair::Decode(saved,maps),nexus::Invalid);
+    R_UNLESS(!maps.titles.empty(),nexus::Invalid);
+    std::vector<NcmContentMetaKey> keys(65536);s32 total{},count{};
+    R_TRY(ncmContentMetaDatabaseList(&s.db,&total,&count,keys.data(),keys.size(),NcmContentMetaType_Unknown,0,0,UINT64_MAX,NcmContentInstallType_Full));
+    R_UNLESS(total>=0&&count==total&&count<=s32(keys.size()),nexus::Invalid);keys.resize(count);
+    std::map<std::pair<u64,u8>,NcmContentMetaKey> latest;
+    for(const auto&k:keys){if(k.type<NcmContentMetaType_Application||k.type>NcmContentMetaType_DataPatch)continue;auto[it,added]=latest.emplace(std::pair{k.id,k.type},k);if(!added&&k.version>it->second.version)it->second=k;}
+    std::map<core::Id,NcmContentInfo> expected;std::set<u64> checked_titles;
+    for(const auto&[identity,key]:latest){
+        R_TRY(s.Check());RecoveryMeta meta{};meta.key=key;R_TRY(s.Raw(key,meta.raw));
+        meta.application_id=ApplicationId(meta);
+        std::vector<NcmContentInfo> infos;
+        const auto parse=Parse(meta.raw,infos);
+        if(R_FAILED(parse)){
+            if(maps.titles.contains(meta.application_id))return s.Error(parse,"A game record for this backup could not be read. Use Repair USB games before restoring these links. No mappings were restored.");
+            continue;
+        }
+        bool relevant=false;
+        std::vector<core::Content> content;
+        for(const auto& info:infos){const auto c=Convert(info);content.push_back(c);if(!maps.content.contains(c.id))continue;relevant=true;
+            auto[it,added]=expected.emplace(c.id,info);if(!added)R_UNLESS(Convert(it->second).size==c.size,nexus::Invalid);}
+        if(key.type==NcmContentMetaType_Application&&maps.titles.contains(key.id)){
+            core::Maps candidate;
+            R_UNLESS(core::Add(candidate,key.id,true,content)&&candidate.titles.size()==1,nexus::Invalid);
+            const auto& row=candidate.titles[0];const auto found=maps.mappings.find(key.id);
+            if(found==maps.mappings.end()||found->second!=std::array<core::Id,3>{row.meta,row.control,row.program})return s.Error(nexus::Invalid,"This console backup belongs to an older or different game registration. Use Repair USB games to import the current drive. Nothing was restored.");
+            for(const auto&c:content)R_UNLESS(maps.content.contains(c.id),nexus::Invalid);
+            checked_titles.insert(key.id);relevant=true;
+        }
+        if(relevant){
+            // A saved update/DLC route is usable only if the complete current
+            // record is present. A partial old record must not mix SD and USB.
+            for(const auto& c:content)if(!maps.content.contains(c.id))return s.Error(nexus::Invalid,"The backup does not contain every file for a current game, update or DLC record. Use Repair USB games to check the current drive. No mappings were restored.");
+            plan.metadata.push_back(std::move(meta));
+        }
+    }
+    if(checked_titles.size()!=maps.titles.size())return s.Error(nexus::Invalid,"Some saved games are not registered in this system anymore. Use Repair USB games to import them from the drive. No mappings were restored.");
+    size_t checked{};
+    for(const auto&[id,info]:expected){
+        R_TRY(s.Check());u8 digest[32];sha256CalculateHash(digest,id.data(),id.size());char path[96]{};
+        snprintf(path,sizeof(path),"/registered/%08X/%s.nca",unsigned(digest[0]),HexId(id.data(),id.size()).c_str());
+        RecoveryContent item{info,path};bool valid{};R_TRY(s.SameSize(item,valid));
+        if(!valid)return s.Error(nexus::Invalid,"A file in this backup is missing or has the wrong size on the connected USB drive. Connect the original drive, or use Repair USB games. No mappings were restored.");
+        plan.files.push_back(std::move(item));p->SetOverallTransfer(1000+8000*++checked/std::max<size_t>(1,expected.size()),10000,"Checking the backup against this system and USB drive");
+    }
+    // Discard only orphan routing IDs with no current system metadata. No NCA
+    // is deleted. Complete base/update/DLC records are checked above together.
+    for(auto it=maps.content.begin();it!=maps.content.end();)if(!expected.contains(*it)){it=maps.content.erase(it);++plan.skipped;}else ++it;
+    plan.after=repair::Encode(maps);plan.complete=maps.titles.size();plan.ready=true;
+    plan.detail="Ready to restore USB game links\n\nGames: "+std::to_string(plan.complete)+"\nContent files checked: "+std::to_string(plan.files.size())+
+        "\nUnused old links left out: "+std::to_string(plan.skipped)+"\n\nThe backup matches this system's game records and the files on this USB drive. File sizes were checked; a full hash scan was not run.\n\nRestore the missing mappings? Game files, tickets and saved progress are kept. Fully restart the Switch afterward.";
+    return 0;
+}
+Result ApplyConsoleRoutingRestore(ui::ProgressBox* p,RecoveryPlan& plan){
+    R_UNLESS(plan.ready&&plan.console_backup_sequence,nexus::Invalid);Session s(p,plan);R_TRY(s.Open());
+    nexus::routing_backup::Status status{};R_TRY(QueryConsoleRoutingBackup(status));R_UNLESS(status.sequence==plan.console_backup_sequence,nexus::Invalid);
+    for(const auto&m:plan.metadata){std::vector<u8> raw;R_TRY(s.Raw(m.key,raw));R_UNLESS(raw==m.raw,nexus::Invalid);}
+    for(const auto&f:plan.files){bool valid{};R_TRY(s.SameSize(f,valid));R_UNLESS(valid,nexus::Invalid);}
+    repair::Snapshot now;R_TRY(s.Snapshot(now));R_UNLESS(now==plan.before,nexus::Invalid);
+    bool folder{};R_TRY(s.FolderExists(folder));if(!folder){NativePath path(Folder);R_TRY(fsFsCreateDirectory(&s.sd,path.value));}
+    p->SetOverallTransfer(9500,10000,"Restoring checked USB links",true);
+    RepairIO io{s};const repair::Journal journal{armGetSystemTick(),plan.before,plan.after};
+    if(!repair::Publish(io,journal))return R_FAILED(io.rc)?io.rc:nexus::Invalid;
+    plan.repair_complete=true;plan.detail="USB game links restored from the console backup.\n\nFully shut down and restart the Switch before playing or installing games. Game files, tickets and saved progress were not changed. HOME badges can be refreshed from Help & recovery.";
     return 0;
 }
 }

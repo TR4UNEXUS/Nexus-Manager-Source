@@ -1,3 +1,4 @@
+#include "nexus/routing_backup.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/menus/nexus_menu.hpp"
 #include "ui/menus/manager_tools_menu.hpp"
@@ -633,6 +634,10 @@ void Menu::Updates(){
         });
     });
     options->Add<SidebarEntryCallback>("Refresh HOME USB icons",[this]{RefreshBadges();});
+    options->Add<SidebarEntryCallback>("USB library backup",[]{nexusapp::DisplayConsoleRoutingBackup();},"Save and restore USB links from this system’s dedicated Nexus save.");
+    options->Add<SidebarEntryCallback>("Removing USB safely",[]{
+        App::Push<OptionBox>("Finish transfers and close any USB game before removing the drive.\n\nFor a normal unplug, fully shut down the Switch first. Sleep mode is not shutdown.\n\nIf a transfer was interrupted, reconnect the original drive and open Resume interrupted USB installs or Repair USB library. Do not reconnect a different drive while a USB game is running.","Close",[](auto){});
+    },"Avoid interrupted installs and lost writes when disconnecting a drive.");
     options->Add<SidebarEntryCallback>("Repair USB library",[this]{RecoverUsbIndexes();},"Check USB games and rebuild their links for this SD card and system.");
     options->Add<SidebarEntryCallback>("Network locations (SMB / NFS)",[]{devoptab::DisplayNetworkLocations();});
     options->Add<SidebarEntryCallback>("Check for Manager updates",[this]{CheckForUpdates();},"Check for a newer Nexus Manager, then choose whether to download and install it.");
@@ -659,41 +664,7 @@ void Menu::CheckForUpdates(){
 }
 void Menu::OpenUsbRepair(){
     if(!HasFocus()||ShouldPop()||!nexus::lifecycle::CanPoll())return;
-    startup_usb_handled=true;
     nexusapp::DisplayUsbImport();
-}
-bool Menu::PollUsbLibraryStartup(){
-    if(startup_usb_handled||!HasFocus()||ShouldPop()||!nexus::lifecycle::CanPoll())return false;
-    if(App::IsApplet()){startup_usb_handled=true;return false;}
-    if(!startup_usb_started){startup_usb_started=true;nexusapp::StartUsbLibraryStartupCheck();}
-    // A completed scan waits for an idle library/Home page. It never opens
-    // over a browser, operation, another dialog or a pending library refresh.
-    if(refresh_pending||(page!=Page::Home&&page!=Page::Installed))return false;
-    nexusapp::UsbLibraryStartupResult result;
-    if(!nexusapp::TakeUsbLibraryStartupCheck(result))return false;
-    startup_usb_handled=true;
-    if(!result.pending&&R_SUCCEEDED(result.result)&&!result.affected_games)return false;
-    std::string text;
-    if(result.pending){
-        text="A USB game repair needs recovery\n\nAn earlier operation left a saved recovery journal. Review the backup before adding, installing or moving games.\n\nYour USB game files and saves remain in place. No automatic repair has been made.";
-    }else if(R_FAILED(result.result)){
-        text="The USB check could not finish\n\n"+(result.detail.empty()?std::string("Review a fresh scan to see what needs attention. Keep any existing repair backup folders."):result.detail)+
-            "\n\nNo automatic repair has been made.";
-        char code[40]{};snprintf(code,sizeof(code),"\n\nDiagnostic code: 0x%08X",result.result);text+=code;
-    }else{
-        text="USB games need attention\n\nGames needing attention: "+std::to_string(result.affected_games)+
-            "\nGames ready: "+std::to_string(result.repairable_games)+
-            "\nNeed checking: "+std::to_string(result.blocked_games)+
-            "\n\nEach game is checked together with its updates and DLC. Review a fresh scan, then choose whether to repair the ready families. No game registrations have been changed.";
-        if(result.missing_ticket_games)text+="\n\n"+std::to_string(result.missing_ticket_games)+" game families need permissions on this system. Review their details for preparation or original-backup instructions.";
-    }
-    text+="\n\nYou can also open Installed games and choose Repair USB games later.";
-    auto consumed=std::make_shared<bool>();
-    App::Push<OptionBox>(text,"Not now",result.pending?"Review recovery":R_FAILED(result.result)?"Review USB check":"Review repairs",0,[consumed](auto choice){
-        if(*consumed)return;*consumed=true;
-        if(choice&&*choice==1)nexusapp::DisplayUsbImport();
-    });
-    return true;
 }
 bool Menu::PollStartupUpdate(){
     if(!HasFocus() || !nexus::lifecycle::CanPoll())return false;
@@ -905,7 +876,6 @@ void Menu::Activate(){
 }
 void Menu::Update(Controller* c,TouchInfo* touch){
     if(PollStartupUpdate())return;
-    if(PollUsbLibraryStartup())return;
     if(actions_dirty)SetupActions();
     const auto previous_selection=selected;
     MenuBase::Update(c,touch);

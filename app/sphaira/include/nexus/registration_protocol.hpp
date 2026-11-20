@@ -7,7 +7,7 @@
 namespace nexus::registration {
 inline constexpr std::uint32_t Command = 65032;
 inline constexpr std::uint32_t CapabilitiesCommand=65033, CapabilityMagic=0x3350584E;
-inline constexpr std::uint32_t MaxTitles=512, MaxContent=8192;
+inline constexpr std::uint32_t MaxTitles=4096, MaxContent=262144;
 inline constexpr std::uint32_t FeatureUsbRegistration=1u,FeatureExplicitInstallTarget=1u<<1;
 struct Capabilities {std::uint32_t magic{},abi{},titles{},content{},features{},reserved{};};
 inline bool Compatible(const Capabilities& c) {

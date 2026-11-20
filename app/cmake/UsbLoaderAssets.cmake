@@ -4,7 +4,7 @@ if(NOT DEFINED SOURCE_DIR OR NOT DEFINED DEST OR NOT DEST MATCHES "/usbloader-ro
 endif()
 file(MAKE_DIRECTORY "${DEST}/themes")
 file(COPY "${SOURCE_DIR}/assets/usb-loader-icon.jpg" DESTINATION "${DEST}")
-foreach(folder certs theme i18n)
+foreach(folder certs theme i18n fonts)
     file(COPY "${SOURCE_DIR}/assets/romfs/${folder}" DESTINATION "${DEST}")
 endforeach()
 file(COPY "${SOURCE_DIR}/assets/romfs/themes/base_black_theme.ini"

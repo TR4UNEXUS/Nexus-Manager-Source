@@ -1,3 +1,4 @@
+#include "nexus/package.hpp"
 #include "ui/menus/filebrowser.hpp"
 #include "ui/menus/homebrew.hpp"
 #include "ui/menus/file_viewer.hpp"
@@ -555,7 +556,7 @@ void FsView::Draw(NVGcontext* vg, Theme* theme) {
                 icon = ThemeEntryID_ICON_VIDEO;
             } else if (IsExtension(ext, IMAGE_EXTENSIONS)) {
                 icon = ThemeEntryID_ICON_IMAGE;
-            } else if (IsExtension(ext, INSTALL_EXTENSIONS)) {
+            } else if (IsExtension(ext, INSTALL_EXTENSIONS) || nexus::package::Supported(e.GetName())) {
                 // todo: maybe replace this icon with something else?
                 icon = ThemeEntryID_ICON_NRO;
             } else if (IsExtension(ext, ZIP_EXTENSIONS)) {
@@ -740,7 +741,7 @@ void FsView::OnClick() {
             }
         }
 #endif // ENABLE_LIBUSBDVD
-        else if (IsExtension(entry.GetExtension(), INSTALL_EXTENSIONS)) {
+        else if (IsExtension(entry.GetExtension(), INSTALL_EXTENSIONS) || nexus::package::Supported(entry.GetName())) {
             InstallFiles();
         } else if (IsSd()) {
             const auto assoc_list = m_menu->FindFileAssocFor();
@@ -1321,6 +1322,10 @@ void FsView::OnPasteCallback() {
                     }
                 }
 
+                u64 copy_total{},copy_done{};
+                for(const auto& entry:selected.m_files)if(entry.IsFile())copy_total+=std::max<s64>(entry.file_size,1);
+                for(const auto& c:collections)for(const auto& entry:c.files)copy_total+=std::max<s64>(entry.file_size,1);
+                copy_total=std::max<u64>(copy_total,1);
                 for (const auto& p : selected.m_files) {
                     pbox->Yield();
                     R_TRY(pbox->ShouldExitResult());
@@ -1335,7 +1340,10 @@ void FsView::OnPasteCallback() {
                     } else {
                         pbox->SetTitle(p.name);
                         pbox->NewTransfer(i18n::Reorder("Copying ", src_path));
+                        const auto weight=std::max<s64>(p.file_size,1);
+                        ui::ProgressScope file_scope(pbox,nexus::WorkPart(copy_done,copy_total,9800),nexus::WorkPart(copy_done+weight,copy_total,9800));
                         R_TRY(pbox->CopyFile(src_fs, m_fs.get(), src_path, dst_path, is_same_fs));
+                        copy_done+=weight;
                         R_TRY(on_paste_file(src_path, dst_path));
                     }
                 }
@@ -1365,7 +1373,10 @@ void FsView::OnPasteCallback() {
 
                         pbox->SetTitle(p.name);
                         pbox->NewTransfer(i18n::Reorder("Copying ", src_path));
+                        const auto weight=std::max<s64>(p.file_size,1);
+                        ui::ProgressScope file_scope(pbox,nexus::WorkPart(copy_done,copy_total,9800),nexus::WorkPart(copy_done+weight,copy_total,9800));
                         R_TRY(pbox->CopyFile(src_fs, m_fs.get(), src_path, dst_path, is_same_fs));
+                        copy_done+=weight;
                         R_TRY(on_paste_file(src_path, dst_path));
                     }
                 }
@@ -1376,6 +1387,7 @@ void FsView::OnPasteCallback() {
                 // however this leaves the folders.
                 // the folders cannot be deleted until the end as they have to be removed in
                 // reverse order so that the folder can be deleted (it must be empty).
+                ui::ProgressScope finish_scope(pbox,9800,10000);
                 if (selected.m_type == SelectedType::Cut) {
                     R_TRY(DeleteAllCollectionsWithSelected(pbox, src_fs, selected, collections, FsDirOpenMode_ReadDirs));
                 }
@@ -1749,7 +1761,8 @@ void FsView::DisplayOptions() {
 
     if (m_menu->CanInstall()) {
         if (m_entries_current.size()) {
-            if (check_all_ext(INSTALL_EXTENSIONS)) {
+            const auto install_entries=GetSelectedEntries();
+            if (std::all_of(install_entries.begin(),install_entries.end(),[](const auto& e){return e.IsFile() && (nexus::package::Supported(e.GetName()) || IsExtension(e.GetExtension(), "msp"));})) {
                 auto entry = options->Add<SidebarEntryCallback>("Install"_i18n, [this](){
                     InstallFiles();
                 });

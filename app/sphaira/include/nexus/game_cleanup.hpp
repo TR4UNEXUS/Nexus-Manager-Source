@@ -10,6 +10,8 @@ struct CleanupItem {
     u64 application{},generation{},bytes{};
     NcmContentId content{};
     std::string name,reason;
+    // Cleanup eligibility must be rechecked independently of an explicit uninstall.
+    bool cleanup_only{};
 };
 struct CleanupScan {
     std::vector<CleanupItem> items;

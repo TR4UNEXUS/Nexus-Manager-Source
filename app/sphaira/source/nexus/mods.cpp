@@ -73,7 +73,7 @@ public:
         bool ok=true;for(size_t off=0;off<b.size();){
             if(!Check()){ok=false;break;}const auto n=std::min<size_t>(b.size()-off,256*1024);u64 got{};
             const auto r=usb?client.Read(generation,path,off,b.data()+off,n,got):fsFileRead(&file,off,b.data()+off,n,FsReadOption_None,&got);
-            if(!RC(r,"Read failed: "+path)||got!=n){ok=Fail("Short or failed read: "+path);break;}off+=n;if(progress)progress->UpdateTransfer(off,b.size());
+            if(!RC(r,"Read failed: "+path)||got!=n){ok=Fail("Short or failed read: "+path);break;}off+=n;if(progress)progress->UpdateTransferBytes(off,b.size());
         }
         if(!usb)fsFileClose(&file);return ok;
     }
@@ -92,7 +92,7 @@ public:
         if(!Parents(path))return false;std::array<char,FS_MAX_PATH> p;if(!NativePath(path,p))return false;
         if(!RC(fsFsCreateFile(&sd,p.data(),b.size(),0),"SD stage creation failed."))return false;
         FsFile f{};if(!RC(fsFsOpenFile(&sd,p.data(),FsOpenMode_Write,&f),"SD stage open failed."))return false;bool ok=true;
-        for(size_t off=0;off<b.size();){if(!Check()){ok=false;break;}const auto n=std::min<size_t>(b.size()-off,256*1024);if(!RC(fsFileWrite(&f,off,b.data()+off,n,FsWriteOption_None),"SD stage write failed.")){ok=false;break;}off+=n;if(progress)progress->UpdateTransfer(off,b.size());}
+        for(size_t off=0;off<b.size();){if(!Check()){ok=false;break;}const auto n=std::min<size_t>(b.size()-off,256*1024);if(!RC(fsFileWrite(&f,off,b.data()+off,n,FsWriteOption_None),"SD stage write failed.")){ok=false;break;}off+=n;if(progress)progress->UpdateTransferBytes(off,b.size());}
         if(ok)ok=RC(fsFileFlush(&f),"SD flush failed.");fsFileClose(&f);return ok;
     }
     bool Rename(const std::string& from,const std::string& to) override {

@@ -49,7 +49,6 @@ private:
     bool refresh_pending{};
     bool actions_dirty{true};
     bool startup_update_started{},startup_update_handled{};
-    bool startup_usb_started{},startup_usb_handled{};
     ScrollingText row_text_scroll{},path_text_scroll{};
     bool title_service_ready{};
     struct IconJob {
@@ -95,7 +94,6 @@ private:
     void Updates();
     void CheckForUpdates();
     bool PollStartupUpdate();
-    bool PollUsbLibraryStartup();
     void OpenUsbRepair();
     void ShowUpdatePrompt(const nexus::updates::Release&);
     void RecoverUsbIndexes(u64 only_application=0);
