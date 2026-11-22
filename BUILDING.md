@@ -10,7 +10,7 @@ sh tools/setup-libnx.sh
 sh build-nexus-wsl.sh
 ```
 
-`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.24 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
+`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.28 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
 
 The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro`. No console key is embedded in the default build. Keep raw USB mounting disabled: Nexus firmware owns the drive.
 
@@ -20,7 +20,7 @@ The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro
 
 ## Tests
 
-Use a host C++20 compiler and Python 3. The library import tests also link OpenSSL (`libssl-dev` on Debian/Ubuntu). Progress-layout tests also require FreeType and pkg-config (`libfreetype6-dev` and `pkg-config`):
+Use a host C++20 compiler and Python 3. The library import tests also link OpenSSL (`libssl-dev` on Debian/Ubuntu). Catalogue tests also need mbedTLS (`libmbedtls-dev`). Progress-layout tests also require FreeType and pkg-config (`libfreetype6-dev` and `pkg-config`):
 
 ```sh
 python3 tests/run_ticket_snapshot_tests.py
@@ -44,3 +44,26 @@ python3 tests/run_network_shortcut_tests.py
 ```
 
 Run these from `app/`. They exercise production logic with host fixtures; installing, moving, updating and sleep/wake behaviour still need Switch testing. Older PowerShell wrappers remain in the source for reference, but the Linux/WSL shell path above is the portable entry point.
+
+## Repair catalogue and optional reporting
+
+The bundled signed catalogue is included in RomFS. The public verification key is part of the source; the private signing key is not. The catalogue tools accept an explicitly supplied external signing key. See [catalogue tooling](app/tools/repair-catalog/README.md).
+
+The default source build has empty report-server endpoints. It can use the public GitHub catalogue fallback and export diagnostics without a private deployment. To enable your own receiver, keep `nexus_report_endpoint.hpp` outside the checkout and set `NEXUS_REPORT_CONFIG_DIR` to that external directory. Define the HTTPS upload and catalogue URLs there; never put administrator credentials in the header or app. A URL compiled into an app is public, not an authentication secret. See [receiver setup and privacy](app/tools/report-server/README.md).
+
+Additional checks for 0.2.28, run from `app/`:
+
+```sh
+python3 tools/verify-vendored-libnx.py
+python3 tests/run_language_tests.py
+python3 tests/run_language_catalog_tests.py
+python3 tests/run_recovery_service_tests.py
+python3 tests/run_move_resume_tests.py
+python3 tests/run_repair_catalog_tests.py
+python3 tests/run_catalog_cache_tests.py
+python3 tests/run_repair_assistant_tests.py
+python3 tests/run_report_service_tests.py
+python3 tools/report-server/test_receiver.py
+```
+
+Tests cover catalogue signatures and rollback rejection, report consent and receipt handling, failed storage/network operations, recovery and translation packaging. They do not replace console testing.

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/menus/file_viewer.hpp"
 
 #include "app.hpp"
@@ -120,7 +121,7 @@ void Menu::EditLine() {
     }
 
     std::string output;
-    const auto title = i18n::Reorder("Edit Line ", std::to_string(m_index + 1));
+    const auto title = i18n::Reorder("Edit Line "_nx, std::to_string(m_index + 1));
     if (R_SUCCEEDED(swkbd::ShowText(output, title.c_str(), "Edit"_i18n.c_str(),
             m_lines[m_index].c_str(), 0, PATH_MAX - 1)) && output != m_lines[m_index]) {
         BeforeChange();
@@ -159,7 +160,7 @@ void Menu::ShowLineActions() {
 void Menu::InsertLine() {
     const auto pos = std::min<std::size_t>(m_index + 1, m_lines.size());
     std::string output;
-    const auto title = i18n::Reorder("Edit Line ", std::to_string(pos + 1));
+    const auto title = i18n::Reorder("Edit Line "_nx, std::to_string(pos + 1));
     if (R_FAILED(swkbd::ShowText(output, title.c_str(), "New line"_i18n.c_str(),
             nullptr, 0, PATH_MAX - 1))) {
         return;

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "app.hpp"
 #include "log.hpp"
 #include "fs.hpp"
@@ -127,13 +128,13 @@ void GetFsSaveAttr(const AccountProfileBase& acc, u8 data_type, FsSaveDataSpaceI
 
 auto GetSaveFolder(u8 data_type) -> fs::FsPath {
     switch (data_type) {
-        case FsSaveDataType_System:     return "Save System";
-        case FsSaveDataType_SystemBcat: return "Save System BCAT";
-        case FsSaveDataType_Account:    return "Save";
-        case FsSaveDataType_Bcat:       return "Save BCAT";
-        case FsSaveDataType_Device:     return "Save Device";
-        case FsSaveDataType_Temporary:  return "Save Temporary";
-        case FsSaveDataType_Cache:      return "Save Cache";
+        case FsSaveDataType_System:     return "Save System"_nx;
+        case FsSaveDataType_SystemBcat: return "Save System BCAT"_nx;
+        case FsSaveDataType_Account:    return "Save"_nx;
+        case FsSaveDataType_Bcat:       return "Save BCAT"_nx;
+        case FsSaveDataType_Device:     return "Save Device"_nx;
+        case FsSaveDataType_Temporary:  return "Save Temporary"_nx;
+        case FsSaveDataType_Cache:      return "Save Cache"_nx;
     }
     std::unreachable();
 }
@@ -246,7 +247,7 @@ auto GetSystemSaveName(u64 system_save_data_id) -> const char* {
         case 0x8000000000010007: return "bcat"; break;
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 void FakeNacpEntryForSystem(Entry& e) {
@@ -802,7 +803,7 @@ void Menu::RestoreSave() {
 
         if (paths.empty()) {
             App::Push<ui::OptionBox>(
-                i18n::Reorder("No saves found in ", fs::AppendPath(mount, BuildSaveBasePath(m_entries[m_index])).toString()),
+                i18n::Reorder("No saves found in "_nx, fs::AppendPath(mount, BuildSaveBasePath(m_entries[m_index])).toString()),
                 "OK"_i18n
             );
             return;
@@ -819,7 +820,7 @@ void Menu::RestoreSave() {
                 const auto file_path = paths[*op_index];
 
                 App::Push<OptionBox>(
-                    i18n::Reorder("Are you sure you want to restore ", file_name) + "?",
+                    i18n::Reorder("Are you sure you want to restore "_nx, file_name) + "?",
                     "Back"_i18n, "Restore"_i18n, 0, [this, file_path, location](auto op_index){
                         if (op_index && *op_index) {
                             App::Push<ProgressBox>(0, "Restore"_i18n, "", [this, file_path, location](auto pbox) -> Result {
@@ -876,7 +877,7 @@ auto Menu::BuildSavePath(const Entry& e, u32 flags) const -> fs::FsPath {
     if (flags & BackupFlag_SetName) {
         std::string out;
         while (out.empty()) {
-            const auto header = i18n::Reorder("Set name for ", e.GetName());
+            const auto header = i18n::Reorder("Set name for "_nx, e.GetName());
             if (R_FAILED(swkbd::ShowText(out, header.c_str(), "Set backup name"_i18n.c_str(), name, 1, 128))) {
                 out.clear();
             }

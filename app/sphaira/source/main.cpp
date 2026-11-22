@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include <switch.h>
 #include <memory>
 #include "app.hpp"
@@ -32,7 +33,7 @@ int main(int argc, char** argv) {
     nexus::startup::Event("app-constructor", "end");
     if (const u64 failure = nexus::startup::FailureInfo()) {
         char text[96]{};
-        snprintf(text, sizeof(text), "Startup log unavailable: step %u, code 0x%08X",
+        snprintf(text, sizeof(text), "Startup log unavailable: step %u, code 0x%08X"_nx,
             static_cast<unsigned>(failure >> 32), static_cast<unsigned>(failure));
         sphaira::App::Notify(text);
     }

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app.hpp"
 #include "ui/menus/menu_base.hpp"
@@ -113,12 +114,12 @@ void MenuBase::Draw(NVGcontext* vg,Theme* theme){
     gfx::drawText(vg,118,26,26,nvgRGB(255,255,255),"NEXUS MANAGER");
     const std::string build_version=APP_DISPLAY_VERSION;
     const std::string edition=std::string("v")+build_version.substr(0,build_version.find(' '))+
-        (App::IsApplet()?"  /  Limited memory mode":"");
+        (App::IsApplet()?"  /  Limited memory mode"_nx:"");
     gfx::drawText(vg,119,65,15,nvgRGB(255,255,255),edition.c_str());
     const auto p=GetPolledData();
-    StorageCard(vg,600,"SD card",p.sd_valid,p.sd_free,p.sd_total,"Unavailable",violet::Accent());
-    StorageCard(vg,810,"Console",p.emmc_valid,p.emmc_free,p.emmc_total,"Unavailable",violet::Lilac());
-    constexpr const char* usb_states[]={"Checking...","Connected","Not connected","Firmware unavailable","Storage error"};
+    StorageCard(vg,600,"SD card"_nx,p.sd_valid,p.sd_free,p.sd_total,"Unavailable"_nx,violet::Accent());
+    StorageCard(vg,810,"Console"_nx,p.emmc_valid,p.emmc_free,p.emmc_total,"Unavailable"_nx,violet::Lilac());
+    const char* usb_states[]={"Checking..."_nx,"Connected"_nx,"Not connected"_nx,"Firmware unavailable"_nx,"Storage error"_nx};
     StorageCard(vg,1020,"USB",p.usb_state==1,p.usb_free,p.usb_total,usb_states[std::min(p.usb_state,4u)],violet::Accent());
     gfx::drawRect(vg,0,653,1280,67,nvgRGBA(9,16,31,244));
     gfx::drawRect(vg,54,653,1172,1,violet::Line());

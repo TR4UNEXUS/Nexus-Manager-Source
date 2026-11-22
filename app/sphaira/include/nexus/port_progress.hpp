@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -34,25 +35,25 @@ struct Progress {
     }
     const char* Stage() const {
         switch(phase){
-            case Phase::Preparing:return "Checking folders and existing files";
-            case Phase::Copying:return "Copying game files";
-            case Phase::Verifying:return "Verifying copied files";
-            case Phase::Launcher:return "Creating HOME shortcut";
-            case Phase::CheckingMove:return "Checking originals before removal";
-            case Phase::Removing:return "Verifying and removing originals";
-            case Phase::Complete:return move?"Port move complete":"Port copy complete";
+            case Phase::Preparing:return "Checking folders and existing files"_nx;
+            case Phase::Copying:return "Copying game files"_nx;
+            case Phase::Verifying:return "Verifying copied files"_nx;
+            case Phase::Launcher:return "Creating HOME shortcut"_nx;
+            case Phase::CheckingMove:return "Checking originals before removal"_nx;
+            case Phase::Removing:return "Verifying and removing originals"_nx;
+            case Phase::Complete:return move?"Port move complete"_nx:"Port copy complete"_nx;
         }
         return "";
     }
     std::string Bytes() const {
         return "Copied "+ByteSize(copied)+" / "+ByteSize(total-reused)+
-            (reused?"   |   Already present "+ByteSize(reused):"");
+            (reused?"   |   Already present "_nx+ByteSize(reused):"");
     }
     std::string Note() const {
         if(phase==Phase::Verifying || phase==Phase::CheckingMove || phase==Phase::Removing)
-            return std::string("Checked ")+ByteSize(done)+" / "+ByteSize(extent)+"   |   Keep storage connected";
-        if(phase==Phase::Complete)return "All destination files verified";
-        return "Game size "+ByteSize(total)+"   |   Keep storage connected";
+            return std::string("Checked ")+ByteSize(done)+" / "+ByteSize(extent)+"   |   Keep storage connected"_nx;
+        if(phase==Phase::Complete)return "All destination files verified"_nx;
+        return "Game size "_nx+ByteSize(total)+"   |   Keep storage connected"_nx;
     }
 };
 }

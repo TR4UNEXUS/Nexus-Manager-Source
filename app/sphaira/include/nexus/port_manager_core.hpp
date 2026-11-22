@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "nexus/file_manager_core.hpp"
 #include <optional>
 namespace nexus::ports {
@@ -59,7 +60,7 @@ template<class IO> void Progress(IO& io,std::size_t done,std::size_t total){
     if constexpr(requires {io.Progress(done,total);})io.Progress(done,total);
 }
 template<class IO> bool Enable(IO& io,const ModPlan& p){
-    if(!Valid(p))return io.Fail("Invalid mod plan. Nothing was changed.");
+    if(!Valid(p))return io.Fail("Invalid mod plan. Nothing was changed."_nx);
     std::size_t done{};const auto total=p.files.size()*2+1;Progress(io,done,total);
     for(const auto& f:p.files){
         if(!io.Check()||!io.Match(p.store+"/payload/"+f.relative,true,f.size,f.hash)||
@@ -82,24 +83,24 @@ template<class IO> bool RestoreFile(IO& io,const ModPlan& p,const ModFile& f,boo
     const auto dst=files::Child(p.root,f.relative),src=p.store+"/payload/"+f.relative,backup=p.store+"/original/"+f.relative;
     bool live{},payload{},old{};
     if(!io.Check()||!io.Exists(dst,live)||!io.Exists(src,payload)||!io.Exists(backup,old))return false;
-    if(old&&!f.had_original)return io.Fail("Unexpected original-file backup. Files were kept.");
+    if(old&&!f.had_original)return io.Fail("Unexpected original-file backup. Files were kept."_nx);
     if(old&&!io.Match(backup,true,f.original_size,f.original_hash))return false;
     if(payload){
         if(!io.Match(src,true,f.size,f.hash))return false;
         if(live){
-            if(old||!f.had_original||!io.Match(dst,true,f.original_size,f.original_hash))return io.Fail("A port file changed after the mod was enabled. Keep it and resolve the conflict before restoring.");
+            if(old||!f.had_original||!io.Match(dst,true,f.original_size,f.original_hash))return io.Fail("A port file changed after the mod was enabled. Keep it and resolve the conflict before restoring."_nx);
             return true; // not changed yet, or already restored
         }
-        if(f.had_original&&!old)return io.Fail("An original file is missing. Recovery stopped without guessing.");
+        if(f.had_original&&!old)return io.Fail("An original file is missing. Recovery stopped without guessing."_nx);
     }else{
-        if(!live||!io.Match(dst,true,f.size,f.hash)||f.had_original!=old)return io.Fail("Mod files changed or are missing. Recovery has kept the remaining files.");
+        if(!live||!io.Match(dst,true,f.size,f.hash)||f.had_original!=old)return io.Fail("Mod files changed or are missing. Recovery has kept the remaining files."_nx);
         if(apply&&(!io.Parents(src)||!io.Rename(dst,src)))return false;
     }
     if(apply&&old&&!io.Rename(backup,dst))return false;
     return !apply||io.Flush();
 }
 template<class IO> bool Disable(IO& io,const ModPlan& p){
-    if(!Valid(p))return io.Fail("Invalid recovery record. Files were kept.");
+    if(!Valid(p))return io.Fail("Invalid recovery record. Files were kept."_nx);
     std::size_t done{};const auto total=p.files.size()*2+1;Progress(io,done,total);
     // Reject conflicts anywhere before starting restoration.
     for(const auto& f:p.files){if(!RestoreFile(io,p,f,false))return false;Progress(io,++done,total);}

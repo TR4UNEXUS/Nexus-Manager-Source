@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/update_restart.hpp"
 #include "nexus/nx_Client.hpp"
@@ -12,7 +13,7 @@ extern "C" u32 __nx_applet_exit_mode;
 
 namespace nexus::updates {
 Result RestartUpdatedManager(std::string& detail){
-    detail="The update is installed, but Nexus Manager could not restart. Close and reopen Nexus Manager to use the update.";
+    detail="The update is installed, but Nexus Manager could not restart. Close and reopen Nexus Manager to use the update."_nx;
     // An Album or system-applet host is not the installed Manager application.
     R_UNLESS(appletGetAppletType()==AppletType_Application,Invalid);
     if(envIsNso()){
@@ -45,7 +46,7 @@ Result RestartUpdatedManager(std::string& detail){
         // instead of issuing SelfExit for the host application.
         __nx_applet_exit_mode=0;
     }
-    detail="The update is installed. Restarting Nexus Manager...";
+    detail="The update is installed. Restarting Nexus Manager..."_nx;
     sphaira::App::Exit();
     R_SUCCEED();
 }

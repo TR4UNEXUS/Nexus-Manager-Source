@@ -46,7 +46,8 @@ struct World {
     unsigned live_writes{},journal_writes{},rollback_writes{},worker_count{};
     Result Hit(const std::string& name){trace.push_back(name);const auto n=++calls[name];return fail.contains(name)&&fail[name]==n?Injected:0;}
 } world;
-namespace ui {struct ProgressBox {Result ShouldExitResult(){return world.cancel?Cancelled:0;}};}
+namespace ui {struct ProgressBox {bool ShouldExit(){return world.cancel;} Result ShouldExitResult(){return world.cancel?Cancelled:0;}};}
+namespace nexus::reports {inline void QueueFailure(const char*,Result){}}
 namespace nexus {
 constexpr Result Invalid=0x1759; // MAKERESULT(Module_Libnx, LibnxError_BadInput).
 Result CheckUsbMutationAllowed(){return world.Hit("guard");}
@@ -171,6 +172,7 @@ Result QueueHomeRefresh(u64){assert(!world.pending);return world.Hit("badge.queu
 Result UpdateHomeBadge(const Game&){return world.Hit("badge.update");}
 Result FinishHomeRefresh(u64){return world.Hit("badge.finish");}
 void SaveReport(Disk&,UsbImportResult& out){world.Hit("report");out.report_path="fixture-report";}
+void BackupConsoleRoutingAfterChange(){assert(!world.pending);world.Hit("backup.confirm");}
 // PRODUCTION_IMPORT
 unsigned cases{},assertions{};
 #define REQUIRE(c) do{++assertions;if(!(c)){std::cerr<<"failed line "<<__LINE__<<": " #c "\n";std::abort();}}while(0)
@@ -183,7 +185,7 @@ void Seed(const UsbImportTitle& row,u8 storage=5){
 }
 UsbImportScan Family(){auto scan=Scan();scan.titles.push_back(Title(100,101,0x81));scan.titles.push_back(Title(100,102,0x82));return scan;}
 void Reset(){world=World{};identity_reply={};std::memset(identity_paths,0,sizeof(identity_paths));identity_device=123;identity_cid={1,2,3,4};REQUIRE(!identity_spl_refs&&!identity_handles);++cases;}
-Result Run(const UsbImportScan& scan,UsbImportResult& out){ui::ProgressBox p;const auto result=ImportUsbLibrary(&p,scan,out);REQUIRE(world.worker_count==0);REQUIRE(!identity_spl_refs&&!identity_handles);REQUIRE(result==out.result);if(result)REQUIRE(!out.detail.empty());return result;}
+Result Run(const UsbImportScan& scan,UsbImportResult& out){ui::ProgressBox p;const auto prior=world.calls["backup.confirm"];const auto result=ImportUsbLibrary(&p,scan,out);REQUIRE(world.calls["backup.confirm"]-prior==unsigned(out.imported&&!out.pending));REQUIRE(world.worker_count==0);REQUIRE(!identity_spl_refs&&!identity_handles);REQUIRE(result==out.result);if(result)REQUIRE(!out.detail.empty());return result;}
 bool Mentions(const UsbImportResult& out,const std::string& needle){return out.detail.find(needle)!=std::string::npos;}
 int main(){
     UsbImportResult out;

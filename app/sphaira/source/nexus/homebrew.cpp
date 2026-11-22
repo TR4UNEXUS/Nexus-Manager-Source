@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/homebrew.hpp"
 #include "nexus/vsd_policy.hpp"
@@ -81,7 +82,7 @@ Result ScanHomebrew(ui::ProgressBox* p,std::vector<Game>& games){
                 else {R_TRY(c.Check(status.generation));nexus::Log("library-invalid-nro",rc);}
             }
         }
-        p->NewTransfer("Scanning USB /switch");p->UpdateTransfer(at+1,pending.size());
+        p->NewTransfer("Scanning USB /switch"_nx);p->UpdateTransfer(at+1,pending.size());
     }
     R_TRY(c.Check(status.generation));
     std::ranges::sort(result,[](const Game& a,const Game& b){return strcasecmp(a.name.c_str(),b.name.c_str())<0;});
@@ -108,7 +109,7 @@ Result CreateHomebrewForwarder(ui::ProgressBox* p,const Item& item,u64 gen){
     std::array<u8,0x80> header{};R_TRY(ReadExact(c,gen,item.path,0,header.data(),header.size()));
     nexus::library::Assets a{};R_UNLESS(nexus::library::Header(header,item.size,a),nexus::Invalid);
     Sha256Context hash;sha256ContextCreate(&hash);std::vector<u8> buffer(1024*1024);
-    p->NewTransfer("Verify homebrew executable");
+    p->NewTransfer("Verify homebrew executable"_nx);
     for(u64 off=0;off<a.code;){R_TRY(p->ShouldExitResult());const auto size=std::min<u64>(buffer.size(),a.code-off);
         R_TRY(ReadExact(c,gen,item.path,off,buffer.data(),size));sha256ContextUpdate(&hash,buffer.data(),size);off+=size;p->UpdateTransfer(off,a.code);}
     cfg.usb_nro_hash.resize(32);sha256ContextGetHash(&hash,cfg.usb_nro_hash.data());R_TRY(c.Check(gen));
@@ -145,7 +146,7 @@ Result PrepareProbe(ui::ProgressBox* progress,u64 generation,Item& item) {
     R_TRY(client.CreateDirectory(generation,root+"/sdmc/switch"));
     const auto file=root+"/sdmc/switch/VsdProbe.nro";
     R_TRY(client.CreateFile(generation,file,sizeof(Probe)));
-    progress->NewTransfer("Preparing built-in USB diagnostics");
+    progress->NewTransfer("Preparing built-in USB diagnostics"_nx);
     for(size_t off=0;off<sizeof(Probe);){
         R_TRY(progress->ShouldExitResult());
         const auto count=std::min<size_t>(65536,sizeof(Probe)-off);
@@ -164,7 +165,7 @@ Result PrepareProbe(ui::ProgressBox* progress,u64 generation,Item& item) {
     R_TRY(client.Stat(generation,file,info));
     R_UNLESS(!info.directory && info.size==sizeof(Probe),nexus::Invalid);
     R_TRY(client.Check(generation));
-    item={"USB diagnostics (built-in)",file,sizeof(Probe),false};
+    item={"USB diagnostics (built-in)"_nx,file,sizeof(Probe),false};
     R_SUCCEED();
 #endif
 }

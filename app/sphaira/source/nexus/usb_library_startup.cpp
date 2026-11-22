@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_library_startup.hpp"
 #include "nexus/routing_backup.hpp"
@@ -33,7 +34,7 @@ UsbLibraryStartupResult ReadStartupLibrary(){
     startup_library.generation=status.generation;
     if(R_FAILED(pending_result)){
         out.result=pending_result;
-        out.detail="Could not check the previous USB repair state. Keep any recovery backups and open Repair USB games to review it.";
+        out.detail="Could not check the previous USB repair state. Keep any recovery backups and open Repair USB games to review it."_nx;
         return out;
     }
     if(R_SUCCEEDED(MissingRoutingWithConsoleBackup(out.console_backup_available))&&out.console_backup_available)return out;
@@ -42,7 +43,7 @@ UsbLibraryStartupResult ReadStartupLibrary(){
     if(Stopped())return {};
     if(R_FAILED(rc)||!scan.complete){
         out.result=R_FAILED(rc)?rc:nexus::Invalid;
-        out.detail=scan.detail.empty()?"The USB library check could not finish. Open Repair USB games to check again. No game data was changed.":scan.detail;
+        out.detail=scan.detail.empty()?"The USB library check could not finish. Open Repair USB games to check again. No game data was changed."_nx:scan.detail;
         return out;
     }
     const auto summary=SummarizeUsbLibrary(scan);

@@ -46,3 +46,7 @@ fatal_errors/
 crash_reports/
 .env
 .env.*
+
+nexus_report_endpoint.hpp
+
+repair-catalog-signing.pem

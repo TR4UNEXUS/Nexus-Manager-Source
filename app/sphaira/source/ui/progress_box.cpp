@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "nexus/routing_backup.hpp"
 #include "ui/progress_box.hpp"
 #include "ui/transfer_activity.hpp"
@@ -100,7 +101,7 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
 
     SetAction(Button::B, Action{[this](){
         if(ShouldExit())return;
-        App::Push<OptionBox>("Stop this task?\n\nThe current storage request must finish first. Keep the SD card and USB drive connected until the result appears.", "Keep going", "Stop task", 0, [this](auto op_index){
+        App::Push<OptionBox>("Stop this task?\n\nThe current storage request must finish first. Keep the SD card and USB drive connected until the result appears."_nx, "Keep going"_nx, "Stop task"_nx, 0, [this](auto op_index){
             if (op_index && *op_index) {
                 RequestExit();
             }
@@ -110,7 +111,7 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
     SetAction(Button::X, Action{[this](){
         if (!(ShouldExit() || m_safety.Slow(armGetSystemTick(), armNsToTicks(15ULL*1000*1000*1000))) ||
             !m_safety.CanClose(m_operation, nexusWatchdogCanExit())) return;
-        App::Push<OptionBox>("This check is taking longer than expected.\n\nIt is not changing files. You can keep waiting or close Nexus Manager. Keep the USB drive connected.", "Keep waiting", "Close app", 0, [this](auto choice){
+        App::Push<OptionBox>("This check is taking longer than expected.\n\nIt is not changing files. You can keep waiting or close Nexus Manager. Keep the USB drive connected."_nx, "Keep waiting"_nx, "Close app"_nx, 0, [this](auto choice){
             if (choice && *choice == 1 && m_safety.CanClose(m_operation, nexusWatchdogCanExit()))
                 nexusWatchdogTryExit();
         });
@@ -250,9 +251,9 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
         return;
     }
     nexusdialog::Panel(vg,m_pos);
-    nexusdialog::Brand(vg,GetX()+32,GetY()+22,"/  TRANSFER");
+    nexusdialog::Brand(vg,GetX()+32,GetY()+22,"/  TRANSFER"_nx);
 
-    if(!image&&action.find("Install")!=std::string::npos)image=App::GetDefaultImage();
+    if(!image&&action.find("Install"_nx)!=std::string::npos)image=App::GetDefaultImage();
     const auto layout=nexus::progressui::Make({GetX(),GetY(),GetW(),GetH()},image!=0,network.active);
     const auto colour=theme->GetColour(ThemeEntryID_TEXT);
     const Vec4 prog_bar{layout.bar.x,layout.bar.y,layout.bar.w,layout.bar.h};
@@ -273,10 +274,10 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     const bool stopping=ShouldExit();
     const bool slow=m_safety.Slow(armGetSystemTick(),armNsToTicks(15ULL*1000*1000*1000));
     if(stopping||slow){
-        DrawProgressBody(vg,layout.status,stopping?"Stopping safely. Please wait.":"The drive is taking longer than usual.",18,true,colour);
+        DrawProgressBody(vg,layout.status,stopping?"Stopping safely. Please wait."_nx:"The drive is taking longer than usual."_nx,18,true,colour);
         DrawProgressBody(vg,layout.advice,m_safety.CanClose(m_operation,nexusWatchdogCanExit())
-            ?"Keep waiting, or press X to close this read-only check."
-            :"Keep storage connected until the task finishes.",17,true,colour);
+            ?"Keep waiting, or press X to close this read-only check."_nx
+            :"Keep storage connected until the task finishes."_nx,17,true,colour);
     }
 
     // One bar for the entire task. Unknown totals use a moving segment rather
@@ -294,8 +295,8 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     }
     const auto rate=network.active?network:payload;
     char speed[80]{};
-    if(rate.active&&rate.sampled)std::snprintf(speed,sizeof(speed),"%s: %.2f MiB/s",network.active?"Download speed":"Speed",rate.bytes_per_second/(1024.0*1024.0));
-    else std::snprintf(speed,sizeof(speed),"Speed: measuring...");
+    if(rate.active&&rate.sampled)std::snprintf(speed,sizeof(speed),"%s: %.2f MiB/s",network.active?"Download speed"_nx:"Speed"_nx,rate.bytes_per_second/(1024.0*1024.0));
+    else std::snprintf(speed,sizeof(speed),"Speed: measuring..."_nx);
     DrawProgressBody(vg,layout.metric,speed,24,true,colour);
 
     nvgRestore(vg);
@@ -327,9 +328,9 @@ auto ProgressBox::GetFooterButtons() const -> Widget::uiButtons {
         buttons.emplace_back(std::move(item));
     };
 
-    if(m_transfer_log)add_button(Button::Y,m_show_details?"Simple view":"Details",m_pos.x+m_pos.w*0.25f);
-    if(m_screen_toggle_enabled)add_button(Button::Y, "Screen off", m_pos.x + m_pos.w * 0.25f);
-    add_button(Button::B, m_stop_source.stop_requested()?"Stopping...":"Stop task", m_pos.x + m_pos.w * ((m_screen_toggle_enabled||m_transfer_log)?0.75f:0.5f));
+    if(m_transfer_log)add_button(Button::Y,m_show_details?"Simple view"_nx:"Details"_nx,m_pos.x+m_pos.w*0.25f);
+    if(m_screen_toggle_enabled)add_button(Button::Y, "Screen off"_nx, m_pos.x + m_pos.w * 0.25f);
+    add_button(Button::B, m_stop_source.stop_requested()?"Stopping..."_nx:"Stop task"_nx, m_pos.x + m_pos.w * ((m_screen_toggle_enabled||m_transfer_log)?0.75f:0.5f));
     return buttons;
 }
 
@@ -386,7 +387,7 @@ auto ProgressBox::UpdateTransfer(s64 offset,s64 size) -> ProgressBox& {
 void ProgressBox::BeginProgressRange(unsigned begin,unsigned end){
     SCOPED_MUTEX(&m_mutex);m_task_progress.Push(begin,end);m_overall=true;m_detailed=true;
     m_size=10000;m_offset=m_task_progress.value;m_speed=0;m_last_offset=m_offset;
-    if(m_progress_note.empty())m_progress_note="Overall task progress";
+    if(m_progress_note.empty())m_progress_note="Overall task progress"_nx;
 }
 void ProgressBox::EndProgressRange(){SCOPED_MUTEX(&m_mutex);m_task_progress.Pop();}
 
@@ -438,7 +439,7 @@ auto ProgressBox::SetOverallTransfer(s64 offset,s64 size,const std::string& stag
     if(m_detailed&&m_task_progress.parents.empty())return *this;
     if(m_task_progress.Position(offset,size)<m_task_progress.value)return *this;
     m_task_progress.Set(offset,size);m_overall=true;m_finishing=finishing;m_size=10000;m_offset=m_task_progress.value;
-    m_transfer=stage;m_progress_note="Overall task progress";m_safety.Touch(armGetSystemTick());return *this;
+    m_transfer=stage;m_progress_note="Overall task progress"_nx;m_safety.Touch(armGetSystemTick());return *this;
 }
 
 auto ProgressBox::SetImage(int image) -> ProgressBox& {

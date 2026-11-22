@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/file_manager.hpp"
 #include "nexus/lifecycle.hpp"
@@ -82,15 +83,15 @@ public:
         return 0;
     }
     size_t BufferSize()const{return std::min<size_t>(1024*1024,usb_generation?client.TransferLimit():1024*1024);}
-    void BeginWork(u64 total){work_total=std::max<u64>(total,1);work_done=0;if(progress)progress->SetDetailedProgress(0,"Preparing files",{},"Overall task progress");}
+    void BeginWork(u64 total){work_total=std::max<u64>(total,1);work_done=0;if(progress)progress->SetDetailedProgress(0,"Preparing files"_nx,{},"Overall task progress"_nx);}
     void ReadProgress(u64 count){if(progress)progress->AddTransferBytes(count);if(!work_total||!progress)return;work_done=std::min(work_total,work_done+count);
-        progress->SetDetailedProgress(nexus::WorkPart(work_done,work_total,98),progress_action+" / "+progress_path,{},"Overall task progress");}
+        progress->SetDetailedProgress(nexus::WorkPart(work_done,work_total,98),progress_action+" / "+progress_path,{},"Overall task progress"_nx);}
     void Progress(const char* action,const std::string& path,u64 done,u64 total){
         if(!progress)return;
         if(progress_path!=path||progress_action!=action||done<progress_done){progress_path=path;progress_action=action;progress->NewTransfer(path);}
         progress_done=done;
-        progress->SetTitle(path).SetActionName(action);
-        if(progress_action=="Removing"&&!work_total)progress->SetOverallTransfer(done,std::max<u64>(total,1),"Deleting / "+path,true).SetProgressNote(std::to_string(done)+" of "+std::to_string(total)+" items removed");
+        progress->SetTitle(path).SetActionName(progress_action=="Removing"?"Removing"_nx:action);
+        if(progress_action=="Removing"&&!work_total)progress->SetOverallTransfer(done,std::max<u64>(total,1),"Deleting / "_nx+path,true).SetProgressNote(std::to_string(done)+" of "_nx+std::to_string(total)+" items removed"_nx);
         else if(!work_total)progress->NewTransfer(path);
     }
     void EndRead(){if(read_open)fsFileClose(&read_file);read_open=false;read_path.clear();}
@@ -166,13 +167,13 @@ std::string Location(bool usb,const std::string& path){return std::string(usb?"U
 std::string Counts(const Snapshot& s){const auto dirs=std::count_if(s.entries.begin(),s.entries.end(),[](const Entry& e){return e.directory;});
     return std::to_string(s.entries.size()-dirs)+" files, "+std::to_string(dirs)+" folders\n"+std::to_string(s.bytes)+" bytes";}
 void Failure(Report& r,bool move,bool deleting,const std::string& destination){
-    const auto stage=r.detail;r.detail=(deleting?"Delete stopped. ":"Transfer stopped. ")+stage+".\n\n";
-    if(r.removal_started)r.detail+="Source removal began; some items may already be gone, even if the last request reported an error. Do not retry using the old clipboard selection.\n";
-    else r.detail+="No source deletion was attempted. The original items were kept.\n";
-    if(r.published)r.detail+="The verified destination was published at "+destination+".\n";
-    else if(!deleting)r.detail+="A complete destination was not confirmed. Inspect "+destination+" before using it.\n";
-    if(!r.staged_path.empty())r.detail+="A temporary item may remain at "+Location(destination.starts_with("USB:"),r.staged_path)+". Select that item in File manager and choose Delete to review and remove it.\n";
-    r.detail+="Nothing was silently overwritten.";
+    const auto stage=r.detail;r.detail=(deleting?"Delete stopped. "_nx:"Transfer stopped. "_nx)+stage+".\n\n";
+    if(r.removal_started)r.detail+="Source removal began; some items may already be gone, even if the last request reported an error. Do not retry using the old clipboard selection.\n"_nx;
+    else r.detail+="No source deletion was attempted. The original items were kept.\n"_nx;
+    if(r.published)r.detail+="The verified destination was published at "_nx+destination+".\n";
+    else if(!deleting)r.detail+="A complete destination was not confirmed. Inspect "_nx+destination+" before using it.\n"_nx;
+    if(!r.staged_path.empty())r.detail+="A temporary item may remain at "_nx+Location(destination.starts_with("USB:"),r.staged_path)+". Select that item in File manager and choose Delete to review and remove it.\n";
+    r.detail+="Nothing was silently overwritten."_nx;
 }
 }
 Result ListFiles(ui::ProgressBox* p,bool usb,const std::string& path,std::vector<nexusapp::Item>& items,u64& generation){
@@ -185,41 +186,41 @@ Result ListFiles(ui::ProgressBox* p,bool usb,const std::string& path,std::vector
     for(const auto& name:names){const auto full=Child(path,name);if(!Canonical(full))continue;Entry e;bool exists{};R_TRY(io.Stat(usb,full,e,exists));R_UNLESS(exists,nexus::Invalid);items.push_back({name,full,e.size,e.directory});}
     std::sort(items.begin(),items.end(),[](const auto& a,const auto& b){return a.directory!=b.directory?a.directory>b.directory:Fold(a.name)<Fold(b.name);});return io.Check();
 }
-std::string TransferPreview(const Plan& p){return std::string(p.move?"Cut and paste":"Copy and paste")+"\n\nFrom: "+Location(p.source.usb,p.source.item.path)+
-    "\nTo: "+Location(p.destination_usb,p.final_path)+"\n\n"+Counts(p.snapshot)+"\n\nAn existing destination will never be replaced. "+
-    (p.move?"Source items are removed only after the copy is verified. A cancellation or disconnect during removal may leave some source items behind.":"The source items will be kept.");}
-std::string DeletePreview(const DeletePlan& p){return "Delete permanently?\n\n"+Location(p.source.usb,p.source.item.path)+"\n\n"+Counts(p.snapshot)+
-    "\n\nOnly these reviewed items will be removed. There is no recycle bin. Cancellation or a disconnect can leave a partially deleted folder.";}
+std::string TransferPreview(const Plan& p){return std::string(p.move?"Cut and paste"_nx:"Copy and paste"_nx)+"\n\nFrom: "_nx+Location(p.source.usb,p.source.item.path)+
+    "\nTo: "+Location(p.destination_usb,p.final_path)+"\n\n"+Counts(p.snapshot)+"\n\nAn existing destination will never be replaced. "_nx+
+    (p.move?"Source items are removed only after the copy is verified. A cancellation or disconnect during removal may leave some source items behind."_nx:"The source items will be kept."_nx);}
+std::string DeletePreview(const DeletePlan& p){return "Delete permanently?\n\n"_nx+Location(p.source.usb,p.source.item.path)+"\n\n"+Counts(p.snapshot)+
+    "\n\nOnly these reviewed items will be removed. There is no recycle bin. Cancellation or a disconnect can leave a partially deleted folder."_nx;}
 Result PrepareTransfer(ui::ProgressBox* p,const Selection& selection,bool destination_usb,u64 destination_generation,const std::string& directory,bool move,Plan& plan,std::string& detail){
-    plan={};detail="The item or destination is protected, has an ambiguous name, or the storage changed. Refresh File manager and choose ordinary files or folders.";
+    plan={};detail="The item or destination is protected, has an ambiguous name, or the storage changed. Refresh File manager and choose ordinary files or folders."_nx;
     R_UNLESS(Safe(selection.item.path)&&SafeDirectory(directory),nexus::Invalid);
     plan.source=selection;plan.destination_usb=destination_usb;plan.destination_generation=destination_generation;plan.destination_directory=directory;plan.move=move;
     plan.final_path=Child(directory,Leaf(selection.item.path));
     IO io(p,selection.usb,selection.generation,destination_usb,destination_generation,true,selection.item.path,plan.final_path);R_TRY(io.Open());
     R_TRY(CheckSpelling(io,destination_usb,directory));Entry parent;bool parent_exists{};R_TRY(io.Stat(destination_usb,directory,parent,parent_exists));R_UNLESS(parent_exists&&parent.directory,nexus::Invalid);
-    Entry existing;bool exists{};R_TRY(io.Stat(destination_usb,plan.final_path,existing,exists));if(exists){detail="The destination already contains "+Leaf(plan.final_path)+". Choose another folder; nothing will be overwritten.";return IO::Conflict;}
-    detail="Reading and checking the selected files. Nothing has been changed.";R_TRY(Prepare(io,selection.usb,selection.item.path,plan.snapshot));
+    Entry existing;bool exists{};R_TRY(io.Stat(destination_usb,plan.final_path,existing,exists));if(exists){detail="The destination already contains "_nx+Leaf(plan.final_path)+". Choose another folder; nothing will be overwritten."_nx;return IO::Conflict;}
+    detail="Reading and checking the selected files. Nothing has been changed."_nx;R_TRY(Prepare(io,selection.usb,selection.item.path,plan.snapshot));
     R_UNLESS(plan.snapshot.entries[0].directory==selection.item.directory&&(!selection.item.directory?plan.snapshot.entries[0].size==selection.item.size:true),nexus::Invalid);
-    if(!ValidDestination(selection.usb,destination_usb,plan.snapshot,plan.final_path)){detail="Cannot paste into the same item, into its own folder tree, or into a protected/overlong path.";return nexus::Invalid;}
+    if(!ValidDestination(selection.usb,destination_usb,plan.snapshot,plan.final_path)){detail="Cannot paste into the same item, into its own folder tree, or into a protected/overlong path."_nx;return nexus::Invalid;}
     R_TRY(io.Preflight(plan.snapshot.bytes));plan.prepared=true;detail=TransferPreview(plan);return 0;
 }
 Result Transfer(ui::ProgressBox* p,const Plan& plan,Report& report){
-    report={};report.detail="The prepared selection is no longer valid";
+    report={};report.detail="The prepared selection is no longer valid"_nx;
     auto run=[&]()->Result{R_UNLESS(plan.prepared&&plan.snapshot.root==plan.source.item.path&&plan.final_path==Child(plan.destination_directory,Leaf(plan.source.item.path)),nexus::Invalid);
         IO io(p,plan.source.usb,plan.source.generation,plan.destination_usb,plan.destination_generation,true,plan.source.item.path,plan.final_path);R_TRY(io.Open());
         return nexus::files::Transfer(io,plan.source.usb,plan.destination_usb,plan.snapshot,plan.final_path,plan.move,report);};
     const auto rc=run();if(R_FAILED(rc))Failure(report,plan.move,false,Location(plan.destination_usb,plan.final_path));return rc;
 }
 Result PrepareDelete(ui::ProgressBox* p,const Selection& selection,DeletePlan& plan,std::string& detail){
-    plan={};detail="This item is protected, has an ambiguous name, or the storage changed. Refresh File manager before trying again.";
+    plan={};detail="This item is protected, has an ambiguous name, or the storage changed. Refresh File manager before trying again."_nx;
     const bool stage=StagePath(selection.item.path);R_UNLESS(Safe(selection.item.path)||stage,nexus::Invalid);
     IO io(p,selection.usb,selection.generation,false,0,false,selection.item.path);R_TRY(io.Open());
-    detail="Listing the selected files and folders. File contents are not read.";R_TRY(Inventory(io,selection.usb,selection.item.path,plan.snapshot,stage));
+    detail="Listing the selected files and folders. File contents are not read."_nx;R_TRY(Inventory(io,selection.usb,selection.item.path,plan.snapshot,stage));
     R_UNLESS(plan.snapshot.entries[0].directory==selection.item.directory&&(!selection.item.directory?plan.snapshot.entries[0].size==selection.item.size:true),nexus::Invalid);
     plan.source=selection;plan.prepared=true;detail=DeletePreview(plan);return 0;
 }
 Result Delete(ui::ProgressBox* p,const DeletePlan& plan,Report& report){
-    report={};report.detail="The prepared deletion is no longer valid";
+    report={};report.detail="The prepared deletion is no longer valid"_nx;
     auto run=[&]()->Result{R_UNLESS(plan.prepared&&plan.snapshot.root==plan.source.item.path,nexus::Invalid);
         IO io(p,plan.source.usb,plan.source.generation,false,0,false,plan.source.item.path);R_TRY(io.Open());return nexus::files::QuickDelete(io,plan.source.usb,plan.snapshot,report);};
     const auto rc=run();if(R_FAILED(rc))Failure(report,false,true,{});return rc;

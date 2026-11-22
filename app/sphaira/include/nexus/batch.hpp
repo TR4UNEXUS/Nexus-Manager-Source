@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "nexus/nx_Policy.hpp"
 #include "nexus/package.hpp"
 #include <algorithm>
@@ -47,14 +48,14 @@ public:
 };
 enum class State {Pending,Installed,Failed,Cancelled};
 inline const char* StateName(State state) {
-    switch(state){case State::Installed:return "Installed";case State::Failed:return "Failed";
-        case State::Cancelled:return "Cancelled";default:return "Not attempted";}
+    switch(state){case State::Installed:return "Installed"_nx;case State::Failed:return "Failed"_nx;
+        case State::Cancelled:return "Cancelled"_nx;default:return "Not attempted"_nx;}
 }
 struct ItemResult {Entry entry;State state{State::Pending};std::uint32_t result{};std::string detail{};};
 struct Report {
     std::vector<ItemResult> items;
     Target target{};
-    std::string stage{"Not started"};
+    std::string stage{"Not started"_nx};
     std::uint32_t result{};
     explicit Report(const std::vector<Entry>& files,Target to):target(to){for(const auto& e:files)items.push_back({e});}
     std::size_t Count(State state) const {return std::count_if(items.begin(),items.end(),[&](const auto& i){return i.state==state;});}
@@ -68,12 +69,12 @@ std::uint32_t Run(Report& report,Cancel cancel,Check check,Install install,Notif
         report.items[i].state=cancelled?State::Cancelled:State::Failed;notify(i,false);return rc;
     };
     for(std::size_t i=0;i<report.items.size();++i){
-        report.stage="Check source packages";
+        report.stage="Check source packages"_nx;
         if(auto rc=cancel())return fail(i,rc,true);
         if(auto rc=check(report.items[i].entry))return fail(i,rc,false);
     }
     for(std::size_t i=0;i<report.items.size();++i){
-        report.stage="Install package";
+        report.stage="Install package"_nx;
         if(auto rc=cancel())return fail(i,rc,true);
         // Recheck after prior packages; the medium/file may have changed.
         if(auto rc=check(report.items[i].entry))return fail(i,rc,false);
@@ -81,6 +82,6 @@ std::uint32_t Run(Report& report,Cancel cancel,Check check,Install install,Notif
         if(auto rc=install(report.items[i].entry))return fail(i,rc,cancel()!=0);
         report.items[i].state=State::Installed;notify(i,false);
     }
-    report.stage="Complete";report.result=0;return 0;
+    report.stage="Complete"_nx;report.result=0;return 0;
 }
 }

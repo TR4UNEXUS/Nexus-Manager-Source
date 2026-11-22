@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/network_shares.hpp"
 #include "nexus/nx_Client.hpp"
@@ -20,8 +21,8 @@
 namespace sphaira::nexusapp {
 Result ListNetworkShares(ui::ProgressBox* p,const nexus::network::Connection& connection,const std::string& password,
                          std::vector<std::string>& shares,std::string& detail){
-    shares.clear();detail="The server did not list its shared folders. Enter the share/export manually or check its permissions.";
-    auto probe=connection;probe.name="Server";probe.share=probe.protocol=="SMB"?"IPC$":"/";
+    shares.clear();detail="The server did not list its shared folders. Enter the share/export manually or check its permissions."_nx;
+    auto probe=connection;probe.name="Server"_nx;probe.share=probe.protocol=="SMB"?"IPC$":"/";
     R_UNLESS(nexus::network::Valid(probe),nexus::Invalid);R_TRY(p->ShouldExitResult());
     if(connection.protocol=="NFS"){
 #ifdef ENABLE_DEVOPTAB_NFS
@@ -79,7 +80,7 @@ Result ListNetworkShares(ui::ProgressBox* p,const nexus::network::Connection& co
 #endif
     }
     R_TRY(p->ShouldExitResult());std::sort(shares.begin(),shares.end());shares.erase(std::unique(shares.begin(),shares.end()),shares.end());
-    detail=shares.empty()?"This server did not advertise an accessible folder. You can enter its share or export manually.":"Choose a shared folder. The server decides which folders this account can open.";
+    detail=shares.empty()?"This server did not advertise an accessible folder. You can enter its share or export manually."_nx:"Choose a shared folder. The server decides which folders this account can open."_nx;
     return 0;
 }
 }

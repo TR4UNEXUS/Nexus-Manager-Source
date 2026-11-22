@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -55,29 +56,29 @@ struct Meta {
     std::vector<std::uint8_t> extended,tail;
     std::vector<Content> content;
 };
-inline bool ParseCnmt(std::span<const std::uint8_t> bytes,Meta& out,std::string& reason,bool ownership_only=false){
+inline bool ParseCnmt(std::span<const std::uint8_t> bytes,Meta& out,std::string& reason,bool ownership_only=false,bool converted_content_ids=false){
     out={};reason.clear();
     const auto fail=[&](const char* text){reason=text;out={};return false;};
-    if(bytes.size()<32||bytes.size()>MaxMetaBytes)return fail("Content metadata is truncated or too large.");
+    if(bytes.size()<32||bytes.size()>MaxMetaBytes)return fail("Content metadata is truncated or too large."_nx);
     out.id=Read<std::uint64_t>(bytes,0);out.version=Read<std::uint32_t>(bytes,8);out.type=bytes[12];
-    if(!SupportedType(out.type)||!(UserId(out.id)||(ownership_only&&(out.id>>56)==5)))return fail("This is not supported game, update or DLC metadata.");
-    if(bytes[13]!=0||bytes[22]!=0)return fail("This metadata is not a complete Switch content installation.");
+    if(!SupportedType(out.type)||!(UserId(out.id)||(ownership_only&&(out.id>>56)==5)))return fail("This is not supported game, update or DLC metadata."_nx);
+    if(bytes[13]!=0||bytes[22]!=0)return fail("This metadata is not a complete Switch content installation."_nx);
     const auto ext=Read<std::uint16_t>(bytes,14),count=Read<std::uint16_t>(bytes,16),meta_count=Read<std::uint16_t>(bytes,18);
     const std::size_t minimum=out.type==0x81?24:out.type==0x84?32:16;
     if(ext<minimum||ext>4096||!Range(32,ext,bytes.size())||!count||count>MaxContent||meta_count>4096)
-        return fail("Content metadata has invalid counts or an incomplete extended header.");
+        return fail("Content metadata has invalid counts or an incomplete extended header."_nx);
     const std::uint64_t content_offset=32+ext,tail_offset=content_offset+std::uint64_t(count)*56;
-    if(!Range(content_offset,std::uint64_t(count)*56,bytes.size()))return fail("Content metadata is missing its content list.");
+    if(!Range(content_offset,std::uint64_t(count)*56,bytes.size()))return fail("Content metadata is missing its content list."_nx);
     std::uint64_t tail_size=std::uint64_t(meta_count)*16;
     if(out.type==0x81)tail_size+=Read<std::uint32_t>(bytes,32+12);
     if(out.type==0x84)tail_size+=Read<std::uint32_t>(bytes,32+20);
     if(!ownership_only){
-        if(!Range(tail_offset,tail_size,bytes.size()))return fail("Content metadata is missing its extended data.");
+        if(!Range(tail_offset,tail_size,bytes.size()))return fail("Content metadata is missing its extended data."_nx);
         const auto remainder=bytes.size()-tail_offset-tail_size;
-        if(remainder!=0 && remainder!=32)return fail("Content metadata has an unexpected trailing layout.");
+        if(remainder!=0 && remainder!=32)return fail("Content metadata has an unexpected trailing layout."_nx);
     }
     out.application_id=out.type==0x80?out.id:Read<std::uint64_t>(bytes,out.type==0x84?40:32);
-    if(!(UserId(out.application_id)||(ownership_only&&(out.application_id>>56)==5)))return fail("Content metadata has no valid parent game.");
+    if(!(UserId(out.application_id)||(ownership_only&&(out.application_id>>56)==5)))return fail("Content metadata has no valid parent game."_nx);
     std::copy_n(bytes.begin()+14,8,out.header.begin());
     out.extended.assign(bytes.begin()+32,bytes.begin()+content_offset);
     // Ownership needs the bounded NCA reference list, not import-ready tail
@@ -91,8 +92,9 @@ inline bool ParseCnmt(std::span<const std::uint8_t> bytes,Meta& out,std::string&
         c.size=Read<std::uint32_t>(bytes,at+48)|(std::uint64_t(bytes[at+52])<<32);
         c.attributes=bytes[at+53];c.type=bytes[at+54];c.id_offset=bytes[at+55];
         if(c.size<0xC00||!std::any_of(c.id.begin(),c.id.end(),[](auto b){return b!=0;})||c.type<1||c.type>6||
-            !std::equal(c.id.begin(),c.id.end(),c.hash.begin())||!unique.insert(c.id).second)
-            return fail("Content metadata has an invalid or duplicate NCA reference.");
+            !std::any_of(c.hash.begin(),c.hash.end(),[](auto b){return b!=0;})||
+            (!converted_content_ids&&!std::equal(c.id.begin(),c.id.end(),c.hash.begin()))||!unique.insert(c.id).second)
+            return fail("Content metadata has an invalid or duplicate NCA reference."_nx);
         out.content.push_back(c);
     }
     return true;

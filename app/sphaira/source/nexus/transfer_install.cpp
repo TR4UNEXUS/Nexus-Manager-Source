@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/transfer.hpp"
 #include "nexus/transfer_activity.hpp"
@@ -24,7 +25,7 @@ public:
     }
     Result FinishRead(s64 minimum)override{
         R_UNLESS(minimum>=0&&u64(minimum)<=FtpStream::Limit,FtpStream::Invalid);
-        box->NewTransfer("Finishing incoming package");
+        box->NewTransfer("Finishing incoming package"_nx);
         std::vector<u8> scratch(256*1024);u64 got{};
         // Skipped files and cartridge padding are still consumed. The reader
         // never rewinds and publication waits for a clean upload EOF.
@@ -39,7 +40,7 @@ Result InstallStream(sphaira::ui::ProgressBox* p,const InstallJob& job,nexus::in
     config.quick_usb_final_verify=job.usb;
     config.ticket_only=false;config.skip_base=false;config.skip_patch=false;config.skip_addon=false;config.skip_data_patch=false;config.skip_ticket=false;
     config.skip_nca_hash_verify=false;config.convert_to_standard_crypto=false;config.lower_master_key=false;config.lower_system_version=false;config.ignore_distribution_bit=false;
-    p->SetProgressNote("Streaming from PC. Keep the connection and storage connected.");
+    p->SetProgressNote("Streaming from PC. Keep the connection and storage connected."_nx);
     return sphaira::yati::InstallFromSource(p,&source,fs::FsPath(job.path),config,-1);
 }
 }
@@ -48,7 +49,7 @@ void PollInstall(){if(!lifecycle::CanPoll())if(auto* p=progress.load())p->Reques
 void ShowNextInstall(){
     InstallJob job;if(!TakeInstall(job))return;
     auto cleanup_warning=std::make_shared<bool>(false);
-    sphaira::App::Push<sphaira::ui::ProgressBox>(0,job.usb?"Installing to USB":"Installing to SD",job.path,[job,cleanup_warning](sphaira::ui::ProgressBox* p)->Result{
+    sphaira::App::Push<sphaira::ui::ProgressBox>(0,job.usb?"Installing to USB"_nx:"Installing to SD"_nx,job.path,[job,cleanup_warning](sphaira::ui::ProgressBox* p)->Result{
         progress=p;struct Clear{~Clear(){progress=nullptr;}} clear;
         nexus::install::Diagnostic diagnostic{};sphaira::yati::InstallOutcome outcome{};
         const auto rc=[&]()->Result{
@@ -60,18 +61,18 @@ void ShowNextInstall(){
         // callback: Stop() can be joining that FTP worker on the UI thread.
         if(job.stream)job.stream->Complete(rc);
         if(!job.stream&&InstalledEntirePackage(rc,outcome.installed_records,outcome.skipped_records)){
-            p->NewTransfer("Removing temporary install package");
+            p->NewTransfer("Removing temporary install package"_nx);
             const auto removed=R_FAILED(p->ShouldExitResult())?FtpStream::Aborted:RemoveInstalledUpload(job);
             *cleanup_warning=R_FAILED(removed);
             nexus::Log("pc-install-temp-cleanup",removed,job.size);
-            if(R_SUCCEEDED(removed))activity::Get().Event("Temporary install package removed: "+activity::Name(job.path));
-            else activity::Get().Failure("Installed, but temporary package cleanup could not be confirmed",removed);
-        }else if(!job.stream){activity::Get().Event("Temporary package kept: installation failed, stopped or skipped content.");}
+            if(R_SUCCEEDED(removed))activity::Get().Event("Temporary install package removed: "_nx+activity::Name(job.path));
+            else activity::Get().Failure("Installed, but temporary package cleanup could not be confirmed"_nx,removed);
+        }else if(!job.stream){activity::Get().Event("Temporary package kept: installation failed, stopped or skipped content."_nx);}
         nexus::Log("pc-transfer-install",rc,job.size);return rc;
     },[streaming=bool(job.stream),cleanup_warning](Result rc){
         FinishInstall(rc);
-        if(*cleanup_warning)sphaira::App::Notify("Game installed. Temporary package cleanup could not be confirmed; check transfers/install.");
-        if(R_FAILED(rc))sphaira::App::PushErrorBox(rc,streaming?"Stream install stopped. Disconnect and restart PC transfer, then resend the original package from your PC from the beginning. Some complete content may already be present; the next attempt verifies it before reuse. No full package copy was saved on the Switch.":"Installation paused. The uploaded package is kept in transfers/install. Check space, keys and the connection, then retry from Install games. An upload completing on your PC does not mean the game installed successfully.");
+        if(*cleanup_warning)sphaira::App::Notify("Game installed. Temporary package cleanup could not be confirmed; check transfers/install."_nx);
+        if(R_FAILED(rc))sphaira::App::PushErrorBox(rc,streaming?"Stream install stopped. Disconnect and restart PC transfer, then resend the original package from your PC from the beginning. Some complete content may already be present; the next attempt verifies it before reuse. No full package copy was saved on the Switch."_nx:"Installation paused. The uploaded package is kept in transfers/install. Check space, keys and the connection, then retry from Install games. An upload completing on your PC does not mean the game installed successfully."_nx);
     },sphaira::ui::ProgressBoxOption::TransferLog);
 }
 }

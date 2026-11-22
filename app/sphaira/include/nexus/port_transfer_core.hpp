@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "nexus/vsd_policy.hpp"
 #include "nexus/port_progress.hpp"
 #include <span>
@@ -44,12 +45,12 @@ struct Plan {
 struct Report {
     Phase phase{Phase::Preparing};std::string path,detail;std::size_t copied{},reused{},removed{},retained{};bool launcher{};
     std::string Message(bool move)const{
-        if(phase==Phase::Complete)return std::string(move?"Port move complete.":"Port copy complete. Both file copies were kept.")+
-            (launcher?"\nA new HOME shortcut was created for the destination. The old shortcut was kept; remove it in System Settings after testing the new one.":"\nFiles are ready on the destination. HOME shortcuts were not changed. You can create a destination shortcut separately.")+
-            (retained?"\nShared runtime files were kept on the source for other ports.":"")+"\n\nPort saves/settings inside the selected folders were included. Console save data was not changed."+(detail.empty()?"":"\n"+detail);
-        return "Port transfer stopped"+(path.empty()?std::string{}:" at "+path)+".\n"+detail+
-            (removed?"\nSome source files were removed. The verified destination was kept.":"\nThe original files were kept.")+
-            (launcher?"\nThe new destination shortcut was installed.":"\nDo not use an incomplete destination as a finished port.");
+        if(phase==Phase::Complete)return std::string(move?"Port move complete."_nx:"Port copy complete. Both file copies were kept."_nx)+
+            (launcher?"\nA new HOME shortcut was created for the destination. The old shortcut was kept; remove it in System Settings after testing the new one."_nx:"\nFiles are ready on the destination. HOME shortcuts were not changed. You can create a destination shortcut separately."_nx)+
+            (retained?"\nShared runtime files were kept on the source for other ports."_nx:"")+"\n\nPort saves/settings inside the selected folders were included. Console save data was not changed."_nx+(detail.empty()?"":"\n"+detail);
+        return "Port transfer stopped"_nx+(path.empty()?std::string{}:" at "+path)+".\n"+detail+
+            (removed?"\nSome source files were removed. The verified destination was kept."_nx:"\nThe original files were kept."_nx)+
+            (launcher?"\nThe new destination shortcut was installed."_nx:"\nDo not use an incomplete destination as a finished port."_nx);
     }
 };
 // All mutations are behind this production engine. The host harness injects
@@ -105,7 +106,7 @@ template<class IO> auto Execute(IO& io,const Plan& plan,Report& report){
     if(auto rc=Inventory(io,current))return rc;
     if(current.entries!=plan.entries || current.bytes!=plan.bytes)return R{IO::Invalid};
     std::vector<Digest> hashes(plan.entries.size());std::vector<bool> reuse(plan.entries.size());std::uint64_t required{};
-    report.detail="Checking source files, destination conflicts and available space";
+    report.detail="Checking source files, destination conflicts and available space"_nx;
     // Preflight the WHOLE selection before writing any destination file.
     for(std::size_t i=0;i<plan.entries.size();++i){
         const auto& e=plan.entries[i];report.path=e.path;
@@ -123,7 +124,7 @@ template<class IO> auto Execute(IO& io,const Plan& plan,Report& report){
         }else required+=e.size;
     }
     if(auto rc=io.Preflight(required))return rc;
-    report.phase=Phase::Copying;report.detail="Copying port files";
+    report.phase=Phase::Copying;report.detail="Copying port files"_nx;
     progress.Start(Phase::Copying,plan.bytes);progress.done=progress.reused;io.Progress(progress);
     for(std::size_t i=0;i<plan.entries.size();++i){
         const auto& e=plan.entries[i];report.path=e.path;progress.path=e.path;io.Progress(progress);if(auto rc=io.Check())return rc;
@@ -152,7 +153,7 @@ template<class IO> auto Execute(IO& io,const Plan& plan,Report& report){
     // copying. This metadata walk does not reread the game's payload.
     if(auto rc=Inventory(io,current))return rc;
     if(current.entries!=plan.entries || current.bytes!=plan.bytes)return R{IO::Invalid};
-    report.phase=Phase::Verifying;report.detail="Verifying all destination files";
+    report.phase=Phase::Verifying;report.detail="Verifying all destination files"_nx;
     progress.Start(Phase::Verifying,plan.bytes);io.Progress(progress);
     // Verify all published/reused files before installing a launcher.
     for(std::size_t i=0;i<plan.entries.size();++i)if(!plan.entries[i].directory){
@@ -161,13 +162,13 @@ template<class IO> auto Execute(IO& io,const Plan& plan,Report& report){
         if(hash!=hashes[i])return R{IO::Invalid};
     }
     if(plan.create_launcher){
-        report.phase=Phase::Launcher;report.path.clear();report.detail="Creating the destination HOME shortcut";
+        report.phase=Phase::Launcher;report.path.clear();report.detail="Creating the destination HOME shortcut"_nx;
         progress.Start(Phase::Launcher);io.Progress(progress);
         if(auto rc=io.InstallLauncher())return rc;
         report.launcher=true;
     }
     if(plan.move){
-        report.phase=Phase::CheckingMove;report.detail="Rechecking both copies before removing source files";
+        report.phase=Phase::CheckingMove;report.detail="Rechecking both copies before removing source files"_nx;
         progress.Start(Phase::CheckingMove,plan.bytes*2);io.Progress(progress);
         if(auto rc=Inventory(io,current))return rc;
         if(current.entries!=plan.entries)return R{IO::Invalid};
@@ -177,7 +178,7 @@ template<class IO> auto Execute(IO& io,const Plan& plan,Report& report){
             if(auto rc=HashFile(io,!plan.source_usb,plan.Destination(e.path),e.size,b,buffer,progress))return rc;
             if(a!=hashes[i]||b!=a)return R{IO::Invalid};
         }
-        report.phase=Phase::Removing;report.detail="Removing verified source files; the destination is complete";
+        report.phase=Phase::Removing;report.detail="Removing verified source files; the destination is complete"_nx;
         std::uint64_t removal_bytes{};
         for(const auto& e:plan.entries)if(!e.directory && !std::any_of(plan.retained_roots.begin(),plan.retained_roots.end(),
             [&](const std::string& root){return Within(Fold(e.path),Fold(root));}))removal_bytes+=e.size;

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/menus/main_menu.hpp"
 #include "ui/menus/nexus_menu.hpp"
@@ -8,7 +9,7 @@ auto GetMenuMenuEntries() -> std::span<const MiscMenuEntry> { return {}; }
 MainMenu::MainMenu() {
     // One fixed workspace. Old 0.1 config entries cannot reopen Sphaira tools.
     m_menu=std::make_unique<nexusmenu::Menu>(MenuFlag_Tab);
-    m_menu->SetAction(Button::START,Action{"Exit",App::Exit});
+    m_menu->SetAction(Button::START,Action{"Exit"_nx,App::Exit});
 }
 MainMenu::~MainMenu() = default;
 void MainMenu::Update(Controller* c,TouchInfo* t){m_menu->Update(c,t);}

@@ -307,6 +307,7 @@ public:
 
     AmsEmummcPaths m_emummc_paths{};
     bool m_quit{};
+    bool m_reload_language{};
 
     // network
     option::OptionBool m_nxlink_enabled{INI_SECTION, "nxlink_enabled", true};

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/network_install.hpp"
 #include "nexus/network_source.hpp"
@@ -48,18 +49,18 @@ class NetworkPackageSource final:public yati::source::Base {
     }
     Result Snapshot(bool initial){
         struct stat now{};
-        if(lstat(full_path.c_str(),&now)){problem="The NAS file could not be read. Check the network connection and reconnect the share.";return NetworkIo;}
-        if(!S_ISREG(now.st_mode)||now.st_size<0||static_cast<u64>(now.st_size)!=capacity){problem="The selected game file is missing, is not an ordinary file, or its size changed. Browse the NAS again before installing.";return SourceChanged;}
+        if(lstat(full_path.c_str(),&now)){problem="The NAS file could not be read. Check the network connection and reconnect the share."_nx;return NetworkIo;}
+        if(!S_ISREG(now.st_mode)||now.st_size<0||static_cast<u64>(now.st_size)!=capacity){problem="The selected game file is missing, is not an ordinary file, or its size changed. Browse the NAS again before installing."_nx;return SourceChanged;}
         if(initial)original=now;
         else if(now.st_size!=original.st_size||now.st_dev!=original.st_dev||now.st_ino!=original.st_ino||now.st_mtime!=original.st_mtime||now.st_ctime!=original.st_ctime){
-            problem="The game file on the NAS changed while it was being read. Keep the source unchanged and select it again.";return SourceChanged;
+            problem="The game file on the NAS changed while it was being read. Keep the source unchanged and select it again."_nx;return SourceChanged;
         }
         if(!initial){
             struct stat opened{};const auto error=source.StatOpen(opened);
-            if(error){if(R_FAILED(last_check))return last_check;problem="The opened NAS file could no longer be checked. Reconnect the share and select the game file again.";return NetworkIo;}
+            if(error){if(R_FAILED(last_check))return last_check;problem="The opened NAS file could no longer be checked. Reconnect the share and select the game file again."_nx;return NetworkIo;}
             if(!S_ISREG(opened.st_mode)||opened.st_size!=original.st_size||opened.st_dev!=original.st_dev||opened.st_ino!=original.st_ino||
                 opened.st_mtime!=original.st_mtime||opened.st_ctime!=original.st_ctime){
-                problem="The opened game file differs from the file selected on the NAS. Select the unchanged original game file again.";return SourceChanged;
+                problem="The opened game file differs from the file selected on the NAS. Select the unchanged original game file again."_nx;return SourceChanged;
             }
         }
         return 0;
@@ -96,10 +97,10 @@ public:
             if(got&&got<=count)progress->AddNetworkBytes(got);
             if(error){
                 if(R_FAILED(last_check))return last_check;
-                problem="Reading the game file from the NAS stopped. Check the network connection and reconnect the share.";return NetworkIo;
+                problem="Reading the game file from the NAS stopped. Check the network connection and reconnect the share."_nx;return NetworkIo;
             }
             R_TRY(Check());
-            if(!got||got>count){problem="The NAS returned an unexpected number of game-file bytes. Check that the source file is complete and unchanged.";return NetworkIo;}
+            if(!got||got>count){problem="The NAS returned an unexpected number of game-file bytes. Check that the source file is complete and unchanged."_nx;return NetworkIo;}
             done+=got;
         }
         R_TRY(Snapshot(false));R_TRY(Check());*actual=done;return 0;
@@ -110,24 +111,24 @@ Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,
         u64 expected_size,nexus::Target target,u64 destination_generation,nexus::install::Diagnostic& diagnostic,
         NetworkInstallOutcome* package_outcome){
     if(package_outcome)*package_outcome={};
-    diagnostic.Clear();std::string stage="Network install could not start.";bool attempted{};yati::InstallOutcome outcome{};
+    diagnostic.Clear();std::string stage="Network install could not start."_nx;bool attempted{};yati::InstallOutcome outcome{};
     const Result result=[&]()->Result{
         R_UNLESS(progress&&SessionMount(mount)&&nexus::files::Canonical(path)&&
             nexus::package::Supported(path)&&expected_size>=16&&expected_size<=nexus::files::MaxBytes&&
             (target==nexus::Target::Sd||target==nexus::Target::Usb)&&
             (target==nexus::Target::Usb?destination_generation!=0:destination_generation==0),nexus::Invalid);
-        stage="Open Nexus Manager in full-memory mode or use its HOME app before installing from a NAS.";
+        stage="Open Nexus Manager in full-memory mode or use its HOME app before installing from a NAS."_nx;
         R_UNLESS(!App::IsApplet(),nexus::Unavailable);R_TRY(progress->ShouldExitResult());
-        stage="Finish other transfers, restore any pending recovery, and keep the physical SD card connected before installing.";
+        stage="Finish other transfers, restore any pending recovery, and keep the physical SD card connected before installing."_nx;
         R_UNLESS(nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
         R_TRY(nexus::CheckUsbMutationAllowed());nexus::Space space{};R_TRY(nexus::QueryPhysicalSd(space));
-        stage="The selected installation destination is unavailable. Reconnect it and choose the destination again.";
+        stage="The selected installation destination is unavailable. Reconnect it and choose the destination again."_nx;
         if(target==nexus::Target::Usb){nexus::Client usb;R_TRY(usb.Check(destination_generation));}
         R_TRY(nexus::QueryDestination(target,space));
-        stage="The selected NAS session or game file is no longer available. Reconnect the share and select the file again.";
+        stage="The selected NAS session or game file is no longer available. Reconnect the share and select the file again."_nx;
         NetworkPackageSource source(progress,mount,path,expected_size,destination_generation);
         if(R_FAILED(source.GetOpenResult())){if(!source.problem.empty())stage=source.problem;return source.GetOpenResult();}
-        progress->SetProgressNote("Reading from NAS. Keep the network and storage connected.");
+        progress->SetProgressNote("Reading from NAS. Keep the network and storage connected."_nx);
         yati::ConfigOverride config{};config.nexus_target=target;config.nexus_destination_generation=destination_generation;config.diagnostic=&diagnostic;
         config.quick_usb_final_verify=target==nexus::Target::Usb;
         config.outcome=&outcome;
@@ -149,21 +150,21 @@ Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,
     if(package_outcome)*package_outcome={outcome.installed_records,outcome.skipped_records,attempted};
     if(R_FAILED(result)){
         if(diagnostic.text.empty())diagnostic.text=stage;
-        if(attempted)diagnostic.text+="\nInstallation stopped; some content may already be installed. The original game file is still on the NAS.";
-        else diagnostic.text+="\nNo installation was started. The original game file is still on the NAS.";
-        diagnostic.text+="\nNetwork installs do not resume automatically. Reconnect this share and select the same game file again to retry. Existing USB content is verified before reuse.";
+        if(attempted)diagnostic.text+="\nInstallation stopped; some content may already be installed. The original game file is still on the NAS."_nx;
+        else diagnostic.text+="\nNo installation was started. The original game file is still on the NAS."_nx;
+        diagnostic.text+="\nNetwork installs do not resume automatically. Reconnect this share and select the same game file again to retry. Existing USB content is verified before reuse."_nx;
         if(!diagnostic.completion.empty())diagnostic.text+='\n'+diagnostic.completion;
     }else{
         if(!diagnostic.completion.empty())diagnostic.completion+='\n';
         if(outcome.installed_records){
-            diagnostic.completion+="Installed "+std::to_string(outcome.installed_records)+" game/update/DLC entries directly from the NAS to the "+(target==nexus::Target::Sd?"SD card.":"USB drive.");
-            if(outcome.skipped_records)diagnostic.completion+=" Skipped "+std::to_string(outcome.skipped_records)+" entries after installation checks; current installed versions were kept for those entries.";
+            diagnostic.completion+="Installed "_nx+std::to_string(outcome.installed_records)+" game/update/DLC entries directly from the NAS to the "_nx+(target==nexus::Target::Sd?"SD card."_nx:"USB drive."_nx);
+            if(outcome.skipped_records)diagnostic.completion+=" Skipped "_nx+std::to_string(outcome.skipped_records)+" entries after installation checks; current installed versions were kept for those entries."_nx;
         }else{
             diagnostic.completion=outcome.skipped_records?
-                "No content was installed. "+std::to_string(outcome.skipped_records)+" entries were skipped by installation checks. Current installed versions were kept.":
-                "No content was installed. No installable game/update/DLC entries were found.";
+                "No content was installed. "_nx+std::to_string(outcome.skipped_records)+" entries were skipped by installation checks. Current installed versions were kept."_nx:
+                "No content was installed. No installable game/update/DLC entries were found."_nx;
         }
-        diagnostic.completion+=" The original game file was kept; no full package copy was staged on SD or USB.";
+        diagnostic.completion+=" The original game file was kept; no full package copy was staged on SD or USB."_nx;
     }
     return result;
 }

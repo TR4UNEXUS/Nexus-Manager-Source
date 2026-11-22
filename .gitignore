@@ -42,3 +42,7 @@ nexus_private_content_keys.hpp
 dependencies/sdk/
 dependencies/libnx-source/nx/debug/
 dependencies/libnx-source/nx/release/
+
+nexus_report_endpoint.hpp
+
+repair-catalog-signing.pem

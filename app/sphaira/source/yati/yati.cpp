@@ -1,3 +1,8 @@
+#include "nexus/problem_reports.hpp"
+#include "nexus/localize.hpp"
+#include "nexus/diagnostics.hpp"
+#include "nexus/routing_backup.hpp"
+#include "nexus/index_recovery.hpp"
 #include "yati/yati.hpp"
 #include "nexus/manager.hpp"
 #include "nexus/package.hpp"
@@ -17,6 +22,7 @@
 #include "yati/nx/content_hash.hpp"
 #include "nexus/content_compat_core.hpp"
 #include "nexus/usb_ticket_store.hpp"
+#include "nexus/usb_import_scan.hpp"
 #include "nexus/usb_verification_proof.hpp"
 #include "nexus/manager_update_core.hpp"
 #include "nexus/release.hpp"
@@ -783,8 +789,8 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                     t->nca->size,is_ncz,t->nca->has_expected_hash,t->nca->expected_size);
                 R_UNLESS(t->nca->header_size_issue==nexus::install::HeaderSizeIssue::None, Result_YatiInvalidNcaSha256);
                 t->write_size = header.size;
-                static constexpr const char* kinds[]={"Program","Content metadata","Control / icon","Manual","Data","Public data"};
-                pbox->ContentFile(t->nca->name,header.content_type<std::size(kinds)?kinds[header.content_type]:"NCA","Writing NCA",header.size,t->nca->size);
+                const char* kinds[]={"Program"_nx,"Content metadata"_nx,"Control / icon"_nx,"Manual"_nx,"Data"_nx,"Public data"_nx};
+                pbox->ContentFile(t->nca->name,header.content_type<std::size(kinds)?kinds[header.content_type]:"NCA","Writing NCA"_nx,header.size,t->nca->size);
                 if (is_ncz) {
                     R_UNLESS(nexus::compat::ValidSections(t->ncz_sections,header.size), Result_YatiInvalidNczSectionCount);
                     if (t->ncz_sections.front().offset<0x4000)
@@ -1106,7 +1112,7 @@ Result Yati::Setup(const ConfigOverride& override) {
         if(i == static_cast<size_t>(config.sd_card_install)) {
             const auto opened=destination->Open(ncm_cs[i]);
             if(R_FAILED(opened) && diagnostic && destination->IsUsb())diagnostic->text=
-                "USB preflight failed before content copying. P3 firmware and a ready USB drive are required. Install the matching package3 and fully reboot; keep the source. See nexus.log for the precise stage.";
+                "USB preflight failed before content copying. P3 firmware and a ready USB drive are required. Install the matching package3 and fully reboot; keep the source. See nexus.log for the precise stage."_nx;
             R_TRY(opened);
         } else {
             R_TRY(nexusapp::OpenStorage(i ? nexus::Target::Sd : nexus::Target::Internal,ncm_cs[i]));
@@ -1127,9 +1133,12 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
         // An interrupted attempt may have committed this NCA already. Inspect
         // physical USB, not routed Has(), and rehash it before any reuse.
         nexus::Client usb;R_TRY(usb.Check(usb_generation));
-        char common[FS_MAX_PATH]{};std::string path;
-        R_TRY(ncmContentStorageGetPath(&cs,common,sizeof(common),&nca.content_id));
-        R_UNLESS(nexus::ContentPath(common,false,path),nexus::Invalid);
+        // A stale saved USB mapping can make NCM GetPath reject an absent
+        // file before we reach the physical check (issue #25). Installation
+        // must be able to recreate missing content after a lost/formatted
+        // drive. Derive its canonical on-drive path, then check this pinned
+        // generation directly; do not trust or remove a routing entry here.
+        const auto path=nexusapp::CanonicalUsbContentPath(nca.content_id);
         nexus::Info info{};const auto stat=usb.Stat(usb_generation,path,info);
         if(R_SUCCEEDED(stat)) {
             R_UNLESS(!info.directory && info.size>=sizeof(nca.header),nexus::Invalid);
@@ -1141,7 +1150,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
                 // A correct original hash does not make cartridge-only data
                 // suitable for installed use. Do not report a successful fix
                 // while silently reusing the old broken copy.
-                if(diagnostic)diagnostic->text="This USB copy still has cartridge-only content from an earlier install. Delete this game's USB copy in Installed games, then install it again from your original XCI. Saved progress is kept. The original XCI has not been changed.";
+                if(diagnostic)diagnostic->text="This USB copy still has cartridge-only content from an earlier install. Delete this game's USB copy in Installed games, then install it again from your original XCI. Saved progress is kept. The original XCI has not been changed."_nx;
                 nexus::Log("install-existing-cartridge-header",nexus::Invalid);
                 return nexus::Invalid;
             }
@@ -1253,7 +1262,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     R_UNLESS(t_data.GetWriteSize()>0 && t_data.GetWriteOffset()==t_data.GetWriteSize(),Result_YatiInvalidNcaSha256);
 
     pbox->ContentBytes(t_data.GetWriteOffset(),t_data.GetWriteSize());
-    pbox->ContentPhase("Checking streamed hash");
+    pbox->ContentPhase("Checking streamed hash"_nx);
     NcmContentId content_id{};
     std::memcpy(std::addressof(content_id), nca.hash, sizeof(content_id));
 
@@ -1265,7 +1274,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
             return Result_YatiInvalidNcaSha256;
         }
         log_write("NCA source verified%s: %s\n",nca.converted_hash?" (distribution conversion)":"",nca.name.c_str());
-        pbox->ContentPhase("Written / source hash OK");
+        pbox->ContentPhase("Written / source hash OK"_nx);
         nca.usb_written.key=VerificationKey(nca,usb_generation);
         nca.usb_written.source_matched=true;
         nca.usb_written.complete=true;
@@ -1300,9 +1309,9 @@ Result Yati::InstallNca(std::span<TikCollection> tickets, NcaCollection& nca) {
     if (nca.skipped) {
         R_TRY(ncmContentStorageGetPath(std::addressof(cs), path, sizeof(path), std::addressof(nca.content_id)));
     } else {
-        pbox->ContentPhase(destination->IsUsb()?"Flushing to USB":"Flushing to SD");
+        pbox->ContentPhase(destination->IsUsb()?"Flushing to USB"_nx:"Flushing to SD"_nx);
         R_TRY(ncmContentStorageFlushPlaceHolder(std::addressof(cs)));
-        pbox->ContentPhase("Saved / awaiting registration");
+        pbox->ContentPhase("Saved / awaiting registration"_nx);
         nca.usb_written.flushed=true;
         R_TRY(ncmContentStorageGetPlaceHolderPath(std::addressof(cs), path, sizeof(path), std::addressof(nca.placeholder_id)));
     }
@@ -1372,7 +1381,7 @@ Result Yati::FindContent(const NcmPackagedContentInfo& packed, u64 owner,
         R_UNLESS(entry.offset>=0 && entry.offset<=INT64_MAX-entry.size,Result_YatiNcaNotFound);
         R_UNLESS(alias_candidates_left && alias_bytes_left>=expected_size,Result_YatiNcaNotFound);
         --alias_candidates_left;alias_bytes_left-=expected_size;
-        pbox->NewTransfer("Verify missing content: "+entry.name);
+        pbox->NewTransfer("Verify missing content: "_nx+entry.name);
         Sha256Context hash;sha256ContextCreate(&hash);
         bool candidate=true;
         for (u64 off=0;off<expected_size;) {
@@ -1608,7 +1617,7 @@ Result Yati::ImportTickets(std::span<TikCollection> tickets) {
                 }
 
                 log_write("installing ticket\n");
-                pbox->TransferEvent("Installing ticket and certificate");
+                pbox->TransferEvent("Installing ticket and certificate"_nx);
                 R_TRY(es::ImportTicket(ticket.ticket.data(), ticket.ticket.size(), ticket.cert.data(), ticket.cert.size()));
                 if(archive){
                     // Original bytes were retained before PatchTicket, but
@@ -1616,10 +1625,10 @@ Result Yati::ImportTickets(std::span<TikCollection> tickets) {
                     const auto archived=nexusapp::SaveUsbTicketPair(usb_generation,ticket.rights_id,original.ticket,original.certificate);
                     if(R_FAILED(archived)){
                         nexus::Log("usb-ticket-archive-failed",archived);
-                        pbox->SetProgressNote("Ticket copy could not be saved. Keep your original game backup.");
+                        pbox->SetProgressNote("Ticket copy could not be saved. Keep your original game backup."_nx);
                         if(diagnostic){
                             if(!diagnostic->completion.empty())diagnostic->completion+='\n';
-                            diagnostic->completion+="The USB ticket copy could not be saved. Keep the original game backup; importing this game in another SD/emuMMC may require reinstalling it.";
+                            diagnostic->completion+="The USB ticket copy could not be saved. Keep the original game backup; importing this game in another SD/emuMMC may require reinstalling it."_nx;
                         }
                     }
                 }
@@ -1644,8 +1653,8 @@ Result Yati::PublishNca(const NcaCollection& nca) {
     // Reuse is still a USB publication: prove physical bytes before ensuring it.
     if(nca.skipped)return destination->IsUsb()?VerifyReusedNca(nca):0;
     R_UNLESS(nca.placeholder_owned,nexus::Invalid);
-    pbox->ContentFile(nca.name,"NCA","Registering NCA",nca.header.size);
-    pbox->ContentPhase("Registering NCA");
+    pbox->ContentFile(nca.name,"NCA","Registering NCA"_nx,nca.header.size);
+    pbox->ContentPhase("Registering NCA"_nx);
     const auto rc=ncmContentStorageRegister(&cs,&nca.content_id,&nca.placeholder_id);
     if(R_FAILED(rc)) {
         nexus::Log("P2-register-nca",rc);
@@ -1692,17 +1701,17 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
     const auto cached=quick_usb_final_verify&&!exact_output_hash?usb_verified.Find(key):nullptr;
     const bool written=quick_usb_final_verify&&!exact_output_hash&&allow_written&&nca.usb_written.Matches(key);
     const bool quick=cached||written;
-    pbox->ContentFile(nca.name,"NCA",quick?"Quick USB check":"Verifying stored NCA",size);
-    if(quick)pbox->ContentPhase("Quick check: header + size + write proof");
+    pbox->ContentFile(nca.name,"NCA",quick?"Quick USB check"_nx:"Verifying stored NCA"_nx,size);
+    if(quick)pbox->ContentPhase("Quick check: header + size + write proof"_nx);
     const auto progress=usb_verification;
     if(progress) {
         R_UNLESS(progress->completed_bytes<=progress->total_bytes &&
             size<=progress->total_bytes-progress->completed_bytes &&
             progress->completed_files<progress->total_files,nexus::Invalid);
-        pbox->SetProgressNote(std::string(quick?"Quick check, file ":"Checking saved bytes, file ")+std::to_string(progress->completed_files+1)+
-            " of "+std::to_string(progress->total_files));
+        pbox->SetProgressNote(std::string(quick?"Quick check, file "_nx:"Checking saved bytes, file "_nx)+std::to_string(progress->completed_files+1)+
+            " of "_nx+std::to_string(progress->total_files));
     } else {
-        pbox->NewTransfer(quick?"Quick USB check":"Checking USB file");
+        pbox->NewTransfer(quick?"Quick USB check"_nx:"Checking USB file"_nx);
     }
     const u64 total=progress?progress->total_bytes:size;
     const u64 completed=progress?progress->completed_bytes:0;
@@ -1750,8 +1759,8 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
     if(progress) {
         progress->completed_bytes+=size;
         ++progress->completed_files;
-        pbox->SetProgressNote("Verified "+std::to_string(progress->completed_files)+
-            " of "+std::to_string(progress->total_files)+" files");
+        pbox->SetProgressNote("Verified "_nx+std::to_string(progress->completed_files)+
+            " of "_nx+std::to_string(progress->total_files)+" files");
     }
     const bool finished=!progress || progress->completed_files==progress->total_files;
     pbox->UpdateTransfer(finished?total:
@@ -1779,7 +1788,7 @@ Result Yati::PublishNcas(const CnmtCollection& cnmt) {
             if(nca.type!=NcmContentType_DeltaFragment)R_TRY(add(nca));
         }
         usb_verification=&progress;
-        pbox->NewTransfer(quick_usb_final_verify?"Final USB checks":"Verifying USB content");
+        pbox->NewTransfer(quick_usb_final_verify?"Final USB checks"_nx:"Verifying USB content"_nx);
         pbox->UpdateTransfer(0,progress.total_bytes);
     }
     ON_SCOPE_EXIT(
@@ -1834,8 +1843,13 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
     std::vector<u8> stored(stored_size);
     R_TRY(ncmContentMetaDatabaseGet(&db,&cnmt.key,&read_size,stored.data(),stored.size()));
     R_UNLESS(read_size==stored.size() && !memcmp(stored.data(),buf.buf.data(),stored.size()),nexus::Invalid);
+    if(destination->IsUsb()){
+        std::vector<NcmContentInfo> route_infos{cnmt.content_info};
+        for(const auto& info:cnmt.infos)route_infos.push_back(info.info);
+        R_TRY(nexusapp::CheckUsbRecordRouting(pbox,usb_generation,cnmt.key,route_infos));
+    }
     R_TRY(Checkpoint(nexusapp::InstallStep::MetadataCommitted));
-    pbox->TransferEvent("Content metadata registered");
+    pbox->TransferEvent("Content metadata registered"_nx);
 
     // push record.
     ncm::ContentStorageRecord content_storage_record{};
@@ -1857,7 +1871,7 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
             r.key.type==cnmt.key.type && r.key.install_type==cnmt.key.install_type;
     }),nexus::Invalid);
     R_TRY(Checkpoint(nexusapp::InstallStep::RecordPublished));
-    pbox->TransferEvent("Application record added to HOME");
+    pbox->TransferEvent("Application record added to HOME"_nx);
     // USB import's transaction owner commits the complete application family
     // before applying non-rollbackable launch-version/HOME-cache changes.
     if(defer_postcommit)return 0;
@@ -1877,8 +1891,8 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
         const auto finished=R_SUCCEEDED(rc)?nexusapp::FinishHomeRefresh(app_id):rc;
         if(R_FAILED(finished) && diagnostic){
             if(!diagnostic->completion.empty())diagnostic->completion+='\n';
-            diagnostic->completion+=R_FAILED(queued)?"Installed and verified; icon refresh pending (retry record could not be saved). Open Installed to retry.":
-                             "Installed and verified; icon refresh pending. Saved for retry when Installed is opened.";
+            diagnostic->completion+=R_FAILED(queued)?"Installed and verified; icon refresh pending (retry record could not be saved). Open Installed to retry."_nx:
+                             "Installed and verified; icon refresh pending. Saved for retry when Installed is opened."_nx;
         }
     }
 
@@ -2025,7 +2039,7 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
         end=std::max(end,entry.offset+entry.size);
     }
     R_TRY(source->FinishRead(end));
-    pbox->TransferEvent("Upload complete. Checking content metadata before registration.");
+    pbox->TransferEvent("Upload complete. Checking content metadata before registration."_nx);
 
     // Bind every streamed digest to its full CNMT hash/expanded size before
     // publishing ANY title. The metadata may be last in the incoming package.
@@ -2047,7 +2061,7 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
             cnmt_nca.usb_written.key=VerificationKey(cnmt_nca,yati->usb_generation);
         }
     }
-    pbox->TransferEvent("CNMT hashes and content sizes checked.");
+    pbox->TransferEvent("CNMT hashes and content sizes checked."_nx);
     size_t finished_titles{};
     for (auto& cnmt : cnmts) {
         const auto title_index=finished_titles++;
@@ -2141,7 +2155,7 @@ Result InspectExisting(ui::ProgressBox* pbox,u64 generation,CnmtCollection& cnmt
             R_UNLESS(es::IsRightsIdFound(header.rights_id,common)||es::IsRightsIdFound(header.rights_id,personal),Result_YatiTicketNotFound);
         entry.header=header;
         if(hash_contents){
-            nca::ContentHash hash;pbox->NewTransfer("Checking existing USB content");
+            nca::ContentHash hash;pbox->NewTransfer("Checking existing USB content"_nx);
             for(u64 off=0;off<stat.size;){
                 R_TRY(pbox->ShouldExitResult());R_TRY(usb.Check(generation));const auto count=std::min<u64>(buffer.size(),stat.size-off);
                 R_TRY(usb.Read(generation,path,off,buffer.data(),count,got));R_UNLESS(got==count,nexus::Invalid);
@@ -2247,7 +2261,7 @@ Result ManagerVerifyPublishedContent(Yati& yati,const CnmtCollection& cnmt){
     std::vector<const NcaCollection*> content{&cnmt};for(const auto& nca:cnmt.ncas)content.push_back(&nca);
     std::vector<u8> buffer(1024*1024);
     for(const auto* nca:content){
-        yati.pbox->NewTransfer("Checking installed Manager content");
+        yati.pbox->NewTransfer("Checking installed Manager content"_nx);
         s64 size{};R_TRY(ncmContentStorageGetSizeFromContentId(&yati.cs,&size,&nca->content_id));
         R_UNLESS(size>0 && u64(size)==nca->header.size,nexus::Invalid);
         Sha256Context hash;sha256ContextCreate(&hash);
@@ -2312,12 +2326,12 @@ struct ManagerMetadataTransaction {
 
 Result CheckManagerUpdateStorage(NcmStorageId storage,std::string& detail){
     if(storage==NcmStorageId_BuiltInUser)return 0;
-    detail="Automatic Manager updates require its app to be installed on SD or internal storage.";
+    detail="Automatic Manager updates require its app to be installed on SD or internal storage."_nx;
     R_UNLESS(storage==NcmStorageId_SdCard,nexus::Invalid);
     // A disconnected drive can mount between checking status and NCM Set.
     // Old Nexus firmware is therefore refused whenever the provider exists,
     // regardless of current USB readiness. Never infer support from a build label.
-    detail="Automatic SD app updates need Nexus U1 or newer firmware with explicit install targets. Update the firmware and reboot, or install Manager in internal storage first. The app was kept.";
+    detail="Automatic SD app updates need Nexus U1 or newer firmware with explicit install targets. Update the firmware and reboot, or install Manager in internal storage first. The app was kept."_nx;
     Result detected{};const auto provider=nexus::Detect(detected);
     R_TRY(detected);
     if(provider==nexus::Provider::Absent)return 0;
@@ -2332,7 +2346,7 @@ Result CheckManagerUpdateStorage(NcmStorageId storage,std::string& detail){
 Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const fs::FsPath& path,
     std::string_view expected_version,std::string_view expected_sha256,u64 expected_size,
     NcmStorageId storage,std::string& detail){
-    detail="Manager update package or installation location is not supported. The installed app was kept.";
+    detail="Manager update package or installation location is not supported. The installed app was kept."_nx;
     R_UNLESS(pbox && fs && manager_update::AllowedStorage(storage) &&
         expected_version.size()<16 && nexus::updates::VersionCode(expected_version) && expected_sha256.size()==64 &&
         !expected_version.starts_with("v") && !expected_version.ends_with("-preview") &&
@@ -2342,8 +2356,8 @@ Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const f
     R_UNLESS(size>0 && size<=64LL*1024*1024 && u64(size)==expected_size,nexus::Invalid);
     // Pin the authenticated bytes to the same open file handle used below.
     // Hash before acquiring installer services or creating any placeholder.
-    detail="The saved Manager package no longer matches the verified release. The installed app was kept.";
-    pbox->NewTransfer("Verifying Manager package");
+    detail="The saved Manager package no longer matches the verified release. The installed app was kept."_nx;
+    pbox->NewTransfer("Verifying Manager package"_nx);
     Sha256Context package_hash;sha256ContextCreate(&package_hash);std::vector<u8> buffer(1024*1024);
     for(s64 offset=0;offset<size;){
         R_TRY(pbox->ShouldExitResult());const auto count=std::min<s64>(buffer.size(),size-offset);u64 got{};
@@ -2376,12 +2390,12 @@ Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const f
     const auto installed=ManagerIdentity(records.front().key,static_cast<NcmStorageId>(records.front().storage_id));
     auto expected=installed;expected.storage=static_cast<u8>(storage);
     R_UNLESS(manager_update::SameInstalledApplication(installed,expected,records.size()),nexus::Invalid);
-    detail="The existing Manager installation could not be verified on its original storage. No app records were changed.";
+    detail="The existing Manager installation could not be verified on its original storage. No app records were changed."_nx;
     manager_update::Bytes before;R_TRY(ManagerReadMetadata(yati.db,records.front().key,before));
     std::vector<manager_update::Content> installed_content;R_TRY(ManagerCheckInstalledContent(yati,records.front().key,installed_content));
-    detail="Automatic updates require Manager on SD or internal storage without USB routing. Install Manager there first. Its USB routing indexes could not be ruled out; no app records were changed.";
+    detail="Automatic updates require Manager on SD or internal storage without USB routing. Install Manager there first. Its USB routing indexes could not be ruled out; no app records were changed."_nx;
     R_TRY(ManagerCheckRouting(installed_content));
-    detail="The update does not contain exactly the expected Manager application. No app records were changed.";
+    detail="The update does not contain exactly the expected Manager application. No app records were changed."_nx;
     std::vector<manager_update::Content> layout;
     for(const auto& entry:collections){
         nca::Header encrypted{},header{};R_TRY(yati.ReadSourceExact(&encrypted,entry.offset,sizeof(encrypted)));
@@ -2413,7 +2427,7 @@ Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const f
     }
     for(const auto& info:cnmt.infos)R_UNLESS(info.info.id_offset==0,nexus::Invalid);
     R_UNLESS(remaining.empty(),nexus::Invalid);
-    detail="Manager update content could not be installed and verified. The previous app records were kept; the verified NSP is still on SD.";
+    detail="Manager update content could not be installed and verified. The previous app records were kept; the verified NSP is still on SD."_nx;
     for(auto& content:cnmt.ncas)R_TRY(yati.InstallNca(tickets,content));
     const auto control=std::find_if(cnmt.ncas.begin(),cnmt.ncas.end(),[](const auto& nca){return nca.type==NcmContentType_Control;});
     R_UNLESS(control!=cnmt.ncas.end(),nexus::Invalid);
@@ -2434,18 +2448,18 @@ Result InstallManagerUpdateFromLocalNsp(ui::ProgressBox* pbox,fs::Fs* fs,const f
     for(const auto& info:cnmt.infos)after.write(&info.info,sizeof(info.info));
     manager_update::Bytes next(after.buf.begin(),after.buf.begin()+after.tell());
     ManagerMetadataTransaction transaction{yati,cnmt.key,installed,installed_content};
-    pbox->NewTransfer("Finishing Manager update");
+    pbox->NewTransfer("Finishing Manager update"_nx);
     const auto result=manager_update::ReplaceMetadata(transaction,before,next);
     if(result==manager_update::Publication::Installed){
-        detail="Manager update installed and verified. The previous app content and a metadata backup were kept. The verified NSP remains on SD.";
+        detail="Manager update installed and verified. The previous app content and a metadata backup were kept. The verified NSP remains on SD."_nx;
         return 0;
     }
     if(result==manager_update::Publication::RestoreFailed)
-        detail="Manager update could not restore its previous app metadata. Keep the verified NSP and metadata backup on SD. Use an installer to repair Manager before reopening it.";
+        detail="Manager update could not restore its previous app metadata. Keep the verified NSP and metadata backup on SD. Use an installer to repair Manager before reopening it."_nx;
     else if(result==manager_update::Publication::Restored)
-        detail="Manager update stopped and its previous app metadata was restored and verified. The old app content and verified NSP were kept.";
-    else detail="Manager update stopped before app metadata changed. The previous app and verified NSP were kept.";
-    if(!transaction.backup.empty())detail+="\n\nMetadata backup: "+transaction.backup.substr(5);
+        detail="Manager update stopped and its previous app metadata was restored and verified. The old app content and verified NSP were kept."_nx;
+    else detail="Manager update stopped before app metadata changed. The previous app and verified NSP were kept."_nx;
+    if(!transaction.backup.empty())detail+="\n\nMetadata backup: "_nx+transaction.backup.substr(5);
     return R_FAILED(transaction.error)?transaction.error:nexus::Invalid;
 }
 
@@ -2454,7 +2468,7 @@ Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path
     auto source = std::make_unique<source::File>(fs, path);
     const auto open_result=source->GetOpenResult();
     if(R_FAILED(open_result) && override.diagnostic && nexus::package::SplitPart(path.s))
-        override.diagnostic->text="Split XCI could not be opened. Keep every numbered part in the same folder, choose the first part (.xc0 or .xci.00), and check that no parts are missing or empty. The original files were not changed.";
+        override.diagnostic->text="Split XCI could not be opened. Keep every numbered part in the same folder, choose the first part (.xc0 or .xci.00), and check that no parts are missing or empty. The original files were not changed."_nx;
     R_TRY(open_result);
     s64 source_size{-1};
     if (R_FAILED(source->GetSize(&source_size))) {
@@ -2465,6 +2479,7 @@ Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path
 }
 
 Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::FsPath& path, const ConfigOverride& override, s64 source_size) {
+    nexus::diagnostics::Operation diagnostic_operation("install-game");
     if(override.diagnostic)override.diagnostic->Clear();
     const auto ext = std::strrchr(path.s, '.');
     R_UNLESS(ext, Result_YatiContainerNotFound);
@@ -2475,7 +2490,7 @@ Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::
 
     std::unique_ptr<container::Base> container;
     if(nexus::package::SplitPart(path.s) && !source->HasJoinedParts()) {
-        if(override.diagnostic)override.diagnostic->text="This is one part of a split XCI. Put all parts in the same folder on SD or USB and choose the first part in Install games. A single part cannot be streamed as a complete game.";
+        if(override.diagnostic)override.diagnostic->text="This is one part of a split XCI. Put all parts in the same folder on SD or USB and choose the first part in Install games. A single part cannot be streamed as a complete game."_nx;
         return Result_XciInvalidHeader;
     }
     const auto kind = nexus::package::Classify(path.s);
@@ -2514,11 +2529,10 @@ Result InstallFromCollections(ui::ProgressBox* pbox, source::Base* source, const
         if(override.diagnostic)override.diagnostic->Set(nexus::install::Failure::Metadata);
         return Result_YatiNcaNotFound;
     }
-    if (source->IsStream()) {
-        return InstallInternalStream(pbox, source, prepared, override);
-    } else {
-        return InstallInternal(pbox, source, prepared, override);
-    }
+    const auto result=source->IsStream()?InstallInternalStream(pbox,source,prepared,override):InstallInternal(pbox,source,prepared,override);
+    if(R_SUCCEEDED(result))nexusapp::BackupConsoleRoutingAfterChange();
+    if(!pbox || !pbox->ShouldExit())nexus::reports::QueueFailure("install",result);
+    return result;
 }
 
 } // namespace sphaira::yati

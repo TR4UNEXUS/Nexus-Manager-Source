@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "nexus/package.hpp"
 #include "ui/menus/filebrowser.hpp"
 #include "ui/menus/homebrew.hpp"
@@ -62,7 +63,7 @@ using RomDatabaseIndexs = std::vector<size_t>;
 std::atomic_bool g_change_signalled{};
 
 constexpr FsEntry FS_ENTRY_DEFAULT{
-    "microSD card", "/", FsType::Sd, FsEntryFlag_Assoc | FsEntryFlag_IsSd,
+    "microSD card"_nx, "/", FsType::Sd, FsEntryFlag_Assoc | FsEntryFlag_IsSd,
 };
 
 constexpr FsEntry FS_ENTRIES[]{
@@ -137,7 +138,7 @@ struct RomDatabaseEntry {
 };
 
 constexpr RomDatabaseEntry PATHS[]{
-    { "3do", "The 3DO Company - 3DO"},
+    { "3do", "The 3DO Company - 3DO"_nx},
     { "atari800", "Atari - 8-bit"},
     { "atari2600", "Atari - 2600"},
     { "atari5200", "Atari - 5200"},
@@ -145,43 +146,43 @@ constexpr RomDatabaseEntry PATHS[]{
     { "atarilynx", "Atari - Lynx"},
     { "atarijaguar", "Atari - Jaguar"},
     { "atarijaguarcd", ""},
-    { "supergrafx", "NEC - PC Engine SuperGrafx", { "pcengine" } },
+    { "supergrafx", "NEC - PC Engine SuperGrafx"_nx, { "pcengine" } },
     { "n3ds", "Nintendo - Nintendo 3DS"},
     { "n64", "Nintendo - Nintendo 64"},
-    { "nds", "Nintendo - Nintendo DS"},
-    { "fds", "Nintendo - Family Computer Disk System", { "Nintendo - Famicom Disk System" } },
-    { "nes", "Nintendo - Nintendo Entertainment System"},
-    { "pokemini", "Nintendo - Pokemon Mini"},
-    { "gb", "Nintendo - Game Boy"},
-    { "gba", "Nintendo - Game Boy Advance"},
-    { "gbc", "Nintendo - Game Boy Color"},
-    { "virtualboy", "Nintendo - Virtual Boy"},
+    { "nds", "Nintendo - Nintendo DS"_nx},
+    { "fds", "Nintendo - Family Computer Disk System"_nx, { "Nintendo - Famicom Disk System"_nx } },
+    { "nes", "Nintendo - Nintendo Entertainment System"_nx},
+    { "pokemini", "Nintendo - Pokemon Mini"_nx},
+    { "gb", "Nintendo - Game Boy"_nx},
+    { "gba", "Nintendo - Game Boy Advance"_nx},
+    { "gbc", "Nintendo - Game Boy Color"_nx},
+    { "virtualboy", "Nintendo - Virtual Boy"_nx},
     { "gameandwatch", ""},
     { "sega32x", "Sega - 32X"},
-    { "segacd", "Sega - Mega CD - Sega CD"},
+    { "segacd", "Sega - Mega CD - Sega CD"_nx},
     { "dreamcast", "Sega - Dreamcast"},
-    { "gamegear", "Sega - Game Gear"},
-    { "genesis", "Sega - Mega Drive - Genesis"},
-    { "mastersystem", "Sega - Master System - Mark III"},
-    { "megadrive", "Sega - Mega Drive - Genesis"},
+    { "gamegear", "Sega - Game Gear"_nx},
+    { "genesis", "Sega - Mega Drive - Genesis"_nx},
+    { "mastersystem", "Sega - Master System - Mark III"_nx},
+    { "megadrive", "Sega - Mega Drive - Genesis"_nx},
     { "saturn", "Sega - Saturn"},
     { "sg-1000", "Sega - SG-1000"},
     { "psx", "Sony - PlayStation"},
-    { "psp", "Sony - PlayStation Portable"},
-    { "snes", "Nintendo - Super Nintendo Entertainment System"},
+    { "psp", "Sony - PlayStation Portable"_nx},
+    { "snes", "Nintendo - Super Nintendo Entertainment System"_nx},
     { "pico8", "Sega - PICO"},
     { "wonderswan", "Bandai - WonderSwan"},
-    { "wonderswancolor", "Bandai - WonderSwan Color"},
+    { "wonderswancolor", "Bandai - WonderSwan Color"_nx},
 
     { "mame", "MAME 2000", { "MAME", "mame-libretro", } },
     { "mame", "MAME 2003", { "MAME", "mame-libretro", } },
     { "mame", "MAME 2003-Plus", { "MAME", "mame-libretro", } },
-    { "fbneo", "FBNeo - Arcade Games" },
+    { "fbneo", "FBNeo - Arcade Games"_nx },
 
-    { "neogeo", "SNK - Neo Geo" },
-    { "neogeo", "SNK - Neo Geo Pocket" },
-    { "neogeo", "SNK - Neo Geo Pocket Color" },
-    { "neogeo", "SNK - Neo Geo CD" },
+    { "neogeo", "SNK - Neo Geo"_nx },
+    { "neogeo", "SNK - Neo Geo Pocket"_nx },
+    { "neogeo", "SNK - Neo Geo Pocket Color"_nx },
+    { "neogeo", "SNK - Neo Geo CD"_nx },
 };
 
 constexpr fs::FsPath DAYBREAK_PATH{"/switch/daybreak.nro"};
@@ -693,7 +694,7 @@ void FsView::OnClick() {
     } else {
         // special case for nro
         if (IsSd() && IsSamePath(entry.GetExtension(), "nro")) {
-            App::Push<OptionBox>(i18n::Reorder("Launch ", entry.GetName()) + '?',
+            App::Push<OptionBox>(i18n::Reorder("Launch "_nx, entry.GetName()) + '?',
                 "No"_i18n, "Launch"_i18n, 1, [this](auto op_index){
                     if (op_index && *op_index) {
                         nro_launch(GetNewPathCurrent());
@@ -843,7 +844,7 @@ void FsView::InstallFiles() {
             App::Push<ui::ProgressBox>(0, "Installing "_i18n, "", [this, targets](auto pbox) -> Result {
                 for (auto& e : targets) {
                     R_TRY(yati::InstallFromFile(pbox, m_fs.get(), GetNewPath(e)));
-                    App::Notify(i18n::Reorder("Installed ", e.GetName()));
+                    App::Notify(i18n::Reorder("Installed "_nx, e.GetName()));
                 }
 
                 R_SUCCEED();
@@ -1239,7 +1240,7 @@ void FsView::OnDeleteCallback() {
 
                 const auto full_path = GetNewPath(selected.m_path, p.name);
                 if (p.IsDir()) {
-                    pbox->NewTransfer(i18n::Reorder("Scanning ", full_path));
+                    pbox->NewTransfer(i18n::Reorder("Scanning "_nx, full_path));
                     R_TRY(get_collections(src_fs, full_path, p.name, collections));
                 }
             }
@@ -1282,7 +1283,7 @@ void FsView::OnPasteCallback() {
                     const auto dst_path = GetNewPath(m_path, p.name);
 
                     pbox->SetTitle(p.name);
-                    pbox->NewTransfer(i18n::Reorder("Pasting ", src_path));
+                    pbox->NewTransfer(i18n::Reorder("Pasting "_nx, src_path));
 
                     if (p.IsDir()) {
                         m_fs->RenameDirectory(src_path, dst_path);
@@ -1317,7 +1318,7 @@ void FsView::OnPasteCallback() {
 
                     const auto full_path = GetNewPath(selected.m_path, p.name);
                     if (p.IsDir()) {
-                        pbox->NewTransfer(i18n::Reorder("Scanning ", full_path));
+                        pbox->NewTransfer(i18n::Reorder("Scanning "_nx, full_path));
                         R_TRY(get_collections(src_fs, full_path, p.name, collections));
                     }
                 }
@@ -1335,11 +1336,11 @@ void FsView::OnPasteCallback() {
 
                     if (p.IsDir()) {
                         pbox->SetTitle(p.name);
-                        pbox->NewTransfer(i18n::Reorder("Creating ", dst_path));
+                        pbox->NewTransfer(i18n::Reorder("Creating "_nx, dst_path));
                         m_fs->CreateDirectory(dst_path);
                     } else {
                         pbox->SetTitle(p.name);
-                        pbox->NewTransfer(i18n::Reorder("Copying ", src_path));
+                        pbox->NewTransfer(i18n::Reorder("Copying "_nx, src_path));
                         const auto weight=std::max<s64>(p.file_size,1);
                         ui::ProgressScope file_scope(pbox,nexus::WorkPart(copy_done,copy_total,9800),nexus::WorkPart(copy_done+weight,copy_total,9800));
                         R_TRY(pbox->CopyFile(src_fs, m_fs.get(), src_path, dst_path, is_same_fs));
@@ -1360,7 +1361,7 @@ void FsView::OnPasteCallback() {
                         const auto dst_path = GetNewPath(base_dst_path, p.name);
 
                         pbox->SetTitle(p.name);
-                        pbox->NewTransfer(i18n::Reorder("Creating ", dst_path));
+                        pbox->NewTransfer(i18n::Reorder("Creating "_nx, dst_path));
                         m_fs->CreateDirectory(dst_path);
                     }
 
@@ -1372,7 +1373,7 @@ void FsView::OnPasteCallback() {
                         const auto dst_path = GetNewPath(base_dst_path, p.name);
 
                         pbox->SetTitle(p.name);
-                        pbox->NewTransfer(i18n::Reorder("Copying ", src_path));
+                        pbox->NewTransfer(i18n::Reorder("Copying "_nx, src_path));
                         const auto weight=std::max<s64>(p.file_size,1);
                         ui::ProgressScope file_scope(pbox,nexus::WorkPart(copy_done,copy_total,9800),nexus::WorkPart(copy_done+weight,copy_total,9800));
                         R_TRY(pbox->CopyFile(src_fs, m_fs.get(), src_path, dst_path, is_same_fs));
@@ -1509,7 +1510,7 @@ Result FsView::DeleteAllCollections(ProgressBox* pbox, fs::Fs* fs, const FsDirCo
 
                 const auto full_path = FsView::GetNewPath(c.path, p.name);
                 pbox->SetTitle(p.name);
-                pbox->NewTransfer(i18n::Reorder("Deleting ", full_path.toString()));
+                pbox->NewTransfer(i18n::Reorder("Deleting "_nx, full_path.toString()));
                 if ((mode & FsDirOpenMode_ReadDirs) && p.type == FsDirEntryType_Dir) {
                     log_write("deleting dir: %s\n", full_path.s);
                     R_TRY(fs->DeleteDirectory(full_path));
@@ -1540,7 +1541,7 @@ static Result DeleteAllCollectionsWithSelected(ProgressBox* pbox, fs::Fs* fs, co
 
         const auto full_path = FsView::GetNewPath(selected.m_path, p.name);
         pbox->SetTitle(p.name);
-        pbox->NewTransfer(i18n::Reorder("Deleting ", full_path.toString()));
+        pbox->NewTransfer(i18n::Reorder("Deleting "_nx, full_path.toString()));
 
         if ((mode & FsDirOpenMode_ReadDirs) && p.type == FsDirEntryType_Dir) {
             log_write("deleting dir: %s\n", full_path.s);
@@ -1723,7 +1724,7 @@ void FsView::DisplayOptions() {
                 if (R_SUCCEEDED(rc)) {
                     Scan(m_path);
                 } else {
-                    const auto msg = std::string("Failed to rename file: ") + entry.name;
+                    const auto msg = std::string("Failed to rename file: "_nx) + entry.name;
                     App::PushErrorBox(rc, msg);
                 }
             }
@@ -1801,7 +1802,7 @@ void FsView::DisplayOptions() {
 
                 options->Add<SidebarEntryCallback>("Extract to..."_i18n, [this](){
                     std::string out;
-                    if (R_SUCCEEDED(swkbd::ShowText(out, "Extract path", "Enter the path to the folder to extract into"_i18n.c_str(), fs::AppendPath(m_path, ""))) && !out.empty()) {
+                    if (R_SUCCEEDED(swkbd::ShowText(out, "Extract path"_nx, "Enter the path to the folder to extract into"_i18n.c_str(), fs::AppendPath(m_path, ""))) && !out.empty()) {
                         UnzipFiles(out);
                     }
                 });
@@ -1819,7 +1820,7 @@ void FsView::DisplayOptions() {
 
                 options->Add<SidebarEntryCallback>("Compress to..."_i18n, [this](){
                     std::string out;
-                    if (R_SUCCEEDED(swkbd::ShowText(out, "Compress path", "Enter the path to the folder to compress into"_i18n.c_str(), m_path)) && !out.empty()) {
+                    if (R_SUCCEEDED(swkbd::ShowText(out, "Compress path"_nx, "Enter the path to the folder to compress into"_i18n.c_str(), m_path)) && !out.empty()) {
                         ZipFiles(out);
                     }
                 });

@@ -83,7 +83,7 @@ void Verify(){
 }
 namespace startupcheck {
 using sphaira::App;using sphaira::ui::OptionBox;
-namespace nexusapp=sphaira::nexusapp;
+namespace nexusapp {inline unsigned guided{};void DisplayGuidedUsbRepair(){++guided;}}
 enum class Page {Home,Installed,Files,Results};
 struct Menu {
     bool startup_usb_started{},startup_usb_handled{},refresh_pending{},focused{true},popped{};
@@ -96,8 +96,7 @@ struct Menu {
 void Verify(){
     Case();Reset();Menu manual;
     assert(!startup_starts&&!startup_takes&&!App::option&&!App::progress&&!mutations);
-    manual.OpenUsbRepair();assert(startup_stops==1&&App::progress&&!scans&&!mutations);
-    App::Run();assert(scans==1&&!mutations&&!startup_starts&&!startup_takes);
+    manual.OpenUsbRepair();assert(nexusapp::guided==1&&!App::progress&&!scans&&!mutations);
     for(unsigned blocked=0;blocked<3;++blocked){Case();Reset();Menu manual;if(blocked==0)manual.focused=false;if(blocked==1)manual.popped=true;if(blocked==2)nexus::lifecycle::poll_allowed=false;manual.OpenUsbRepair();assert(!App::progress&&!startup_stops&&!mutations);}
 }
 

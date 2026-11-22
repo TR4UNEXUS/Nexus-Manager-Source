@@ -1,3 +1,8 @@
+#include "nexus/problem_reports.hpp"
+#include "nexus/localize.hpp"
+#include "nexus/diagnostics.hpp"
+#include "nexus/routing_backup.hpp"
+#include "nexus/index_recovery.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/manager.hpp"
 #include "nexus/safety.hpp"
@@ -88,7 +93,8 @@ struct TransferSession {
     Storage source,destination;
     std::vector<Meta> verified_metas;
     u64 application{},verified_bytes{};
-    bool ready{};
+    bool ready{},resuming{};
+    std::map<std::string,std::array<u8,32>> hashes;
     TransferSession()=default;
     TransferSession(const TransferSession&)=delete;
     TransferSession& operator=(const TransferSession&)=delete;
@@ -111,7 +117,7 @@ struct TransferProgress {
     bool finishing{};
     explicit TransferProgress(ui::ProgressBox* p):box(p){}
     void Show(){box->SetOverallTransfer(work.Offset(),work.Total(),label,finishing);}
-    bool Begin(u64 bytes){if(!work.Begin(bytes))return false;label="Preparing files";Show();return true;}
+    bool Begin(u64 bytes){if(!work.Begin(bytes))return false;label="Preparing files"_nx;Show();return true;}
     void Pass(const std::string& name){label=name;Show();}
     bool Advance(u64 bytes){if(!work.Advance(bytes))return false;box->AddTransferBytes(bytes);Show();return true;}
     void Finish(unsigned percent,const std::string& name){
@@ -277,26 +283,27 @@ Result VerifyCopied(ui::ProgressBox* p,Storage& dst,const NcmContentInfo& i,cons
     // The digest is from the exact bytes successfully read/written in this copy,
     // never a receipt, content-ID prefix or a hash trusted from an earlier run.
     std::array<u8,32> actual{};
-    const auto label=std::string("Checking the copy on ")+nexus::TargetName(dst.target);
+    const auto label=std::string("Checking the copy on "_nx)+nexus::TargetName(dst.target);
     if(progress)progress->Pass(label);else p->NewTransfer(label);
-    report.At("Reading the destination for verification","move-hash-destination");
+    report.At("Reading the destination for verification"_nx,"move-hash-destination");
     R_TRY(HashContent(p,dst.target,dst,i,actual,&report,progress));
-    report.At("Comparing the copied bytes and destination","move-compare-hashes");
+    report.At("Comparing the copied bytes and destination"_nx,"move-compare-hashes");
     R_UNLESS(copied_hash==actual,Invalid);
     R_SUCCEED();
 }
-Result VerifyPair(ui::ProgressBox* p, Target source, Storage& src, Storage& dst, const NcmContentInfo& i, CopyReport* report=nullptr,TransferProgress* progress=nullptr) {
+Result VerifyPair(ui::ProgressBox* p, Target source, Storage& src, Storage& dst, const NcmContentInfo& i, CopyReport* report=nullptr,TransferProgress* progress=nullptr,std::array<u8,32>* digest=nullptr) {
     std::array<u8,32> a{},b{};
-    const auto original=std::string("Checking existing files on ")+nexus::TargetName(source);
+    const auto original=std::string("Checking existing files on "_nx)+nexus::TargetName(source);
     if(progress)progress->Pass(original);else p->NewTransfer(original);
-    if(report)report->At("Reading the original for verification","move-hash-source");
+    if(report)report->At("Reading the original for verification"_nx,"move-hash-source");
     R_TRY(HashContent(p,source,src,i,a,report,progress));
-    const auto copy=std::string("Checking existing files on ")+nexus::TargetName(dst.target);
+    const auto copy=std::string("Checking existing files on "_nx)+nexus::TargetName(dst.target);
     if(progress)progress->Pass(copy);else p->NewTransfer(copy);
-    if(report)report->At("Reading the destination for verification","move-hash-destination");
+    if(report)report->At("Reading the destination for verification"_nx,"move-hash-destination");
     R_TRY(HashContent(p,dst.target,dst,i,b,report,progress));
-    if(report)report->At("Comparing the original and copied file","move-compare-hashes");
+    if(report)report->At("Comparing the original and copied file"_nx,"move-compare-hashes");
     R_UNLESS(a == b,Invalid);
+    if(digest)*digest=a;
     R_SUCCEED();
 }
 class UsbSource final : public yati::source::Base {
@@ -412,7 +419,7 @@ Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& pat
             receipt.step=R_SUCCEEDED(result)?InstallStep::Complete:InstallStep::Failed;receipt.result=result;
             const auto saved=SaveInstallReceipt(receipt);
             if(R_FAILED(saved)){nexus::Log("P3-install-receipt-save",saved);
-                if(diagnostic)diagnostic->completion+="\nRecovery checkpoint could not be saved; keep the source package.";}
+                if(diagnostic)diagnostic->completion+="\nRecovery checkpoint could not be saved; keep the source package."_nx;}
         }
         return result;
     };
@@ -452,7 +459,7 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
         batch::Selection validated;
         for(const auto& row:report.items)R_UNLESS(validated.Add(row.entry),Invalid);
         R_UNLESS(validated.Entries().size()==report.items.size(),Invalid);
-        report.stage="Check destination";save_report();
+        report.stage="Check destination"_nx;save_report();
         R_TRY(p->ShouldExitResult());
         u64 destination_generation{};
         if(report.target==Target::Usb){
@@ -477,7 +484,7 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
             }
             return 0;
         };
-        p->SetActionName("Check batch / "+std::string(nexus::TargetName(report.target)));
+        p->SetActionName("Check batch / "_nx+std::string(nexus::TargetName(report.target)));
         size_t active{};
         return batch::Run(report,[&]{return p->ShouldExitResult();},check,
             [&](const batch::Entry& e){
@@ -489,8 +496,8 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
                 return result;
             },
             [&](size_t i,bool starting){
-                if(starting){active=i;p->SetActionName("Install "+std::to_string(i+1)+" / "+std::to_string(report.items.size())+" / "+nexus::TargetName(report.target));
-                    p->SetItem(report.items[i].entry.name);p->NewTransfer("Opening package");}
+                if(starting){active=i;p->SetActionName("Install "_nx+std::to_string(i+1)+" / "+std::to_string(report.items.size())+" / "+nexus::TargetName(report.target));
+                    p->SetItem(report.items[i].entry.name);p->NewTransfer("Opening package"_nx);}
                 else save_report();
             });
     }();
@@ -499,7 +506,7 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
 std::string Locations(const Game& g) {
     std::string s;
     for(size_t i=0;i<3;++i) if(g.bytes[i]) { if(!s.empty())s+=" + ";s+=nexus::TargetName(static_cast<Target>(i)); }
-    return s.empty()?"Unavailable / not verified":s;
+    return s.empty()?"Unavailable / not verified"_nx:s;
 }
 Result ScanGames(ui::ProgressBox* p,std::vector<Game>& games) {
     // Browsing is an inventory, not a physical-content or integrity check.
@@ -658,20 +665,20 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
     R_TRY(ns::Initialize());ON_SCOPE_EXIT(ns::Exit());
     R_UNLESS(nexus::ValidMove(source,target),Invalid);
     if(source==Target::Usb || target==Target::Usb)R_TRY(nexus::CheckUsbMutationAllowed());
-    report.At("Opening the source storage","move-open-source");
+    report.At("Opening the source storage"_nx,"move-open-source");
     auto& src=session.source;auto& dst=session.destination;
     R_TRY(src.Open(source));
     nexus::Destination destination(target);
-    report.At("Opening and testing the destination","move-open-destination");
+    report.At("Opening and testing the destination"_nx,"move-open-destination");
     dst.target=target;R_TRY(destination.Open(dst.cs));dst.generation=destination.Generation();
-    report.At("Opening the destination game list","move-open-metadata");
+    report.At("Opening the destination game list"_nx,"move-open-metadata");
     R_TRY(ncmOpenContentMetaDatabase(&dst.db,nexus::LogicalStorage(target)));
-    report.At("Checking the complete original game","move-source-records");
+    report.At("Checking the complete original game"_nx,"move-source-records");
     std::vector<Meta> metas;R_TRY(AppMetas(app,src,metas));
     std::map<std::string,NcmContentInfo> unique;
     // Refuse to overwrite conflicting metadata for the exact same key.
     for(const auto& m:metas) {
-        report.At("Comparing existing game information","move-compare-metadata");
+        report.At("Comparing existing game information"_nx,"move-compare-metadata");
         bool existing{};R_TRY(ncmContentMetaDatabaseHas(&dst.db,&existing,&m.key));
         if(existing){Meta stored;R_TRY(LoadMeta(dst.db,m.key,stored));R_UNLESS(stored.raw==m.raw,Invalid);}
         for(const auto& i:m.infos){
@@ -683,12 +690,12 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
     for(const auto& [id,info]:unique) {
         report.content=id;report.offset=0;ncmContentInfoSizeToU64(&info,&report.size);
         R_UNLESS(report.size && report.size<=UINT64_MAX-total_bytes,Invalid);total_bytes+=report.size;
-        report.At("Checking existing destination files","move-check-existing");
+        report.At("Checking existing destination files"_nx,"move-check-existing");
         bool has{};R_TRY(InspectContent(dst,info,has));
         if(!has){u64 size{};ncmContentInfoSizeToU64(&info,&size);R_UNLESS(size<=UINT64_MAX-required,Invalid);required+=size;}
     }
     if(progress)R_UNLESS(progress->Begin(total_bytes),Invalid);
-    report.At("Checking free space","move-check-space");
+    report.At("Checking free space"_nx,"move-check-space");
     s64 free{};R_TRY(ncmContentStorageGetFreeSpaceSize(&dst.cs,&free));
     if(target==Target::Usb){
         nexus::Client c;nexus::Space space{};R_TRY(c.GetSpace(dst.generation,space));
@@ -697,19 +704,19 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
     std::vector<u8> buffer(destination.TransferLimit());
     for(const auto& [id,info]:unique) {
         report.content=id;report.offset=0;ncmContentInfoSizeToU64(&info,&report.size);
-        report.At("Checking storage before copying","move-check-storage");
+        report.At("Checking storage before copying"_nx,"move-check-storage");
         R_TRY(p->ShouldExitResult());R_TRY(CheckStorage(src));R_TRY(destination.Validate());
         u64 size{};ncmContentInfoSizeToU64(&info,&size);
         bool has{};R_TRY(InspectContent(dst,info,has));
         if(has){
-            {CopyTimer time{report.reuse_verify_us};R_TRY(VerifyPair(p,source,src,dst,info,&report,progress));}
-            report.At("Registering the verified destination file","move-register-existing");
+            {CopyTimer time{report.reuse_verify_us};R_TRY(VerifyPair(p,source,src,dst,info,&report,progress,&session.hashes[id]));}
+            report.At("Registering the verified destination file"_nx,"move-register-existing");
             R_TRY(destination.EnsureRegistered(info.content_id,size));
             ++report.verified;
             continue;
         }
         NcmPlaceHolderId ph{};
-        report.At("Creating a temporary destination file","move-create-placeholder");
+        report.At("Creating a temporary destination file"_nx,"move-create-placeholder");
         R_TRY(ncmContentStorageGeneratePlaceHolderId(&dst.cs,&ph));
         R_TRY(ncmContentStorageCreatePlaceHolder(&dst.cs,&info.content_id,&ph,size));
         bool owned=true;
@@ -719,13 +726,13 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
             if(R_FAILED(cleanup))nexus::Log("move-placeholder-cleanup",cleanup,app);
         });
         std::string path;
-        report.At("Locating the temporary destination file","move-placeholder-path");
+        report.At("Locating the temporary destination file"_nx,"move-placeholder-path");
         if(target==Target::Usb){
             char common[FS_MAX_PATH]{};
             R_TRY(ncmContentStorageGetPlaceHolderPath(&dst.cs,common,sizeof(common),&ph));
             R_UNLESS(nexus::ContentPath(common,true,path),Invalid);
         }
-        const auto label=std::string("Copying to ")+nexus::TargetName(target)+" - file "+std::to_string(report.verified+1)+" of "+std::to_string(unique.size());
+        const auto label=std::string("Copying to "_nx)+nexus::TargetName(target)+" - file "_nx+std::to_string(report.verified+1)+" of "_nx+std::to_string(unique.size());
         if(progress)progress->Pass(label);else p->NewTransfer(label);
         // One source session per file. The server still checks generation on
         // every bounded Read request; never fall back to a newly mounted drive.
@@ -734,17 +741,17 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
         Sha256Context copied;sha256ContextCreate(&copied);
         for(u64 off=0;off<size;){
             report.offset=off;
-            report.At("Checking for cancellation","move-cancel");
+            report.At("Checking for cancellation"_nx,"move-cancel");
             R_TRY(p->ShouldExitResult());
             const auto count=std::min<u64>(buffer.size(),size-off);
-            report.At("Reading the source file","move-read-source");
+            report.At("Reading the source file"_nx,"move-read-source");
             {CopyTimer time{report.read_us};
                 if(source==Target::Usb){
                     u64 actual{};R_TRY(source_usb.Read(src.generation,source_path,off,buffer.data(),count,actual));
                     R_UNLESS(actual==count,Invalid);
                 }else R_TRY(ReadContent(source,src.cs,info.content_id,src.generation,off,buffer.data(),count));
             }
-            report.At("Writing the destination file","move-write-destination");
+            report.At("Writing the destination file"_nx,"move-write-destination");
             {CopyTimer time{report.write_us};R_TRY(destination.Write(dst.cs,ph,path,size,off,buffer.data(),count));}
             {CopyTimer time{report.hash_us};sha256ContextUpdate(&copied,buffer.data(),count);}
             report.copied_bytes+=count;
@@ -752,53 +759,56 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
             if(progress){R_UNLESS(progress->Advance(count),Invalid);}else p->UpdateTransfer(off,size);
         }
         report.offset=size;
-        report.At("Rechecking storage after the copy","move-postcopy-check");
+        report.At("Rechecking storage after the copy"_nx,"move-postcopy-check");
         R_TRY(CheckStorage(src));R_TRY(destination.Validate());
-        report.At("Flushing the destination file","move-flush");
+        report.At("Flushing the destination file"_nx,"move-flush");
         R_TRY(ncmContentStorageFlushPlaceHolder(&dst.cs));
-        report.At("Registering the copied file","move-register");
+        report.At("Registering the copied file"_nx,"move-register");
         R_TRY(ncmContentStorageRegister(&dst.cs,&info.content_id,&ph));owned=false;
-        report.At("Checking the copied file size","move-check-size");
+        report.At("Checking the copied file size"_nx,"move-check-size");
         R_TRY(InspectContent(dst,info,has));R_UNLESS(has,Invalid);
         std::array<u8,32> copied_hash{};sha256ContextGetHash(&copied,copied_hash.data());
         {CopyTimer time{report.verify_us};R_TRY(VerifyCopied(p,dst,info,copied_hash,report,progress));}
+        session.hashes[id]=copied_hash;
         report.saved_source_bytes+=size;
-        report.At("Confirming destination registration","move-ensure-registration");
+        report.At("Confirming destination registration"_nx,"move-ensure-registration");
         R_TRY(destination.EnsureRegistered(info.content_id,size));
         ++report.verified;
         nexus::Log("move-file-verified-M3",0,report.verified);
     }
     // A successful copy changes the launch records, but never deletes the source.
     // Preserve all other keys (base/update/DLC) and reject concurrent changes.
-    if(progress)progress->Finish(15,"Saving game information");
+    if(progress)progress->Finish(15,"Saving game information"_nx);
     std::vector<ncm::ContentStorageRecord> records;
-    report.At("Reading the current HOME game records","move-read-launch-records");
+    report.At("Reading the current HOME game records"_nx,"move-read-launch-records");
     R_TRY(ns::GetApplicationRecords(app,records));
     for(const auto& m:metas) {
-        report.At("Rechecking original game information","move-recheck-metadata");
+        report.At("Rechecking original game information"_nx,"move-recheck-metadata");
         Meta current;R_TRY(LoadMeta(src.db,m.key,current));R_UNLESS(current.raw==m.raw,Invalid);
         bool found=false;
         for(auto& r:records)if(nexus::SameMetaKey(r.key,m.key)){r.storage_id=nexus::LogicalStorage(target);found=true;}
         R_UNLESS(found,Invalid);
         R_TRY(CheckStorage(src));R_TRY(destination.Validate());
-        report.At("Saving destination game information","move-set-metadata");
+        report.At("Saving destination game information"_nx,"move-set-metadata");
         R_TRY(ncmContentMetaDatabaseSet(&dst.db,&m.key,m.raw.data(),m.raw.size()));
     }
-    report.At("Committing destination game information","move-commit-metadata");
+    report.At("Committing destination game information"_nx,"move-commit-metadata");
     R_TRY(ncmContentMetaDatabaseCommit(&dst.db));
-    report.At("Rechecking storage before publishing","move-publication-check");
+    if(target==Target::Usb)for(const auto& meta:metas)
+        R_TRY(CheckUsbRecordRouting(p,dst.generation,meta.key,meta.infos));
+    report.At("Rechecking storage before publishing"_nx,"move-publication-check");
     R_TRY(CheckStorage(src));R_TRY(destination.Validate());
-    report.At("Publishing the verified game to HOME","move-publish");
+    report.At("Publishing the verified game to HOME"_nx,"move-publish");
     R_TRY(ns::PushApplicationRecord(app,records.data(),records.size()));
     report.published=true;
-    report.At("Refreshing the HOME icon","move-home-refresh");
+    report.At("Refreshing the HOME icon"_nx,"move-home-refresh");
     R_TRY(ns::InvalidateApplicationControlCache(app));
     nexus::Log("verified-copy-published",0,app);
     // Full-byte verification succeeded for every fresh or reused file. Bind it
     // to this operation and these still-open sessions, not a persistent cache.
     session.verified_metas=std::move(metas);session.application=app;
     session.verified_bytes=total_bytes;session.ready=true;
-    if(progress)progress->Finish(40,"Finishing transfer");
+    if(progress)progress->Finish(40,"Finishing transfer"_nx);
     R_SUCCEED();
     }();
     // Preserve the operation's result even when cleanup or log writing fails.
@@ -831,11 +841,11 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
     const auto stage=[&](const char* name,const char* tag,u64 value=0){
         if(std::strcmp(event,tag))nexus::Log(tag,0,value);
         report.stage=name;event=tag;stage_value=value;
-        if(progress){if(!deleting)progress->Finish(50,"Finishing move - checking game records");}
+        if(progress){if(!deleting)progress->Finish(50,"Finishing move - checking game records"_nx);}
         else p->NewTransfer(name);
     };
     const Result result=[&]() -> Result {
-    stage("Open source and destination","remove-open",app);
+    stage("Open source and destination"_nx,"remove-open",app);
     R_TRY(ns::Initialize());ON_SCOPE_EXIT(ns::Exit());
     R_UNLESS(nexus::ValidMove(source,target),Invalid);
     if(source==Target::Usb || target==Target::Usb)R_TRY(nexus::CheckUsbMutationAllowed());
@@ -847,8 +857,10 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
         session.ready=false; // consume once, including on cancellation/failure
         R_TRY(CheckStorage(src));R_TRY(CheckStorage(dst));
     }else{R_TRY(src.Open(source));R_TRY(dst.Open(target));}
-    stage("Find complete source records","remove-source-records");
-    std::vector<Meta> metas;R_TRY(AppMetas(app,src,metas));
+    stage("Find complete source records"_nx,"remove-source-records");
+    std::vector<Meta> metas;
+    if(verified && session.resuming)metas=session.verified_metas;
+    else R_TRY(AppMetas(app,src,metas));
     if(verified){
         R_UNLESS(metas.size()==session.verified_metas.size(),Invalid);
         for(const auto& m:metas)R_UNLESS(std::ranges::any_of(session.verified_metas,[&](const Meta& checked){
@@ -856,23 +868,23 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
         }),Invalid);
     }
     std::map<std::string,NcmContentInfo> contents;
-    stage("Compare destination metadata","remove-compare-metadata");
+    stage("Compare destination metadata"_nx,"remove-compare-metadata");
     for(const auto& original:metas) {
         Meta copy;R_TRY(LoadMeta(dst.db,original.key,copy));R_UNLESS(original.raw==copy.raw,Invalid);
         for(const auto& i:original.infos)contents.emplace(HexId(&i.content_id),i);
     }
     const auto all_contents=contents.size();
-    stage(verified?"Confirm this operation's verified copy":"Verify destination files and hashes",
+    stage(verified?"Confirm this operation's verified copy"_nx:"Verify destination files and hashes"_nx,
         verified?"remove-current-verification-M4":"remove-verify-pairs");
     for(const auto& [id,info]:contents){
         R_TRY(p->ShouldExitResult());R_TRY(CheckStorage(src));R_TRY(CheckStorage(dst));
         bool exists{};R_TRY(InspectContent(dst,info,exists));R_UNLESS(exists,Invalid);
-        if(verified){R_TRY(InspectContent(src,info,exists));R_UNLESS(exists,Invalid);}
+        if(verified){R_TRY(InspectContent(src,info,exists));R_UNLESS(exists || session.resuming,Invalid);}
         else R_TRY(VerifyPair(p,source,src,dst,info));
     }
     // Validate every pair first, then ensure every destination registration
     // before any source metadata/file is deleted (including shared content).
-    stage("Ensure destination USB registration","remove-ensure-registration-P2");
+    stage("Ensure destination USB registration"_nx,"remove-ensure-registration-P2");
     if(target==Target::Usb)for(const auto& [id,info]:contents){
         R_TRY(p->ShouldExitResult());
         u64 size{};ncmContentInfoSizeToU64(&info,&size);
@@ -880,18 +892,18 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
         R_TRY(nexus::EnsureUsbContentRegistered(dst.generation,info.content_id,static_cast<s64>(size)));
     }
     // Retain any NCA referenced by another metadata record.
-    stage("Count shared content references","remove-count-references");
+    stage("Count shared content references"_nx,"remove-count-references");
     s32 total{},count{};
     R_TRY(ncmContentMetaDatabaseList(&src.db,&total,&count,nullptr,0,NcmContentMetaType_Unknown,0,0,UINT64_MAX,NcmContentInstallType_Unknown));
     R_UNLESS(total>=0 && total<=65536,Invalid);
     std::vector<NcmContentMetaKey> keys(total);
-    stage("Read shared content references","remove-list-references",total);
+    stage("Read shared content references"_nx,"remove-list-references",total);
     R_TRY(ncmContentMetaDatabaseList(&src.db,&total,&count,keys.data(),keys.size(),NcmContentMetaType_Unknown,0,0,UINT64_MAX,NcmContentInstallType_Unknown));
     R_UNLESS(count==static_cast<s32>(keys.size()) && count==total,Invalid);
     for(const auto& key:keys){
         R_TRY(p->ShouldExitResult());
         if(std::ranges::any_of(metas,[&](const Meta& m){return nexus::SameMetaKey(m.key,key);}))continue;
-        stage("Check another record for shared files","remove-check-reference",key.id);
+        stage("Check another record for shared files"_nx,"remove-check-reference",key.id);
         // Do not load whole unrelated database values or validate their unused
         // dependency tails. Only a complete, bounded ContentInfo table can
         // establish shared-file references. Errors still block ALL deletion.
@@ -901,25 +913,28 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
         },Invalid));
     }
     report.shared=all_contents-contents.size();
-    stage("Recheck metadata and device","remove-recheck-metadata");
+    stage("Recheck metadata and device"_nx,"remove-recheck-metadata");
     R_TRY(CheckStorage(src));R_TRY(CheckStorage(dst));
     for(const auto& m:metas){
-        Meta a,b;R_TRY(LoadMeta(src.db,m.key,a));R_TRY(LoadMeta(dst.db,m.key,b));
-        R_UNLESS(a.raw==m.raw && b.raw==m.raw,Invalid);
+        Meta a,b;bool present{};R_TRY(ncmContentMetaDatabaseHas(&src.db,&present,&m.key));
+        if(present){R_TRY(LoadMeta(src.db,m.key,a));R_UNLESS(SameVerifiedMeta(a,m),Invalid);}
+        else R_UNLESS(session.resuming && source==Target::Internal,Invalid);
+        R_TRY(LoadMeta(dst.db,m.key,b));R_UNLESS(SameVerifiedMeta(b,m),Invalid);
     }
     std::vector<ncm::ContentStorageRecord> published;R_TRY(ns::GetApplicationRecords(app,published));
-    stage("Confirm destination launch records","remove-check-launch-records");
+    stage("Confirm destination launch records"_nx,"remove-check-launch-records");
     for(const auto& m:metas)R_UNLESS(std::ranges::any_of(published,[&](const auto& r){
         return r.storage_id==nexus::LogicalStorage(target) && nexus::SameMetaKey(r.key,m.key);
     }),Invalid);
     // Resolve/validate every deletion candidate before removing any source data.
     // Never use routed NCM Delete for USB: it may select the verified SD copy.
     std::map<std::string,std::string> source_paths;
-    stage("Validate physical source deletion paths","remove-preflight-paths");
+    stage("Validate physical source deletion paths"_nx,"remove-preflight-paths");
     if(source==Target::Usb)for(const auto& [id,info]:contents){
-        char common[FS_MAX_PATH]{};std::string path;u64 size{};ncmContentInfoSizeToU64(&info,&size);
-        R_TRY(ncmContentStorageGetPath(&src.cs,common,sizeof(common),&info.content_id));
-        R_UNLESS(nexus::ContentPath(common,false,path) && nexus::RegisteredFilePath(path),Invalid);
+        const auto path=UsbContentPath(info.content_id);u64 size{};ncmContentInfoSizeToU64(&info,&size);
+        R_UNLESS(nexus::RegisteredFilePath(path),Invalid);
+        bool exists{};R_TRY(InspectContent(src,info,exists));
+        if(!exists){R_UNLESS(session.resuming,Invalid);continue;}
         nexus::Client c;nexus::Info physical{};R_TRY(c.Check(src.generation));
         R_TRY(c.Stat(src.generation,path,physical));
         R_UNLESS(!physical.directory && physical.size==size,Invalid);
@@ -930,18 +945,23 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
     // including copies outside this move. InternalUser has its own database.
     if(source==Target::Usb || target==Target::Usb)R_TRY(nexus::CheckUsbMutationAllowed());
     deleting=true;
-    if(progress)progress->Finish(60,std::string("Removing original from ")+nexus::TargetName(source));
-    else p->SetActionName(std::string("Removing original from ")+nexus::TargetName(source));
+    if(progress)progress->Finish(60,std::string("Removing original from "_nx)+nexus::TargetName(source));
+    else p->SetActionName(std::string("Removing original from "_nx)+nexus::TargetName(source));
     if(source==Target::Internal && !nexus::ShareMetadata(source,target)){
-        stage("Remove original internal metadata","remove-internal-metadata");
+        stage("Remove original internal metadata"_nx,"remove-internal-metadata");
         report.removal_started=true;
-        for(const auto& m:metas)R_TRY(ncmContentMetaDatabaseRemove(&src.db,&m.key));
+        for(const auto& m:metas){bool present{};R_TRY(ncmContentMetaDatabaseHas(&src.db,&present,&m.key));
+            if(present){R_TRY(ncmContentMetaDatabaseRemove(&src.db,&m.key));}
+            else R_UNLESS(session.resuming,Invalid);}
+
         R_TRY(ncmContentMetaDatabaseCommit(&src.db));
     }
     for(const auto& [id,info]:contents) {
-        stage("Remove verified source file","remove-file",report.removed);
+        stage("Remove verified source file"_nx,"remove-file",report.removed);
         R_TRY(p->ShouldExitResult());R_TRY(CheckStorage(src));R_TRY(CheckStorage(dst));
         if(source==Target::Usb || target==Target::Usb)R_TRY(nexus::CheckUsbMutationAllowed());
+        bool present{};R_TRY(InspectContent(src,info,present));
+        if(!present){R_UNLESS(session.resuming,Invalid);continue;}
         report.removal_started=true;
         if(source==Target::Usb){
             const auto& path=source_paths.at(id);u64 size{};ncmContentInfoSizeToU64(&info,&size);
@@ -949,11 +969,17 @@ static Result RemoveVerifiedSourceInSession(ui::ProgressBox* p,u64 app,Target so
         }else{
             R_TRY(ncmContentStorageDelete(&src.cs,&info.content_id));
         }
+        bool remaining{};R_TRY(InspectContent(src,info,remaining));R_UNLESS(!remaining,Invalid);
         ++report.removed;
         if(progress)progress->Finish(60+static_cast<unsigned>(35*report.removed/std::max<size_t>(1,contents.size())),
-            std::string("Removing original from ")+nexus::TargetName(source));
+            std::string("Removing original from "_nx)+nexus::TargetName(source));
     }
-    stage("Refresh HOME menu cache","remove-refresh-cache",report.removed);
+    if(source==Target::Usb){
+        std::vector<NcmContentId> removed;for(const auto& [id,info]:contents)removed.push_back(info.content_id);
+        stage("Checking the saved USB links"_nx,"LR1-move-remove-routes");
+        R_TRY(RemoveDeletedUsbRouting(p,src.generation,removed,{app}));
+    }
+    stage("Refresh HOME menu cache"_nx,"remove-refresh-cache",report.removed);
     R_TRY(ns::InvalidateApplicationControlCache(app));
     nexus::Log("source-content-removed",0,app);
     R_SUCCEED();
@@ -966,26 +992,91 @@ Result RemoveVerifiedSource(ui::ProgressBox* p,u64 app,Target source,Target targ
     return RemoveVerifiedSourceInSession(p,app,source,target,report);
 }
 Result TransferGame(ui::ProgressBox* p,u64 app,Target source,Target target,bool move,TransferReport& report) {
+    const auto operation=[&]()->Result{
+    nexus::diagnostics::Operation diagnostic_operation("transfer-game");
     report={};report.move=move;
-    p->SetActionName(std::string(move?"Moving: ":"Copying: ")+nexus::TargetName(source)+" -> "+nexus::TargetName(target));
+    p->SetActionName(std::string(move?"Moving: "_nx:"Copying: "_nx)+nexus::TargetName(source)+" -> "+nexus::TargetName(target));
     TransferSession session;TransferProgress progress(p);
+    std::vector<MoveCheckpoint> pending;R_TRY(PendingMoves(pending));
+    if(std::any_of(pending.begin(),pending.end(),[&](const auto& c){return c.application==app;})){
+        report.copy.stage="Finish this game's interrupted move in Help & recovery first"_nx;return Invalid;
+    }
     R_TRY(p->ShouldExitResult());
     R_TRY(CopyGameInSession(p,app,source,target,&report.copy,session,&progress));
     // No UI gap or unprotected second worker between copy and removal. CopyGame
     // must finish registration AND HOME publication before cleanup is allowed.
     if(move){
         report.phase=TransferPhase::Remove;
+        MoveCheckpoint checkpoint;checkpoint.application=app;checkpoint.source=source;checkpoint.destination=target;
+        std::map<std::string,NcmContentInfo> files;
+        for(const auto& m:session.verified_metas){checkpoint.records.push_back({m.key,m.raw});for(const auto& i:m.infos)files.emplace(HexId(&i.content_id),i);}
+        for(const auto& [id,info]:files){const auto h=session.hashes.find(id);R_UNLESS(h!=session.hashes.end(),Invalid);checkpoint.files.push_back({info,h->second});}
+        report.removal.stage="Saving the move recovery checkpoint"_nx;
+        R_TRY(SaveMoveCheckpoint(checkpoint));report.recovery_saved=true;
         R_TRY(p->ShouldExitResult());
         const auto start=armGetSystemTick();
         const auto result=RemoveVerifiedSourceInSession(p,app,source,target,report.removal,&session,&progress);
         nexus::Log("move-finish-remove-total-us-M4",result,armTicksToNs(armGetSystemTick()-start)/1000);
         R_TRY(result);
+        R_TRY(CompleteMoveCheckpoint(checkpoint));report.recovery_saved=false;
         report.copy.final_reread_saved_bytes=session.verified_bytes*2;
         nexus::Log("move-final-reread-saved-bytes-M4",0,report.copy.final_reread_saved_bytes);
     }
     report.phase=TransferPhase::Complete;
-    progress.Finish(100,move?"Move complete":"Copy complete");
+    if(source==Target::Usb||target==Target::Usb)BackupConsoleRoutingAfterChange();
+    progress.Finish(100,move?"Move complete"_nx:"Copy complete"_nx);
     R_SUCCEED();
+
+    };
+    const auto result=operation();
+    if(!p || !p->ShouldExit())nexus::reports::QueueFailure("transfer",result);
+    return result;
+}
+Result ResumeMove(ui::ProgressBox* p,const MoveCheckpoint& selected,TransferReport& report){
+    const auto operation=[&]()->Result{
+    nexus::diagnostics::Operation diagnostic_operation("resume-move");
+    report={};report.move=true;report.phase=TransferPhase::Remove;report.recovery_saved=true;
+    // Load again from disk: a UI row is not an authorization token.
+    std::vector<MoveCheckpoint> pending;R_TRY(PendingMoves(pending));
+    auto it=std::find_if(pending.begin(),pending.end(),[&](const auto& c){return c.application==selected.application && c.sequence==selected.sequence;});
+    R_UNLESS(it!=pending.end(),Invalid);const auto& c=*it;
+    R_TRY(ns::Initialize());ON_SCOPE_EXIT(ns::Exit());
+    if(c.source==Target::Usb || c.destination==Target::Usb)R_TRY(nexus::CheckUsbMutationAllowed());
+    TransferSession session;session.application=c.application;session.resuming=true;
+    auto& src=session.source;auto& dst=session.destination;R_TRY(src.Open(c.source));R_TRY(dst.Open(c.destination));
+    report.removal.stage="Checking current game records"_nx;
+    R_TRY(AppMetas(c.application,dst,session.verified_metas));R_UNLESS(session.verified_metas.size()==c.records.size(),Invalid);
+    std::map<std::string,NcmContentInfo> contents;
+    for(const auto& m:session.verified_metas){
+        R_UNLESS(std::any_of(c.records.begin(),c.records.end(),[&](const auto& r){return nexus::SameMetaKey(r.key,m.key)&&r.raw==m.raw;}),Invalid);
+        bool present{};R_TRY(ncmContentMetaDatabaseHas(&src.db,&present,&m.key));
+        if(present){Meta original;R_TRY(LoadMeta(src.db,m.key,original));R_UNLESS(SameVerifiedMeta(original,m),Invalid);}
+        else R_UNLESS(c.source==Target::Internal,Invalid);
+        for(const auto& info:m.infos){auto [found,added]=contents.emplace(HexId(&info.content_id),info);R_UNLESS(added||!memcmp(&found->second,&info,sizeof(info)),Invalid);}
+        if(c.destination==Target::Usb)R_TRY(CheckUsbRecordRouting(p,dst.generation,m.key,m.infos));
+    }
+    R_UNLESS(contents.size()==c.files.size(),Invalid);u64 bytes{};
+    for(const auto& f:c.files){const auto found=contents.find(HexId(&f.info.content_id));R_UNLESS(found!=contents.end()&&!memcmp(&found->second,&f.info,sizeof(f.info)),Invalid);
+        u64 size{};ncmContentInfoSizeToU64(&f.info,&size);R_UNLESS(size&&size<=UINT64_MAX-bytes,Invalid);bytes+=size;}
+    TransferProgress progress(p);R_UNLESS(progress.Begin(bytes),Invalid);
+    for(const auto& f:c.files){
+        R_TRY(p->ShouldExitResult());R_TRY(CheckStorage(src));R_TRY(CheckStorage(dst));
+        report.removal.stage="Rechecking the destination before removing originals"_nx;
+        progress.Pass(report.removal.stage);std::array<u8,32> hash{};R_TRY(HashContent(p,c.destination,dst,f.info,hash,nullptr,&progress));R_UNLESS(hash==f.hash,Invalid);
+        bool present{};R_TRY(InspectContent(src,f.info,present));
+        if(present){progress.Pass("Checking remaining originals"_nx);R_TRY(HashContent(p,c.source,src,f.info,hash,nullptr,&progress));R_UNLESS(hash==f.hash,Invalid);}
+        else {u64 size{};ncmContentInfoSizeToU64(&f.info,&size);R_UNLESS(progress.work.Advance(size),Invalid);progress.Show();}
+    }
+    session.ready=true;
+    R_TRY(RemoveVerifiedSourceInSession(p,c.application,c.source,c.destination,report.removal,&session,&progress));
+    R_TRY(CompleteMoveCheckpoint(c));report.recovery_saved=false;report.phase=TransferPhase::Complete;
+    if(c.source==Target::Usb||c.destination==Target::Usb)BackupConsoleRoutingAfterChange();
+    progress.Finish(100,"Move complete"_nx);return 0;
+
+    };
+    const auto result=operation();
+    if(!p || !p->ShouldExit())nexus::reports::QueueFailure("transfer",result);
+    return result;
 }
 Result ScanPlaceholders(ui::ProgressBox* p,Target target,std::vector<Placeholder>& result) {
     result.clear();Storage s;R_TRY(s.Open(target,false));

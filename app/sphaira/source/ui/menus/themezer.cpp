@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/menus/themezer.hpp"
 #include "ui/menus/ghdl.hpp"
 #include "ui/progress_box.hpp"
@@ -304,7 +305,7 @@ auto InstallTheme(ProgressBox* pbox, const ThemeInstallRequest& request, std::ve
 
     // 1. download the zip
     if (!pbox->ShouldExit()) {
-        pbox->NewTransfer(i18n::Reorder("Downloading ", request.name));
+        pbox->NewTransfer(i18n::Reorder("Downloading "_nx, request.name));
         log_write("starting download\n");
 
         const auto url = apiBuildUrlDownloadInternal(request.id, true);
@@ -325,7 +326,7 @@ auto InstallTheme(ProgressBox* pbox, const ThemeInstallRequest& request, std::ve
 
     // 2. download the zip
     if (!pbox->ShouldExit()) {
-        pbox->NewTransfer(i18n::Reorder("Downloading ", request.name));
+        pbox->NewTransfer(i18n::Reorder("Downloading "_nx, request.name));
         log_write("starting download: %s\n", download_pack.url.c_str());
 
         const auto result = curl::Api().ToFile(
@@ -471,7 +472,7 @@ Menu::Menu(u32 flags) : MenuBase{"Themezer"_i18n, flags} {
                                 App::PushErrorBox(rc, "Failed to download theme"_i18n);
 
                                 if (R_SUCCEEDED(rc)) {
-                                    App::Notify(i18n::Reorder("Downloaded ", request->name));
+                                    App::Notify(i18n::Reorder("Downloaded "_nx, request->name));
                                     PromptThemeInstall(*installed_paths);
                                 }
                             });

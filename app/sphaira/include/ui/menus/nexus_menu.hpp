@@ -92,12 +92,14 @@ private:
     void RefreshBadges();
     void CleanupTargets();
     void Updates();
+    void ShowLanguagePicker();
     void CheckForUpdates();
     bool PollStartupUpdate();
     void OpenUsbRepair();
     void ShowUpdatePrompt(const nexus::updates::Release&);
     void RecoverUsbIndexes(u64 only_application=0);
     void ResumeInstalls();
+    void ResumeMoves();
     void Report(Result,const std::string&);
     size_t Count() const;
 };

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "yati/nx/ncm.hpp"
 #include "defines.hpp"
 #include <memory>
@@ -13,7 +14,7 @@ namespace {
 
 auto GetMetaTypeStr(u8 meta_type) -> const char* {
     switch (meta_type) {
-        case NcmContentMetaType_Unknown: return "Unknown";
+        case NcmContentMetaType_Unknown: return "Unknown"_nx;
         case NcmContentMetaType_SystemProgram: return "SystemProgram";
         case NcmContentMetaType_SystemData: return "SystemData";
         case NcmContentMetaType_SystemUpdate: return "SystemUpdate";
@@ -26,31 +27,31 @@ auto GetMetaTypeStr(u8 meta_type) -> const char* {
         case NcmContentMetaType_DataPatch: return "DataPatch";
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 auto GetContentTypeStr(u8 content_type) -> const char* {
     switch (content_type) {
         case NcmContentType_Meta: return "Meta";
-        case NcmContentType_Program: return "Program";
-        case NcmContentType_Data: return "Data";
+        case NcmContentType_Program: return "Program"_nx;
+        case NcmContentType_Data: return "Data"_nx;
         case NcmContentType_Control: return "Control";
         case NcmContentType_HtmlDocument: return "Html";
         case NcmContentType_LegalInformation: return "Legal";
         case NcmContentType_DeltaFragment: return "Delta";
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 auto GetReadableMetaTypeStr(u8 meta_type) -> const char* {
     switch (meta_type) {
-        default:                              return "Unknown";
+        default:                              return "Unknown"_nx;
         case NcmContentMetaType_Application:  return "Application";
-        case NcmContentMetaType_Patch:        return "Update";
+        case NcmContentMetaType_Patch:        return "Update"_nx;
         case NcmContentMetaType_AddOnContent: return "DLC";
         case NcmContentMetaType_Delta:        return "Delta";
-        case NcmContentMetaType_DataPatch:    return "DLC Update";
+        case NcmContentMetaType_DataPatch:    return "DLC Update"_nx;
     }
 }
 
@@ -75,7 +76,7 @@ auto GetMetaTypeShortStr(u8 meta_type) -> const char* {
 
 auto GetStorageIdStr(u8 storage_id) -> const char* {
     switch (storage_id) {
-        case NcmStorageId_None: return "None";
+        case NcmStorageId_None: return "None"_nx;
         case NcmStorageId_Host: return "Host";
         case NcmStorageId_GameCard: return "GameCard";
         case NcmStorageId_BuiltInSystem: return "BuiltInSystem";
@@ -84,16 +85,16 @@ auto GetStorageIdStr(u8 storage_id) -> const char* {
         case NcmStorageId_Any: return "Any";
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 auto GetReadableStorageIdStr(u8 storage_id) -> const char* {
     switch (storage_id) {
-        default:                       return "Unknown";
-        case NcmStorageId_None:        return "None";
-        case NcmStorageId_GameCard:    return "Game Card";
-        case NcmStorageId_BuiltInUser: return "System memory";
-        case NcmStorageId_SdCard:      return "microSD card";
+        default:                       return "Unknown"_nx;
+        case NcmStorageId_None:        return "None"_nx;
+        case NcmStorageId_GameCard:    return "Game Card"_nx;
+        case NcmStorageId_BuiltInUser: return "System memory"_nx;
+        case NcmStorageId_SdCard:      return "microSD card"_nx;
     }
 }
 

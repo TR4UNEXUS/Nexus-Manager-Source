@@ -35,7 +35,7 @@ option(ENABLE_DEVOPTAB_WEBDAV "" OFF)
 # it also adds 230k to binary size, and i don't think anyone will use it.
 option(ENABLE_DEVOPTAB_SFTP "" OFF)
 
-set(sphaira_VERSION 0.2.23)
+set(sphaira_VERSION 0.2.28)
 
 project(sphaira
     VERSION ${sphaira_VERSION}
@@ -85,6 +85,11 @@ add_executable(sphaira
     source/nexus/update_restart.cpp
     source/nexus/release.cpp
     source/nexus/nx_Client.cpp
+    source/nexus/diagnostics.cpp
+    source/nexus/repair_catalog.cpp
+    source/nexus/problem_reports.cpp
+    source/ui/menus/repair_assistant_menu.cpp
+    source/ui/menus/problem_report_menu.cpp
     source/nexus/homebrew.cpp
     source/nexus/manager.cpp
     source/nexus/game_cleanup.cpp
@@ -93,6 +98,7 @@ add_executable(sphaira
     source/ui/menus/manager_tools_menu.cpp
     source/nexus/dump.cpp
     source/nexus/routing_backup.cpp
+    source/nexus/routing_backup_auto.cpp
     source/ui/menus/routing_backup_menu.cpp
     source/nexus/index_recovery.cpp
     source/nexus/usb_import.cpp
@@ -104,6 +110,7 @@ add_executable(sphaira
     source/nexus/usb_health.cpp
     source/nexus/home_badges.cpp
     source/nexus/completion.cpp
+    source/nexus/move_checkpoint.cpp
     source/nexus/mods.cpp
     source/nexus/port_manager.cpp
     source/ui/menus/port_manager_menu.cpp
@@ -717,7 +724,8 @@ add_custom_target(sphaira_romfs_sync
     DEPENDS ${sphaira_romfs_source_files} ${CMAKE_SOURCE_DIR}/cmake/UsbLoaderAssets.cmake
 )
 add_dependencies(sphaira_romfs sphaira_romfs_sync)
-set_property(TARGET sphaira_romfs APPEND PROPERTY DKP_ASSET_FILES ${sphaira_romfs_source_files})
+set_property(TARGET sphaira_romfs APPEND PROPERTY DKP_ASSET_FILES
+    ${sphaira_romfs_source_files} ${CMAKE_SOURCE_DIR}/cmake/UsbLoaderAssets.cmake)
 
 # wait until hbl is built first as we need the exefs to embed
 add_dependencies(sphaira hbl_nso hbl_npdm)
@@ -775,3 +783,13 @@ add_custom_command(
 message(STATUS "generating nro in: ${CMAKE_BINARY_DIR}/sphaira.nro")
 include(cmake/nexus_transfers.cmake)
 message(STATUS "run nxlink -s ${CMAKE_BINARY_DIR}/sphaira.nro")
+
+# Deployment endpoints are supplied privately by release builders. The public
+# source builds with uploads disabled unless this external directory is set.
+set(NEXUS_REPORT_CONFIG_DIR "" CACHE PATH "External report endpoint configuration")
+if(NEXUS_REPORT_CONFIG_DIR)
+    if(NOT EXISTS "${NEXUS_REPORT_CONFIG_DIR}/nexus_report_endpoint.hpp")
+        message(FATAL_ERROR "Missing external Nexus report endpoint configuration")
+    endif()
+    target_include_directories(sphaira PRIVATE "${NEXUS_REPORT_CONFIG_DIR}")
+endif()

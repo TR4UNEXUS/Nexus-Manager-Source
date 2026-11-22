@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <cstddef>
 namespace nexus::portgrid {
@@ -11,5 +12,5 @@ inline std::size_t Navigate(std::size_t selected,std::size_t count,int delta){
     if(!count)return 0;
     return std::clamp<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(selected)+delta,0,count-1);
 }
-inline const char* Filter(unsigned value){return value==1?"SD card":value==2?"USB drive":"SD card + USB drive";}
+inline const char* Filter(unsigned value){return value==1?"SD card"_nx:value==2?"USB drive"_nx:"SD card + USB drive"_nx;}
 }

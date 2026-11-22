@@ -1,4 +1,5 @@
 #pragma once
+#include "nexus/localize.hpp"
 
 #include "ui/menus/menu_base.hpp"
 #include "ui/scrolling_text.hpp"
@@ -421,7 +422,7 @@ struct Base : MenuBase {
         m_filter = filter;
     }
 
-    auto GetShortTitle() const -> const char* override { return "Files"; };
+    auto GetShortTitle() const -> const char* override { return "Files"_nx; };
     void Update(Controller* controller, TouchInfo* touch) override;
     void Draw(NVGcontext* vg, Theme* theme) override;
     virtual void OnFocusGained() override;

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/transfer_exports.hpp"
 #include "nexus/transfer.hpp"
@@ -32,11 +33,11 @@ Result PrepareExports(sphaira::ui::ProgressBox* p,Target target){
         // Inventory doesn't read/decrypt all content. Exact package/license
         // validation occurs when the PC opens this game's folder/file.
         if(R_SUCCEEDED(rc) && !records.empty()){
-            auto name=sphaira::title::GetCachedTitleName(game.id);if(name.empty())name="Game";
+            auto name=sphaira::title::GetCachedTitleName(game.id);if(name.empty())name="Game"_nx;
             char id[24];std::snprintf(id,sizeof(id)," [%016llX]",static_cast<unsigned long long>(game.id));
             found.emplace(nexus::dump::SafeName(name)+id,game.id);
         }
-        p->SetOverallTransfer(++checked,std::max<size_t>(games.size(),1),"Listing installed game exports");
+        p->SetOverallTransfer(++checked,std::max<size_t>(games.size(),1),"Listing installed game exports"_nx);
     }
     if(target==Target::Usb){Client c;R_TRY(c.Check(generation));}
     R_TRY(p->ShouldExitResult());indices.emplace(target,Index{std::move(found),generation});return 0;

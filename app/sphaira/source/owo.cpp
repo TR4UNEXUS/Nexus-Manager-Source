@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // creates and installs nca's on the fly
 // based on hacbrewpack (romfs creation) and yati (installation)
 #include <switch.h>
@@ -949,8 +950,8 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
     R_UNLESS(!usb_forwarder || (storage_id==NcmStorageId_BuiltInUser && config.program_nca.empty() &&
         config.usb_nro_hash.size()==32 && nexus_vsd::Parse(config.usb_path,usb_profile) &&
         config.nro_path==std::string("sdmc:")+usb_profile.logical),Result_OwoBadArgs);
-    const auto hash_path = config.port_shortcut ? std::string("Nexus Manager port v1:")+(usb_forwarder?"usb:"+config.usb_path:"sd:"+config.nro_path)+":"+config.args :
-        usb_forwarder?"USB Loader VSD v1:"+config.usb_path:config.nro_path+config.args;
+    const auto hash_path = config.port_shortcut ? std::string("Nexus Manager port v1:"_nx)+(usb_forwarder?"usb:"+config.usb_path:"sd:"+config.nro_path)+":"+config.args :
+        usb_forwarder?"USB Loader VSD v1:"_nx+config.usb_path:config.nro_path+config.args;
     sha256CalculateHash(hash_data, hash_path.data(), hash_path.length());
     const u64 old_tid = 0x0100000000000000 | (hash_data[0] & 0x00FFFFFFFFFFF000);
     const u64 tid = 0x0500000000000000 | (hash_data[0] & 0x00FFFFFFFFFFF000);

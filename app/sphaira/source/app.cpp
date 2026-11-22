@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/option_box.hpp"
 #include "ui/sidebar.hpp"
 #include "ui/popup_list.hpp"
@@ -24,6 +25,7 @@
 #include "nexus/startup_trace.hpp"
 #include "defines.hpp"
 #include "i18n.hpp"
+#include "nexus/languages.hpp"
 #include "ftpsrv_helper.hpp"
 #include "haze_helper.hpp"
 #include "web.hpp"
@@ -155,7 +157,7 @@ constexpr KeyboardState::MapEntry KEYBOARD_BUTTON_MAP[] = {
 };
 
 constexpr NszOption NSZ_COMPRESS_LEVEL_OPTIONS[] = {
-    { .value = 0, .name = "Level 0 (no compression)" },
+    { .value = 0, .name = "Level 0 (no compression)"_nx },
     { .value = 1, .name = "Level 1" },
     { .value = 2, .name = "Level 2" },
     { .value = 3, .name = "Level 3 (default)" },
@@ -167,7 +169,7 @@ constexpr NszOption NSZ_COMPRESS_LEVEL_OPTIONS[] = {
 };
 
 constexpr NszOption NSZ_COMPRESS_THREAD_OPTIONS[] = {
-    { .value = 0, .name = "0 (single threaded)" },
+    { .value = 0, .name = "0 (single threaded)"_nx },
     { .value = 1, .name = "1" },
     { .value = 2, .name = "2" },
     { .value = 3, .name = "3 (default)" },
@@ -534,6 +536,12 @@ void App::Loop() {
     m_delta_time = 1.0;
 
     while (!m_quit && appletMainLoop()) {
+        if (m_reload_language) {
+            m_reload_language = false;
+            m_widgets.clear(); // Menu destructors join their background readers.
+            on_i18n_change();
+            Push<ui::menu::main::MainMenu>();
+        }
         nexus::transfer::Poll();
         if (m_widgets.empty()) {
             m_quit = true;
@@ -898,7 +906,7 @@ void App::SetLogEnable(bool enable) {
 }
 
 void App::SetReplaceHbmenuEnable(bool enable) {
-    if(enable) App::Notify("Nexus Manager keeps your existing homebrew menu unchanged.");
+    if(enable) App::Notify("Nexus Manager keeps your existing homebrew menu unchanged."_nx);
     return;
 
     if (App::GetReplaceHbmenuEnable() != enable) {
@@ -1052,18 +1060,12 @@ void App::SetFtpEnable(bool enable) {
 }
 
 void App::SetLanguage(long index) {
+    if (!nexus::languages::ValidSetting(index)) index = 0;
     if (App::GetLanguage() != index) {
         g_app->m_language.Set(index);
-        on_i18n_change();
-
-        App::Push<ui::OptionBox>(
-            "Restart Nexus Manager?"_i18n,
-            "Back"_i18n, "Restart"_i18n, 1, [](auto op_index){
-                if (op_index && *op_index) {
-                    App::ExitRestart();
-                }
-            }
-        );
+        // Defer until the next frame: never destroy a menu from its callback.
+        // Rebuilding the UI works for both the installed NSP and the NRO.
+        g_app->m_reload_language = true;
     }
 }
 

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "haze_helper.hpp"
 #include "nexus/transfer_policy.hpp"
 
@@ -1031,7 +1032,7 @@ std::shared_ptr<haze::FileSystemProxyImpl> MakeNexusSdProxy() {
     if (!fsdevGetDeviceFileSystem("sdmc:")) {
         return {};
     }
-    return std::make_shared<FsProxy>(std::make_unique<fs::FsNativeSd>(), "", "1 - SD Card");
+    return std::make_shared<FsProxy>(std::make_unique<fs::FsNativeSd>(), "", "1 - SD Card"_nx);
 }
 
 bool Init(const haze::FsEntries* extensions) {
@@ -1046,14 +1047,14 @@ bool Init(const haze::FsEntries* extensions) {
     g_fs_entries.clear();
     g_install_fs.reset();
     // add default mount of the sd card.
-    g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeSd>(), "", "microSD card",extensions!=nullptr));
+    g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeSd>(), "", "microSD card"_nx,extensions!=nullptr));
 
     if (!extensions && App::GetApp()->m_mtp_show_album.Get()) {
-        g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeImage>(FsImageDirectoryId_Sd), "Album", "Album (Image SD)"));
+        g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeImage>(FsImageDirectoryId_Sd), "Album", "Album (Image SD)"_nx));
     }
 
     if (!extensions && App::GetApp()->m_mtp_show_content_sd.Get()) {
-        g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeContentStorage>(FsContentStorageId_SdCard), "ContentsM", "Contents (microSD card)"));
+        g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeContentStorage>(FsContentStorageId_SdCard), "ContentsM", "Contents (microSD card)"_nx));
     }
 
     if (!extensions && App::GetApp()->m_mtp_show_content_system.Get()) {
@@ -1065,7 +1066,7 @@ bool Init(const haze::FsEntries* extensions) {
     }
 
     if (extensions || App::GetApp()->m_mtp_show_games.Get()) {
-        g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsStdio>(true, "games:/"), "Games", "Games"));
+        g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsStdio>(true, "games:/"), "Games"_nx, "Games"_nx));
     }
 
     if (!extensions && App::GetApp()->m_mtp_show_install.Get()) {
@@ -1078,12 +1079,12 @@ bool Init(const haze::FsEntries* extensions) {
     }
 
     if (!extensions && App::GetApp()->m_mtp_show_speedtest.Get()) {
-        g_fs_entries.emplace_back(std::make_shared<FsDevNullProxy>("DevNull", "DevNull (Speed Test)"));
+        g_fs_entries.emplace_back(std::make_shared<FsDevNullProxy>("DevNull", "DevNull (Speed Test)"_nx));
     }
 
     if (extensions) g_fs_entries.insert(g_fs_entries.end(), extensions->begin(), extensions->end());
     g_should_exit = false;
-    if (!haze::Initialize(haze_callback, g_fs_entries, App::GetApp()->m_mtp_vid.Get(), App::GetApp()->m_mtp_pid.Get(), extensions ? "Nexus Manager/" APP_VERSION : "Sphaira/" APP_VERSION)) {
+    if (!haze::Initialize(haze_callback, g_fs_entries, App::GetApp()->m_mtp_vid.Get(), App::GetApp()->m_mtp_pid.Get(), extensions ? "Nexus Manager/"_nx APP_VERSION : "Sphaira/" APP_VERSION)) {
         g_fs_entries.clear();
         g_install_fs.reset();
         return false;

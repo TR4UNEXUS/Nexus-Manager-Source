@@ -36,10 +36,12 @@ struct NcmContentId{u8 c[16]{};};using NcmPlaceHolderId=NcmContentId;
 struct NcmContentMetaKey{u64 id{};u32 version{};u8 type{},install_type{};};
 struct NcmContentStorage{nexus::Target target{};};struct NcmContentMetaDatabase{};
 namespace sphaira::ncm {struct ContentStorageRecord{NcmContentMetaKey key;u8 storage_id{};};}
-namespace sphaira::ui {struct ProgressBox {bool cancel{};Result ShouldExitResult(){return cancel?Cancelled:0;}
+namespace sphaira::ui {struct ProgressBox {bool cancel{};bool ShouldExit(){return cancel;} Result ShouldExitResult(){return cancel?Cancelled:0;}
     void NewTransfer(const std::string&){}void SetTitle(const std::string&){}void SetProgressNote(const std::string&){}void SetOverallTransfer(u64,u64,const std::string&,bool){}
 };struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};}
 namespace sphaira::fs {struct FsNativeSd{Result CreateDirectoryRecursively(const char*){return 0;}};}
+namespace nexus::diagnostics {struct Operation{explicit Operation(const char*){}};}
+namespace nexus::reports {inline void QueueFailure(const char*,Result){}}
 namespace nexus {
 constexpr Result Invalid=::Invalid,Unavailable=102;
 int LogicalStorage(Target t){return t==Target::Internal?4:5;}

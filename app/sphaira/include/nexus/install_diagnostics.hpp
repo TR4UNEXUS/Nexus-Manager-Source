@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -49,25 +50,25 @@ struct Diagnostic {
     void Set(Failure failure,std::string_view file={},std::uint64_t title=0,
              std::uint64_t expected=0,std::int64_t actual=0) {
         switch(failure) {
-            case Failure::Package:text="Package could not be read or its layout was rejected. Check the source file and connection.";break;
-            case Failure::Content:text="NCA install/validation failed. This result can also mean a read, write, key or size problem; it is not proof of damaged media.";break;
-            case Failure::Publication:text="Content publication/registration failed. Keep the original source and exact error/log. For USB, matching P2 firmware is required; verified bytes alone do not confirm registration.";break;
-            case Failure::MissingContent:text="Required content could not be resolved safely in this package. Check that the package is complete.";break;
-            case Failure::Size:text="NCA size disagrees with this package's content metadata. Replace/recheck the source package; do not format the drive.";break;
-            case Failure::Hash:text="NCA source hash does not match the expected content hash (including supported distribution conversion). Recheck/replace the source package; check the USB connection if repeated reads differ.";break;
-            case Failure::Metadata:text="No recognized content metadata (.cnmt.nca/.cnmt.ncz). This package was not installed. Obtain a complete, correctly packaged source; do not guess NCA names.";break;
-            case Failure::Header:text="Decoded NCA header declares an invalid size. Recheck/replace the source package; do not format the drive.";break;
-            case Failure::ExpandedSize:text="Decoded NCA size disagrees with its expected uncompressed size. Recheck/replace the source package; compressed file size is not used as expanded size.";break;
-            case Failure::EmptyHeader:text="NCA header read is entirely zero (first 3072 bytes). Recheck the source package and connection. Adding keys cannot restore missing header data; do not format the drive.";break;
-            case Failure::UndecodableHeader:text="NCA header could not be decoded. Recheck the source package and matching keys; this alone does not prove corruption. Do not format the drive.";break;
+            case Failure::Package:text="Package could not be read or its layout was rejected. Check the source file and connection."_nx;break;
+            case Failure::Content:text="NCA install/validation failed. This result can also mean a read, write, key or size problem; it is not proof of damaged media."_nx;break;
+            case Failure::Publication:text="Content publication/registration failed. Keep the original source and exact error/log. For USB, matching P2 firmware is required; verified bytes alone do not confirm registration."_nx;break;
+            case Failure::MissingContent:text="Required content could not be resolved safely in this package. Check that the package is complete."_nx;break;
+            case Failure::Size:text="NCA size disagrees with this package's content metadata. Replace/recheck the source package; do not format the drive."_nx;break;
+            case Failure::Hash:text="NCA source hash does not match the expected content hash (including supported distribution conversion). Recheck/replace the source package; check the USB connection if repeated reads differ."_nx;break;
+            case Failure::Metadata:text="No recognized content metadata (.cnmt.nca/.cnmt.ncz). This package was not installed. Obtain a complete, correctly packaged source; do not guess NCA names."_nx;break;
+            case Failure::Header:text="Decoded NCA header declares an invalid size. Recheck/replace the source package; do not format the drive."_nx;break;
+            case Failure::ExpandedSize:text="Decoded NCA size disagrees with its expected uncompressed size. Recheck/replace the source package; compressed file size is not used as expanded size."_nx;break;
+            case Failure::EmptyHeader:text="NCA header read is entirely zero (first 3072 bytes). Recheck the source package and connection. Adding keys cannot restore missing header data; do not format the drive."_nx;break;
+            case Failure::UndecodableHeader:text="NCA header could not be decoded. Recheck the source package and matching keys; this alone does not prove corruption. Do not format the drive."_nx;break;
         }
         const auto name=ContentName(file);
         if(!name.empty())text+="\nNCA: "+name;
-        if(title){char id[17]{};std::snprintf(id,sizeof(id),"%016llX",static_cast<unsigned long long>(title));text+="\nTitle ID: "+std::string(id);}
-        if(failure==Failure::Size)text+="\nExpected bytes: "+std::to_string(expected)+"\nPackage entry bytes: "+std::to_string(actual);
-        if(failure==Failure::ExpandedSize)text+="\nExpected expanded bytes: "+std::to_string(expected);
-        if(failure==Failure::ExpandedSize || failure==Failure::Header)text+="\nNCA header declared bytes: "+std::to_string(std::uint64_t(actual));
-        text+="\nNo permanent block: a replacement/reinstall is checked afresh.";
+        if(title){char id[17]{};std::snprintf(id,sizeof(id),"%016llX",static_cast<unsigned long long>(title));text+="\nTitle ID: "_nx+std::string(id);}
+        if(failure==Failure::Size)text+="\nExpected bytes: "_nx+std::to_string(expected)+"\nPackage entry bytes: "_nx+std::to_string(actual);
+        if(failure==Failure::ExpandedSize)text+="\nExpected expanded bytes: "_nx+std::to_string(expected);
+        if(failure==Failure::ExpandedSize || failure==Failure::Header)text+="\nNCA header declared bytes: "_nx+std::to_string(std::uint64_t(actual));
+        text+="\nNo permanent block: a replacement/reinstall is checked afresh."_nx;
     }
 };
 }

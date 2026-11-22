@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/error_box.hpp"
 #include "ui/nvg_util.hpp"
 #include "ui/nexus_dialog.hpp"
@@ -27,8 +28,8 @@ auto GetModule(Result rc) -> const char* {
 }
 auto GetCodeMessage(Result rc) -> const char* {
     switch (rc) {
-        case Result_XciInvalidHeader: return "Invalid or truncated XCI/XCZ container";
-        case Result_NspInvalidHeader: return "Invalid or truncated NSP/NSZ container";
+        case Result_XciInvalidHeader: return "Invalid or truncated XCI/XCZ container"_nx;
+        case Result_NspInvalidHeader: return "Invalid or truncated NSP/NSZ container"_nx;
         case SvcError_TimedOut: return "SvcError_TimedOut";
         case SvcError_Cancelled: return "SvcError_Cancelled";
 
@@ -196,23 +197,23 @@ auto GetCodeMessage(Result rc) -> const char* {
 const char* SimpleReason(Result code) {
     if(auto reason=nexus::presentation::ContentReason(R_VALUE(code)))return reason;
     switch(code){
-    case FsError_PathNotFound: return "The file or folder could not be found. Check that the correct drive is connected, then refresh the list.";
-    case FsError_PathAlreadyExists: return "A file with this name already exists. Check the existing file before trying again.";
-    case FsError_TargetLocked: case SvcError_Busy: return "The file or storage is being used by another operation. Wait for it to finish before trying again.";
-    case FsError_UsableSpaceNotEnoughMmcUser: case FsError_UsableSpaceNotEnoughSdCard: return "There is not enough free space in the chosen storage. Choose another destination or free up space before trying again.";
-    case SvcError_OutOfMemory: return "The app ran out of available memory. Close it before trying again. Use the standalone app or full-memory homebrew mode, not Album.";
-    case SvcError_TimedOut: return "The system took too long to respond. Keep the drive connected until any activity has finished.";
-    case SvcError_Cancelled: case Result_TransferCancelled: case Result_FsLoadingCancelled: case Result_UsbCancelled: return "The operation was cancelled. If it had already started, some work may be incomplete.";
-    case FsError_TooLongPath: case Result_FsNewPathTooLarge: return "The file or folder path is too long. Use a shorter name or move it closer to the drive's main folder.";
-    case FsError_InvalidCharacter: return "The file or folder name contains a character the system cannot use. Rename it and try again.";
-    case Result_FsReadOnly: case NcmError_WriteToReadOnlyContentStorage: return "The storage is read-only. Check its write-protection setting before making changes.";
-    case Result_FsNotActive: case Result_FsFsNotActive: return "The storage is not available. Check the connection, then reopen it from the main menu.";
-    case Result_FsStdioFailedToRead: return "The app could not read the file. Check the drive connection and try again when the drive is ready.";
-    case Result_FsStdioFailedToWrite: case Result_FsStdioFailedToFlush: return "The app could not finish saving to the drive. Keep it connected; the operation may be incomplete. Check free space and write protection.";
-    case Result_NspInvalidHeader: case Result_XciInvalidHeader: case Result_NspBadMagic: case Result_XciBadMagic: return "This install file is incomplete or is not a supported package. Check the original file before retrying.";
-    case Result_NroBadMagic: case Result_NroBadSize: return "This homebrew app file is incomplete or is not a supported NRO. Check the original file before retrying.";
-    case Result_YatiInvalidNcaSha256: case Result_NcaFailedNcaHeaderHashVerify: return "A file did not pass verification. Do not ignore this check. Check the source file and drive connection before retrying.";
-    case Result_KeyMissingNcaKeyArea: case Result_KeyMissingTitleKek: case Result_KeyMissingMasterKey: return "The app is missing information needed to read this content. Check your private setup and original game installation. Never share keys in a support log.";
+    case FsError_PathNotFound: return "The file or folder could not be found. Check that the correct drive is connected, then refresh the list."_nx;
+    case FsError_PathAlreadyExists: return "A file with this name already exists. Check the existing file before trying again."_nx;
+    case FsError_TargetLocked: case SvcError_Busy: return "The file or storage is being used by another operation. Wait for it to finish before trying again."_nx;
+    case FsError_UsableSpaceNotEnoughMmcUser: case FsError_UsableSpaceNotEnoughSdCard: return "There is not enough free space in the chosen storage. Choose another destination or free up space before trying again."_nx;
+    case SvcError_OutOfMemory: return "The app ran out of available memory. Close it before trying again. Use the standalone app or full-memory homebrew mode, not Album."_nx;
+    case SvcError_TimedOut: return "The system took too long to respond. Keep the drive connected until any activity has finished."_nx;
+    case SvcError_Cancelled: case Result_TransferCancelled: case Result_FsLoadingCancelled: case Result_UsbCancelled: return "The operation was cancelled. If it had already started, some work may be incomplete."_nx;
+    case FsError_TooLongPath: case Result_FsNewPathTooLarge: return "The file or folder path is too long. Use a shorter name or move it closer to the drive's main folder."_nx;
+    case FsError_InvalidCharacter: return "The file or folder name contains a character the system cannot use. Rename it and try again."_nx;
+    case Result_FsReadOnly: case NcmError_WriteToReadOnlyContentStorage: return "The storage is read-only. Check its write-protection setting before making changes."_nx;
+    case Result_FsNotActive: case Result_FsFsNotActive: return "The storage is not available. Check the connection, then reopen it from the main menu."_nx;
+    case Result_FsStdioFailedToRead: return "The app could not read the file. Check the drive connection and try again when the drive is ready."_nx;
+    case Result_FsStdioFailedToWrite: case Result_FsStdioFailedToFlush: return "The app could not finish saving to the drive. Keep it connected; the operation may be incomplete. Check free space and write protection."_nx;
+    case Result_NspInvalidHeader: case Result_XciInvalidHeader: case Result_NspBadMagic: case Result_XciBadMagic: return "This install file is incomplete or is not a supported package. Check the original file before retrying."_nx;
+    case Result_NroBadMagic: case Result_NroBadSize: return "This homebrew app file is incomplete or is not a supported NRO. Check the original file before retrying."_nx;
+    case Result_YatiInvalidNcaSha256: case Result_NcaFailedNcaHeaderHashVerify: return "A file did not pass verification. Do not ignore this check. Check the source file and drive connection before retrying."_nx;
+    case Result_KeyMissingNcaKeyArea: case Result_KeyMissingTitleKek: case Result_KeyMissingMasterKey: return "The app is missing information needed to read this content. Check your private setup and original game installation. Never share keys in a support log."_nx;
     default: return nullptr;
     }
 }
@@ -257,8 +258,8 @@ auto ErrorBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     nexusdialog::Brand(vg,x,y+26,"/  HELP");
     // Scroll long diagnostics at a readable size while the Close button stays fixed.
     m_message_scroll.Draw(vg,{x,y+86,w,332},m_message.c_str(),22);
-    gfx::drawText(vg,x,y+433,16,nexusdialog::Muted(),"Technical details: config/nexusmanager/log.txt");
-    const auto close_label=std::string(gfx::getButton(Button::A))+"  Close";
+    gfx::drawText(vg,x,y+433,16,nexusdialog::Muted(),"Technical details: config/nexusmanager/log.txt"_nx);
+    const auto close_label=std::string(gfx::getButton(Button::A))+"  Close"_nx;
     nexusdialog::Button(vg,{x,y+m_pos.h-86,w,54},close_label.c_str(),true);
 }
 

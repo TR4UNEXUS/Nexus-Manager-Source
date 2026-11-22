@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "utils/devoptab_common.hpp"
 #include "utils/profile.hpp"
 
@@ -331,7 +332,7 @@ int Device::webdav_rename(const std::string& old_path, const std::string& new_pa
     log_write("[WEBDAV] Renaming %s to %s\n", old_path.c_str(), new_path.c_str());
 
     const std::string custom_headers[] = {
-        "Destination: " + build_url(new_path, is_dir),
+        "Destination: "_nx + build_url(new_path, is_dir),
         "Overwrite: T",
     };
 

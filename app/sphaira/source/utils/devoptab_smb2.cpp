@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "utils/devoptab_common.hpp"
 #include "defines.hpp"
 #include "log.hpp"
@@ -404,9 +405,9 @@ Result MountSmb2All() {
 
 Result common::ConnectSmbShare(const common::MountConfig& config, fs::FsPath& mount, std::string& detail) {
     std::unique_ptr<common::MountDevice> device = std::make_unique<Device>(config);
-    detail = "Could not connect to the SMB share. Check the server address, share name, username, password and domain. The server must allow SMB2 or SMB3, and both devices must be on the same network.";
+    detail = "Could not connect to the SMB share. Check the server address, share name, username, password and domain. The server must allow SMB2 or SMB3, and both devices must be on the same network."_nx;
     R_UNLESS(device->Mount(), MAKERESULT(Module_Libnx, LibnxError_IoError));
-    detail = "Too many network locations are open. Close the other network browsers and try again.";
+    detail = "Too many network locations are open. Close the other network browsers and try again."_nx;
     R_UNLESS(common::MountNetworkSession(std::move(device), config, sizeof(File), sizeof(Dir), mount), MAKERESULT(Module_Libnx, LibnxError_IoError));
     detail.clear();
     return 0;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "nexus/index_repair_core.hpp"
 #include <string>
 
@@ -8,32 +9,32 @@ struct Report { std::string detail; bool offer_scan{}; };
 // IO adapter exposes only read-only operations. A ready report is invalidated
 // if the drive changes or cancellation occurs before the final Check().
 template<class IO> std::uint32_t Run(IO& io, Report& report) {
-    report={"USB provider is not ready. Reconnect the drive and check the matching firmware. No files changed.",false};
+    report={"USB provider is not ready. Reconnect the drive and check the matching firmware. No files changed."_nx,false};
     if(auto rc=io.Probe())return rc;
-    report.detail="USB is connected, but /registered could not be read as a folder. No files changed.";
+    report.detail="USB is connected, but /registered could not be read as a folder. No files changed."_nx;
     if(auto rc=io.Registered())return rc;
-    report.detail="Could not read the SD recovery state. No files changed.";
+    report.detail="Could not read the SD recovery state. No files changed."_nx;
     bool pending{};if(auto rc=io.Pending(pending))return rc;
     if(pending){
         if(auto rc=io.Check())return rc;
-        report={"An earlier library repair needs attention. Do not install or move games yet. Fully restart, then choose Repair USB library to restore its backup.\n\nThis check changed nothing.",true};
+        report={"An earlier library repair needs attention. Do not install or move games yet. Fully restart, then choose Repair USB library to restore its backup.\n\nThis check changed nothing."_nx,true};
         return 0;
     }
     repair::Snapshot snapshot;
     for(size_t i=0;i<snapshot.size();++i){
-        report.detail="Could not safely read "+std::string(repair::Names[i])+". Keep the file and capture the error. No files changed.";
+        report.detail="Could not safely read "_nx+std::string(repair::Names[i])+". Keep the file and capture the error. No files changed."_nx;
         if(auto rc=io.Read(i,snapshot[i]))return rc;
     }
-    report.detail="USB disconnected/changed or check cancelled. Run the check again; no files changed.";
+    report.detail="USB disconnected/changed or check cancelled. Run the check again; no files changed."_nx;
     if(auto rc=io.Check())return rc;
     repair::Indexes indexes;
     if(!repair::Decode(snapshot,indexes)){
-        report={"USB is connected, but its game library could not be read safely. Nothing was overwritten.\n\nKeep the library files and backups for diagnosis. Automatic repair cannot safely fix this library.",false};
+        report={"USB is connected, but its game library could not be read safely. Nothing was overwritten.\n\nKeep the library files and backups for diagnosis. Automatic repair cannot safely fix this library."_nx,false};
         return 0;
     }
     size_t missing{};for(const auto& image:snapshot)if(!image.exists)++missing;
     if(indexes.titles.empty()&&indexes.mappings.empty()&&indexes.content.empty()){
-        report={"No USB game links are saved in this system. This is normal when no USB games are installed.\n\nTo check games already stored on the drive, choose Installed games > Repair USB games. Nothing was changed.",true};
+        report={"No USB game links are saved in this system. This is normal when no USB games are installed.\n\nTo check games already stored on the drive, choose Installed games > Repair USB games. Nothing was changed."_nx,true};
         return 0;
     }
     bool incomplete=indexes.titles.empty() || indexes.mappings.empty() || indexes.content.empty();
@@ -44,11 +45,11 @@ template<class IO> std::uint32_t Run(IO& io, Report& report) {
     }
     report.offer_scan=true;
     if(missing || incomplete)
-        report.detail="USB is connected. The game library may have missing entries. Choose Repair library to check for safe repairs.";
-    else report.detail="USB is connected and its game library can be read.";
-    report.detail+="\n\nSaved game links: "+std::to_string(indexes.titles.size())+"\nContent links: "+std::to_string(indexes.content.size());
-    if(missing==3)report.detail+="\n\nIf the atmosphere folder was deleted, open Help & recovery > USB library backup to check this system's recovery copy.";
-    report.detail+="\n\nGame files have not been fully checked. For a game that will not start, select it in Installed games and choose Check and repair.\n\nNothing was changed.";
+        report.detail="USB is connected. The game library may have missing entries. Choose Repair library to check for safe repairs."_nx;
+    else report.detail="USB is connected and its game library can be read."_nx;
+    report.detail+="\n\nSaved game links: "_nx+std::to_string(indexes.titles.size())+"\nContent links: "_nx+std::to_string(indexes.content.size());
+    if(missing==3)report.detail+="\n\nIf the atmosphere folder was deleted, open Help & recovery > USB library backup to check this system's recovery copy."_nx;
+    report.detail+="\n\nGame files have not been fully checked. For a game that will not start, select it in Installed games and choose Check and repair.\n\nNothing was changed."_nx;
     return 0;
 }
 }

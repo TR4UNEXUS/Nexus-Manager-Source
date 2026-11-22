@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <map>
@@ -27,8 +28,8 @@ struct Preview {
 };
 inline std::uint64_t Family(const Item& item){return item.application?item.application:item.id;}
 inline const char* KindName(Kind kind){
-    switch(kind){case Kind::Game:return "Game";case Kind::Update:return "Update";
-        case Kind::AddOn:return "DLC";case Kind::AddOnUpdate:return "DLC update";default:return "Other content";}
+    switch(kind){case Kind::Game:return "Game"_nx;case Kind::Update:return "Update"_nx;
+        case Kind::AddOn:return "DLC";case Kind::AddOnUpdate:return "DLC update"_nx;default:return "Other content"_nx;}
 }
 inline Preview Build(const std::vector<Item>& items,const std::vector<bool>* selection=nullptr){
     Preview out;
@@ -68,23 +69,23 @@ inline Preview Build(const std::vector<Item>& items,const std::vector<bool>* sel
     return out;
 }
 inline std::string ReadyBreakdown(const Preview& count){
-    return "Games: "+std::to_string(count.games)+"  /  Updates: "+std::to_string(count.updates)+"  /  DLC items: "+std::to_string(count.addons);
+    return "Games: "_nx+std::to_string(count.games)+"  /  Updates: "+std::to_string(count.updates)+"  /  DLC items: "_nx+std::to_string(count.addons);
 }
 inline std::string OtherBreakdown(const Preview& count){
-    return std::to_string(count.already)+" already here  /  "+std::to_string(count.permissions)+" need permissions  /  "+std::to_string(count.incomplete)+" need checking"+
-        (count.older?"  /  "+std::to_string(count.older)+" older versions":"");
+    return std::to_string(count.already)+" already here  /  "_nx+std::to_string(count.permissions)+" need permissions  /  "_nx+std::to_string(count.incomplete)+" need checking"_nx+
+        (count.older?"  /  "+std::to_string(count.older)+" older versions"_nx:"");
 }
 // Raw metadata filenames remain in the saved report/detail panel, not list titles.
 inline std::string OutcomeTitle(std::string_view text){
     auto line=std::string(text.substr(0,text.find('\n')));
-    const auto start=line.find("Metadata ");
+    const auto start=line.find("Metadata "_nx);
     if(start==std::string::npos)return line;
     const auto first=start+9,end=first+32;
     if(end>line.size())return line;
     for(auto i=first;i<end;++i)if(!((line[i]>='0'&&line[i]<='9')||(line[i]>='a'&&line[i]<='f')||(line[i]>='A'&&line[i]<='F')))return line;
     auto tail=end;
     if(line.compare(tail,2," [")==0){const auto reason=line.find(" - ",tail);tail=reason==std::string::npos?line.size():reason;}
-    line.replace(start,tail-start,"Unrecognised content");
+    line.replace(start,tail-start,"Unrecognised content"_nx);
     return line;
 }
 template<class Measure>

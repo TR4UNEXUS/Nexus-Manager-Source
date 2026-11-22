@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // NEXUS USB integration, 2026. The USB target is an app choice, not an NCM ID.
 #pragma once
+#include "nexus/localize.hpp"
 #include <string>
 #include <string_view>
 #include <cstdint>
@@ -21,7 +22,7 @@ enum class Provider { Unknown, Absent, Present };
 enum class SdRoute { Unavailable, Stock, Native };
 inline constexpr std::size_t TransferSize = 1024 * 1024;
 inline constexpr const char *TargetName(Target t) {
-    return t == Target::Usb ? "USB" : t == Target::Internal ? "Internal Storage" : "SD";
+    return t == Target::Usb ? "USB" : t == Target::Internal ? "Internal Storage"_nx : "SD";
 }
 inline constexpr SdRoute SelectSdRoute(Provider p, bool native_ok) {
     return p == Provider::Absent ? SdRoute::Stock :

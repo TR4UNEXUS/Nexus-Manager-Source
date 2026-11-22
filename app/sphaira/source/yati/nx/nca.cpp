@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "yati/nx/nca.hpp"
 #include "yati/nx/crypto.hpp"
 #include "yati/nx/es.hpp"
@@ -103,15 +104,15 @@ const unsigned char acid_fixed_key_moduli_retail[0x2][0x100] = { /* Fixed RSA ke
 
 auto GetContentTypeStr(u8 content_type) -> const char* {
     switch (content_type) {
-        case ContentType_Program: return "Program";
+        case ContentType_Program: return "Program"_nx;
         case ContentType_Meta: return "Meta";
         case ContentType_Control: return "Control";
-        case ContentType_Manual: return "Manual";
-        case ContentType_Data: return "Data";
+        case ContentType_Manual: return "Manual"_nx;
+        case ContentType_Data: return "Data"_nx;
         case ContentType_PublicData: return "PublicData";
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 auto GetDistributionTypeStr(u8 distribution_type) -> const char* {
@@ -120,7 +121,7 @@ auto GetDistributionTypeStr(u8 distribution_type) -> const char* {
         case DistributionType_GameCard: return "GameCard";
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 Result DecryptHeader(const void* in, const keys::Keys& keys, Header& out) {
@@ -324,7 +325,7 @@ auto GetKeyGenStr(u8 key_gen) -> const char* {
         case KeyGeneration_2000: return "20.0.0";
     }
 
-    return "Unknown";
+    return "Unknown"_nx;
 }
 
 Result GetDecryptedTitleKey(Header& header, const keys::Keys& keys, keys::KeyEntry& out) {

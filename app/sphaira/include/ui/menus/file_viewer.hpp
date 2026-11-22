@@ -1,4 +1,5 @@
 #pragma once
+#include "nexus/localize.hpp"
 
 #include "ui/menus/menu_base.hpp"
 #include "ui/list.hpp"
@@ -12,7 +13,7 @@ namespace sphaira::ui::menu::fileview {
 struct Menu final : MenuBase {
     Menu(fs::Fs* fs, const fs::FsPath& path);
 
-    auto GetShortTitle() const -> const char* override { return "File"; };
+    auto GetShortTitle() const -> const char* override { return "File"_nx; };
     void Update(Controller* controller, TouchInfo* touch) override;
     void Draw(NVGcontext* vg, Theme* theme) override;
     void OnFocusGained() override;

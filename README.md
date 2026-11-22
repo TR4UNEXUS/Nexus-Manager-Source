@@ -2,21 +2,22 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.24 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.24).
+This repository contains the 0.2.28 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.28).
 
-## What's new
+## What's new since 0.2.24
 
-- USB library repair runs when you choose it. Removed the automatic startup warning and repeated Installed games prompts.
-- Empty drives and older update versions no longer trigger misleading repair advice. Unfinished checks are reported as unconfirmed.
-- Ticket checks use the current system's ticket records. A missing ticket backup on USB is not treated as a missing installed ticket.
-- Cleanup protects installed games and rechecks selections before removal. A ticket warning alone never makes an installed game eligible for cleanup. Explicit game deletion remains separate and keeps saved progress.
-- Installs, copies and moves show one overall progress bar and transfer speed. Game installs have a larger cover and bold title, with simple status text.
-- USB library backup tools can preview restoring missing routing links from the console-side backup provided by N4 firmware.
-- Improved local split-XCI handling and cartridge-content installation. Keep all parts together on SD or USB and select the first part.
+- Switch system-language detection and a language selector, with translations throughout the interface.
+- Guided USB repair with a read-only preview, explicit confirmation and results grouped by game, update and DLC.
+- Checked USB map backup to console storage. Backup results are reported separately from repair results.
+- Durable checkpoints and revalidation when recovering an interrupted move.
+- Signed repair guidance, a checked local cache and an offline fallback. Guidance cannot run code, change arbitrary paths or bypass content validation.
+- Report a problem and optional automatic failure reports. Reporting asks for consent, filters diagnostic fields and waits until Manager is idle to upload.
 
-Port management, icon caching, mod folders and ZIPs, File manager copy/move/delete, direct FTP and NAS installs, and automatic app updates remain included.
+Reports exclude raw logs, credentials, tickets, saves and game files. A matching server receipt is saved before a queued report is removed. Users can disable reporting or discard queued reports. The public build leaves server uploads disabled; deployment configuration belongs outside this repository.
 
-The 0.2.24 build and automated checks passed, and the app was reported working in the N4R2 console test. Wider testing is still needed across libraries, drives and network servers.
+Existing features include port management, icon caching, mod folders and ZIPs, File manager copy/move/delete, FTP and NAS stream installs, cleanup and app updates. Repairs cannot replace missing game files or tickets. Saved progress remains separate from game-content deletion.
+
+The application build and automated checks passed. Version 0.2.28 still needs wider testing on consoles, drives and network servers. Please report the steps to reproduce a problem and a diagnostic report when available, without including private files.
 
 ## Getting started
 
@@ -26,9 +27,9 @@ The 0.2.24 build and automated checks passed, and the app was reported working i
 - [Nexus Atmosphere source](https://github.com/TR4UNEXUS/Nexus-Atmosphere)
 - [USB firmware integration](https://github.com/TR4UNEXUS/Nexus-USB-Firmware)
 
-The app source is in `app/`. Most Nexus features are in `app/sphaira/source/nexus`; the interface is under `app/sphaira/source/ui`. `app/tests` contains host tests for storage operations, library recovery, networking, updates and layout. SDK source is under `dependencies/`; compiled SDK libraries are generated locally.
+The application is in `app/`. Most Nexus features are under `app/sphaira/source/nexus`; the interface is under `app/sphaira/source/ui`. Host tests are in `app/tests`. SDK source is under `dependencies/`; compiled SDK libraries are generated locally. Generic catalogue-signing and report-receiver tools are in `app/tools/repair-catalog` and `app/tools/report-server`.
 
-USB features require matching Nexus firmware. The app uses the shared firmware service so two raw USB drivers do not try to own the same drive. The updater continues to use the existing Manager release repository; this source repository is for development.
+USB features require matching Nexus firmware. Manager uses the shared firmware service so two raw USB drivers do not try to own the same drive. The updater uses the existing Manager release repository; this repository is for development.
 
 ## Credits and licence
 

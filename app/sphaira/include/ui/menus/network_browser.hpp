@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "ui/menus/menu_base.hpp"
 #include "nexus/network_browser_model.hpp"
 #include <memory>
@@ -11,7 +12,7 @@ class Browser final:public MenuBase {
     void SetupActions();
 public:
     explicit Browser(std::shared_ptr<nexus::network::browser::Model> state);
-    const char* GetShortTitle()const override{return "Network browser";}
+    const char* GetShortTitle()const override{return "Network browser"_nx;}
     void Update(Controller*,TouchInfo*) override;
     void Draw(NVGcontext*,Theme*) override;
 };

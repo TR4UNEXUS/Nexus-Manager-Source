@@ -1,4 +1,5 @@
 #pragma once
+#include "nexus/localize.hpp"
 
 #include "ui/widget.hpp"
 #include "ui/list.hpp"
@@ -89,10 +90,10 @@ public:
     using Callback = std::function<void(bool&)>;
 
 public:
-    explicit SidebarEntryBool(const std::string& title, bool option, const Callback& cb, const std::string& info = "", const std::string& true_str = "On", const std::string& false_str = "Off");
-    explicit SidebarEntryBool(const std::string& title, bool& option, const std::string& info = "", const std::string& true_str = "On", const std::string& false_str = "Off");
-    explicit SidebarEntryBool(const std::string& title, option::OptionBool& option, const Callback& cb, const std::string& info = "", const std::string& true_str = "On", const std::string& false_str = "Off");
-    explicit SidebarEntryBool(const std::string& title, option::OptionBool& option, const std::string& info = "", const std::string& true_str = "On", const std::string& false_str = "Off");
+    explicit SidebarEntryBool(const std::string& title, bool option, const Callback& cb, const std::string& info = "", const std::string& true_str = "On"_nx, const std::string& false_str = "Off"_nx);
+    explicit SidebarEntryBool(const std::string& title, bool& option, const std::string& info = "", const std::string& true_str = "On"_nx, const std::string& false_str = "Off"_nx);
+    explicit SidebarEntryBool(const std::string& title, option::OptionBool& option, const Callback& cb, const std::string& info = "", const std::string& true_str = "On"_nx, const std::string& false_str = "Off"_nx);
+    explicit SidebarEntryBool(const std::string& title, option::OptionBool& option, const std::string& info = "", const std::string& true_str = "On"_nx, const std::string& false_str = "Off"_nx);
     void Draw(NVGcontext* vg, Theme* theme, const Vec4& root_pos, bool left) override;
 
 private:

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "utils/nsz_dumper.hpp"
 #include "utils/utils.hpp"
 
@@ -60,7 +61,7 @@ Result NszExport(ui::ProgressBox* pbox, const NcaReaderCreator& nca_creator, s64
 
     // writes padding between partitions and files.
     const auto write_padding = [&](const std::string& name, s64& read_offset, s64& write_offset, s64 size) -> Result {
-        return threaded_write("Writing padding - " + name, read_offset, write_offset, size);
+        return threaded_write("Writing padding - "_nx + name, read_offset, write_offset, size);
     };
 
     const auto ldm = App::GetApp()->m_nsz_compress_ldm.Get();

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/transfer.hpp"
 #include "nexus/network_socket_config.hpp"
@@ -80,11 +81,11 @@ Result Mk(const char* p){
     // These are fixed application folders, never user filenames or secrets.
     const auto phase=std::string(Usb(use)?"pc-usb-folder:":"pc-sd-folder:")+p;
     if(R_SUCCEEDED(rc) && t==FsDirEntryType_Dir){nexus::Log(phase.c_str(),0);return 0;}
-    if(R_SUCCEEDED(rc))return StartupStep(phase.c_str(),"A file is blocking a required transfer folder. Existing files were kept. Check nexus.log for the folder name.",MAKERESULT(2,2));
+    if(R_SUCCEEDED(rc))return StartupStep(phase.c_str(),"A file is blocking a required transfer folder. Existing files were kept. Check nexus.log for the folder name."_nx,MAKERESULT(2,2));
     if(rc!=(Usb(use)?MAKERESULT(140,205):MAKERESULT(2,1)))
-        return StartupStep(phase.c_str(),"A transfer folder could not be read. Reopen the app and try again; check nexus.log if it repeats.",rc);
+        return StartupStep(phase.c_str(),"A transfer folder could not be read. Reopen the app and try again; check nexus.log if it repeats."_nx,rc);
     rc=MakeDirectory(p);
-    return StartupStep(phase.c_str(),"A transfer folder could not be created. Check storage space and write access; see nexus.log for the folder name.",rc);
+    return StartupStep(phase.c_str(),"A transfer folder could not be created. Check storage space and write access; see nexus.log for the folder name."_nx,rc);
 }
 Result Prepare(){
     // Keep a read-only instruction folder visible when USB is unavailable.
@@ -111,8 +112,8 @@ Result Create(const std::string& path,s64 size){
 }
 void ReceiveError(const std::string& path,Result rc){
     const auto message=rc==MAKERESULT(2,2)
-        ?"A package or unfinished upload with this name already exists. Use a new filename: "
-        :"Cannot receive this file. Check free space and the connection: ";
+        ?"A package or unfinished upload with this name already exists. Use a new filename: "_nx
+        :"Cannot receive this file. Check free space and the connection: "_nx;
     activity::Get().Failure(std::string(message)+activity::Name(path),rc);
     nexus::Log("pc-upload-create",rc,static_cast<u64>(use));
 }
@@ -125,12 +126,12 @@ Result ReceiveStream(const std::string& path,File** output){
     // The FTP event loop is shared by clients. A second producer must not
     // block that loop while the first installer is waiting for its next bytes.
     if(ftpStream||installFailed||!jobs.empty()){
-        activity::Get().Failure("Install busy. Set your FTP app to one simultaneous upload.",Bad);return Bad;
+        activity::Get().Failure("Install busy. Set your FTP app to one simultaneous upload."_nx,Bad);return Bad;
     }
     auto f=std::make_unique<File>();f->owner=this;f->path=path;f->write=true;
     f->usb=Usb(use);f->generation=generation;f->stream=std::make_shared<FtpStream>();
     f->activity_id=activity::Get().Open(path,f->usb?"USB":"SD",-1);
-    activity::Get().Event("Streaming directly to "+std::string(f->usb?"USB":"SD")+"; no package copy is saved.");
+    activity::Get().Event("Streaming directly to "_nx+std::string(f->usb?"USB":"SD")+"; no package copy is saved."_nx);
     ftpStream=f->stream;
     jobs.push_back({f->usb,f->generation,0,path,f->stream});
     *output=f.release();return 0;
@@ -149,12 +150,12 @@ Result ReceiveFtp(const std::string& requested,File** output){
         if(rc==MAKERESULT(2,2))continue;
         if(R_FAILED(rc))break;
         if(attempt){
-            activity::Get().Event("Existing upload kept. Receiving as: "+activity::Name(candidate));
+            activity::Get().Event("Existing upload kept. Receiving as: "_nx+activity::Name(candidate));
             nexus::Log("pc-upload-name-retry",0,attempt);
         }
         rc=Open(candidate,true,-1,output);
         if(R_FAILED(rc)){
-            activity::Get().Failure("Could not open the new upload: "+activity::Name(candidate),rc);
+            activity::Get().Failure("Could not open the new upload: "_nx+activity::Name(candidate),rc);
             nexus::Log("pc-upload-open",rc,static_cast<u64>(use));
         }
         return rc;
@@ -334,8 +335,8 @@ std::vector<std::shared_ptr<Proxy>> areas;
 std::vector<VfsNxCustomPath> FtpExtensions();
 }
 Mode Active(){return mode;}
-std::string StartupMessage(){return (startupMessage.empty()?"PC transfer could not start. Reopen the app and try again.":startupMessage)+std::string("\n\nNo installation was started. Details: switch/nexusmanager/nexus.log");}
-std::string SharedFolder(){return usbAvailable?"PC: 1 - Install to SD / 2 - Install to USB. Read START HERE inside each folder.":"USB install is unavailable. Open START HERE in 2 - Install to USB for help.";}
+std::string StartupMessage(){return (startupMessage.empty()?"PC transfer could not start. Reopen the app and try again."_nx:startupMessage)+std::string("\n\nNo installation was started. Details: switch/nexusmanager/nexus.log"_nx);}
+std::string SharedFolder(){return usbAvailable?"PC: 1 - Install to SD / 2 - Install to USB. Read START HERE inside each folder."_nx:"USB install is unavailable. Open START HERE in 2 - Install to USB for help."_nx;}
 bool TakeInstall(InstallJob& job){std::scoped_lock lock(queueMutex);if(mode==Mode::Off || installBusy || installFailed || jobs.empty() || !lifecycle::CanPoll())return false;job=jobs.front();jobs.pop_front();activeUpload=job;installBusy=true;activity::Get().BeginInstall(job.path,job.usb?"USB":"SD");if(job.stream)activity::Get().Streaming();return true;}
 // Called only after the installer has closed its source and confirmed every
 // content-meta entry succeeded. No directory sweep or retained-job recovery.
@@ -383,33 +384,33 @@ void Stop(){
 }
 Result PrepareSession(sphaira::ui::ProgressBox* p){
     startupMessage.clear();nexus::Log("pc-D10-sphaira-prepare-begin",0);
-    R_TRY(StartupStep("pc-prepare-state","Close the current transfer or installation first. Use full-memory mode, not Album.",p && mode==Mode::Off && !installBusy && !sphaira::App::IsApplet()?0:Bad));
-    Stop();activity::Get().Start("Preparing PC transfer");omitted=0;failed=false;lastError=0;usbProblem.clear();
+    R_TRY(StartupStep("pc-prepare-state","Close the current transfer or installation first. Use full-memory mode, not Album."_nx,p && mode==Mode::Off && !installBusy && !sphaira::App::IsApplet()?0:Bad));
+    Stop();activity::Get().Start("Preparing PC transfer"_nx);omitted=0;failed=false;lastError=0;usbProblem.clear();
     auto run=[&]()->Result{
         R_TRY(p->ShouldExitResult());R_UNLESS(lifecycle::CanPoll(),Bad);
-        nexus::Space sd{};R_TRY(StartupStep("pc-sd-capacity","The physical SD card could not be checked. Reopen the app in full-memory mode and check that the SD is available.",nexus::QueryPhysicalSd(sd)));
-        R_TRY(StartupStep("pc-sd-open","The SD card could not be opened for PC transfer. Reopen the app and try again.",fsOpenSdCardFileSystem(&storage)));fsOpen=true;
+        nexus::Space sd{};R_TRY(StartupStep("pc-sd-capacity","The physical SD card could not be checked. Reopen the app in full-memory mode and check that the SD is available."_nx,nexus::QueryPhysicalSd(sd)));
+        R_TRY(StartupStep("pc-sd-open","The SD card could not be opened for PC transfer. Reopen the app and try again."_nx,fsOpenSdCardFileSystem(&storage)));fsOpen=true;
         u64 usbPin{};nexus::Client c;nexus::Status status{};
         // Capabilities uses the NCM service session. It must be opened here,
         // before the installed-game browser lazily opens its own service refs.
         const auto ncm_result=ncmInitialize();
-        if(R_FAILED(ncm_result)){usbProblem="The content service could not be opened. Close and reopen Nexus Manager.";nexus::Log("pc-usb-ncm-open",ncm_result);}
+        if(R_FAILED(ncm_result)){usbProblem="The content service could not be opened. Close and reopen Nexus Manager."_nx;nexus::Log("pc-usb-ncm-open",ncm_result);}
         else {
             const auto firmware=nexus::CheckUsbFirmware();
             const auto mutation=R_SUCCEEDED(firmware)?nexus::CheckUsbMutationAllowed():firmware;
             const auto queried=R_SUCCEEDED(mutation)?c.Query(status):mutation;
-            if(R_FAILED(firmware))usbProblem="Compatible Nexus USB firmware could not be detected. Start the console with your Nexus firmware.";
-            else if(R_FAILED(mutation))usbProblem="USB library recovery is pending. Finish the recovery in Help & recovery first.";
-            else if(R_FAILED(queried)||!status.Available())usbProblem="The USB drive is not mounted and ready. Check its cable, power and connection.";
+            if(R_FAILED(firmware))usbProblem="Compatible Nexus USB firmware could not be detected. Start the console with your Nexus firmware."_nx;
+            else if(R_FAILED(mutation))usbProblem="USB library recovery is pending. Finish the recovery in Help & recovery first."_nx;
+            else if(R_FAILED(queried)||!status.Available())usbProblem="The USB drive is not mounted and ready. Check its cable, power and connection."_nx;
             else usbPin=status.generation;
             nexus::Log("pc-usb-install-ready",usbPin?0:R_FAILED(queried)?queried:nexus::Unavailable,usbPin);
             ncmExit();
         }
-        R_TRY(StartupStep("pc-games-mount","Sphaira's installed-game browser could not be mounted. Reopen Manager in full-memory mode.",sphaira::devoptab::MountGameAll()));gamesMounted=true;
+        R_TRY(StartupStep("pc-games-mount","Sphaira's installed-game browser could not be mounted. Reopen Manager in full-memory mode."_nx,sphaira::devoptab::MountGameAll()));gamesMounted=true;
         // Open the actual upstream devoptab now: this initializes its title/NS/
         // ES services before any host requests, and fails visibly if unavailable.
         auto* games=opendir("games:/");
-        R_TRY(StartupStep("pc-games-open","Installed games could not be read. Reopen Manager and check nexus.log.",games?0:Bad));
+        R_TRY(StartupStep("pc-games-open","Installed games could not be read. Reopen Manager and check nexus.log."_nx,games?0:Bad));
         size_t count{};while(auto* entry=readdir(games)){
             if(std::strcmp(entry->d_name,".") && std::strcmp(entry->d_name,".."))++count;
             if(R_FAILED(p->ShouldExitResult())){closedir(games);return Bad;}
@@ -425,7 +426,7 @@ Result PrepareSession(sphaira::ui::ProgressBox* p){
                 nexus::Log("pc-volume-unavailable",rc,static_cast<u64>(purpose));++omitted;
                 // A missing optional USB/export view must not break SD transfer.
                 if(!usb)return rc;
-                if(purpose==Use::InstallUsb){usbProblem="The USB install folder could not be prepared. Check free space and write access, then reconnect.";areas.push_back(std::make_shared<Proxy>(purpose,0));}
+                if(purpose==Use::InstallUsb){usbProblem="The USB install folder could not be prepared. Check free space and write access, then reconnect."_nx;areas.push_back(std::make_shared<Proxy>(purpose,0));}
                 startupMessage.clear();lastError=0;
                 continue;
             }
@@ -437,34 +438,34 @@ Result PrepareSession(sphaira::ui::ProgressBox* p){
     auto rc=run();nexus::Log("pc-prepare-complete",rc,areas.size());if(R_FAILED(rc)){lastError=rc;Stop();return rc;}prepared=true;return 0;
 }
 Result Start(Mode next){
-    R_TRY(StartupStep("pc-start-state","The transfer session is no longer ready. Keep Nexus Manager open and try connecting again.",mode==Mode::Off && prepared && !areas.empty() && !installBusy && (next==Mode::Cable || next==Mode::Ftp) && lifecycle::CanPoll() && !sphaira::App::IsApplet()?0:Bad));
+    R_TRY(StartupStep("pc-start-state","The transfer session is no longer ready. Keep Nexus Manager open and try connecting again."_nx,mode==Mode::Off && prepared && !areas.empty() && !installBusy && (next==Mode::Cable || next==Mode::Ftp) && lifecycle::CanPoll() && !sphaira::App::IsApplet()?0:Bad));
     failed=false;installFailed=false;installed=sent=received=completed=0;lastError=0;
     auto init=[&]()->Result{
         if(next==Mode::Cable){
             haze::FsEntries entries;
             for(auto& a:areas)entries.push_back(a);
-            R_TRY(StartupStep("pc-mtp-sphaira-init","USB cable sharing could not start. Disconnect other USB-transfer apps, reopen Manager and use a data cable directly to the PC.",sphaira::libhaze::Init(&entries)?0:Bad));mtpOpen=true;
+            R_TRY(StartupStep("pc-mtp-sphaira-init","USB cable sharing could not start. Disconnect other USB-transfer apps, reopen Manager and use a data cable directly to the PC."_nx,sphaira::libhaze::Init(&entries)?0:Bad));mtpOpen=true;
         }else{
             const auto defaults=*socketGetDefaultInitConfig();
             const auto tuned=network::TransferSocketConfig(defaults);
             auto socket_result=socketInitialize(&tuned);
             const bool fallback=socket_result==MAKERESULT(Module_Libnx,LibnxError_OutOfMemory)||socket_result==MAKERESULT(Module_Kernel,KernelError_OutOfMemory);
             if(fallback){nexus::Log("pc-ftp-sockets-memory-fallback",socket_result);socket_result=socketInitialize(&defaults);}
-            R_TRY(StartupStep("pc-ftp-sockets","Network sockets could not be opened. Close other transfer apps and reopen Manager.",socket_result));sockets=true;
+            R_TRY(StartupStep("pc-ftp-sockets","Network sockets could not be opened. Close other transfer apps and reopen Manager."_nx,socket_result));sockets=true;
             nexus::Log("pc-ftp-socket-pool",0,network::SocketTransferMemorySize(fallback?defaults:tuned));
-            R_TRY(StartupStep("pc-ftp-network","The Switch network service could not be opened. Reopen Manager and try again.",nifmInitialize(NifmServiceType_User)));network=true;
-            u32 ip{};R_TRY(StartupStep("pc-ftp-address","No network address is available. Connect the Switch and PC to the same trusted network, then try again.",nifmGetCurrentIpAddress(&ip)));
-            R_TRY(StartupStep("pc-ftp-address-ready","The Switch is not connected to a network. Connect it before starting FTP.",ip?0:Bad));
+            R_TRY(StartupStep("pc-ftp-network","The Switch network service could not be opened. Reopen Manager and try again."_nx,nifmInitialize(NifmServiceType_User)));network=true;
+            u32 ip{};R_TRY(StartupStep("pc-ftp-address","No network address is available. Connect the Switch and PC to the same trusted network, then try again."_nx,nifmGetCurrentIpAddress(&ip)));
+            R_TRY(StartupStep("pc-ftp-address-ready","The Switch is not connected to a network. Connect it before starting FTP."_nx,ip?0:Bad));
             char address[INET_ADDRSTRLEN]{};R_UNLESS(inet_ntop(AF_INET,&ip,address,sizeof(address)),Bad);
             endpoint=std::string("ftp://")+address+":5000";
             auto extensions=FtpExtensions();
-            R_TRY(StartupStep("pc-ftp-sphaira-init","Sphaira FTP could not start. Reopen Manager and try again.",sphaira::ftpsrv::Init(&extensions)?0:Bad));ftpOpen=true;
+            R_TRY(StartupStep("pc-ftp-sphaira-init","Sphaira FTP could not start. Reopen Manager and try again."_nx,sphaira::ftpsrv::Init(&extensions)?0:Bad));ftpOpen=true;
         }return 0;
     };
-    auto rc=init();if(R_FAILED(rc)){lastError=rc;activity::Get().Failure("Connection could not start",rc);Stop();return rc;}
+    auto rc=init();if(R_FAILED(rc)){lastError=rc;activity::Get().Failure("Connection could not start"_nx,rc);Stop();return rc;}
     mode=next;appletSetAutoSleepDisabled(true);awake=refreshAwake=true;
-    activity::Get().Connect(next==Mode::Cable?"USB cable / MTP - open Nintendo Switch on your PC":endpoint+" - Anonymous login");
-    if(!usbAvailable)activity::Get().Event("USB install unavailable. SD installs are ready.");
+    activity::Get().Connect(next==Mode::Cable?"USB cable / MTP - open Nintendo Switch on your PC"_nx:endpoint+" - Anonymous login"_nx);
+    if(!usbAvailable)activity::Get().Event("USB install unavailable. SD installs are ready."_nx);
     nexus::Log(next==Mode::Cable?"manager-transfer-mtp-start":"manager-transfer-ftp-start",0);return 0;
 }
 void Poll(){
@@ -476,9 +477,9 @@ void Poll(){
     if(mode!=Mode::Off && refreshAwake){appletSetAutoSleepDisabled(true);refreshAwake=false;}
 }
 std::string Status(){
-    if(mode==Mode::Off)return failed?"Connection stopped\nCheck your connection and try again.\nIncomplete uploads stay unfinished; existing files are kept.":"Ready when you are\nChoose USB cable or Wi-Fi above to connect your PC.\nNo connection is running in the background.";
-    std::string s=mode==Mode::Cable?"USB cable is ready\nConnect directly to your PC, then open Nintendo Switch in its file browser.":endpoint+"\nChoose Anonymous in your FTP app. No login details to enter.\nTrusted network only: anyone on it can access your SD files.";
-    return std::string("PC transfer - ")+(usbAvailable?"SD and USB installs ready":"SD ready / USB install unavailable")+"\n"+s+"\nUploaded: "+std::to_string(completed.load())+"    Installed: "+std::to_string(installed.load())+"    Received: "+std::to_string(received.load()/1048576)+" MiB"+(installFailed?"\nInstall queue paused. Your uploaded packages are kept.":"\nUploads install automatically. Wait for the Switch to finish.")+(lastError.load()?"\nA file failed. Check space/connection; partial uploads are not installed.":"");
+    if(mode==Mode::Off)return failed?"Connection stopped\nCheck your connection and try again.\nIncomplete uploads stay unfinished; existing files are kept."_nx:"Ready when you are\nChoose USB cable or Wi-Fi above to connect your PC.\nNo connection is running in the background."_nx;
+    std::string s=mode==Mode::Cable?"USB cable is ready\nConnect directly to your PC, then open Nintendo Switch in its file browser."_nx:endpoint+"\nChoose Anonymous in your FTP app. No login details to enter.\nTrusted network only: anyone on it can access your SD files."_nx;
+    return std::string("PC transfer - "_nx)+(usbAvailable?"SD and USB installs ready"_nx:"SD ready / USB install unavailable"_nx)+"\n"+s+"\nUploaded: "_nx+std::to_string(completed.load())+"    Installed: "+std::to_string(installed.load())+"    Received: "+std::to_string(received.load()/1048576)+" MiB"+(installFailed?"\nInstall queue paused. Your uploaded packages are kept."_nx:"\nUploads install automatically. Wait for the Switch to finish."_nx)+(lastError.load()?"\nA file failed. Check space/connection; partial uploads are not installed."_nx:"");
 }
 }
 
@@ -505,7 +506,7 @@ int bridge_open(void* user,const char* p,FtpVfsOpenMode m){
     if(m==FtpVfsOpenMode_WRITE){
         if(!Installing(a->use))return ftp_result(a->ReceiveFtp(name,&f));
         const auto rc=a->ReceiveStream(name,&f);
-        if(R_FAILED(rc))activity::Get().Failure("Cannot start stream install. Check destination and use one upload at a time.",rc);
+        if(R_FAILED(rc))activity::Get().Failure("Cannot start stream install. Check destination and use one upload at a time."_nx,rc);
         return ftp_result(rc);
     }
     if(Installing(a->use)&&!IsInstallGuide(a->use,name)){errno=ENOENT;return -1;}

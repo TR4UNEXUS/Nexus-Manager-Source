@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <string>
@@ -17,7 +18,7 @@ inline std::string SafeName(std::string_view name) {
         out += static_cast<char>(c);
     }
     while (!out.empty() && (out.back() == ' ' || out.back() == '.')) out.pop_back();
-    return out.empty() ? "Game" : out;
+    return out.empty() ? "Game"_nx : out;
 }
 // All offsets stay signed-64 representable (libnx). Never trust overflowed sizes.
 inline bool AddSize(std::uint64_t& total, std::uint64_t size) {

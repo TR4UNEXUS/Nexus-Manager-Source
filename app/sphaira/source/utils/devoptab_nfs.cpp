@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "utils/devoptab_common.hpp"
 #include "defines.hpp"
 #include "log.hpp"
@@ -59,27 +60,27 @@ struct Dir {
 
 std::string NfsFailureMessage(int error, bool root) {
     std::string message = root
-        ? "Connected to the NFS server, but could not read the exported folder. "
-        : "Could not connect to the NFS export. ";
+        ? "Connected to the NFS server, but could not read the exported folder. "_nx
+        : "Could not connect to the NFS export. "_nx;
     switch (error) {
         case EACCES:
-            message += "The server denied access. Allow the Switch's IP address in the NFS export permissions and allow reading its folders.";
+            message += "The server denied access. Allow the Switch's IP address in the NFS export permissions and allow reading its folders."_nx;
             break;
         case ENOENT:
         case ENOTDIR:
-            message += "The exported folder was not found. Enter the full export path exactly as shown by your NAS or NFS server.";
+            message += "The exported folder was not found. Enter the full export path exactly as shown by your NAS or NFS server."_nx;
             break;
         case ETIMEDOUT:
         case EHOSTUNREACH:
         case ENETUNREACH:
         case ECONNREFUSED:
         case ENOTCONN:
-            message += "The server did not respond or its NFS service is unavailable. Check the server address, enable NFS, and keep both devices on the same network.";
+            message += "The server did not respond or its NFS service is unavailable. Check the server address, enable NFS, and keep both devices on the same network."_nx;
             break;
         default:
             // libnfs also uses -1 for generic setup failures, so it must not
             // be interpreted as proof of an EPERM permission denial.
-            message += "Check the server address and full export path, and allow the Switch's IP address in the server's NFS permissions.";
+            message += "Check the server address and full export path, and allow the Switch's IP address in the server's NFS permissions."_nx;
             break;
     }
     return message;
@@ -87,7 +88,7 @@ std::string NfsFailureMessage(int error, bool root) {
 
 bool Device::Fail(const char* phase, int error, const std::string& message) {
     failure_detail = message;
-    if (error > 0) failure_detail += "\n\nNFS error: " + std::to_string(error) + ".";
+    if (error > 0) failure_detail += "\n\nNFS error: "_nx + std::to_string(error) + ".";
     // The ordinary debug log may be disabled. Keep connection-stage results
     // in the same durable report as transfers, without addresses or logins.
     nexus::Log(phase, MAKERESULT(Module_Libnx, LibnxError_IoError), error > 0 ? error : 0);
@@ -117,7 +118,7 @@ bool Device::Mount() {
         nfs = nfs_init_context();
         if (!nfs) {
             log_write("[NFS] nfs_init_context() failed\n");
-            return Fail("network-nfs-context", ENOMEM, "Nexus Manager could not create the NFS connection. Close other network browsers and try again.");
+            return Fail("network-nfs-context", ENOMEM, "Nexus Manager could not create the NFS connection. Close other network browsers and try again."_nx);
         }
 
         const auto uid = this->config.extra.find("uid");
@@ -177,7 +178,7 @@ bool Device::Mount() {
     auto nfs_url = nfs_parse_url_dir(nfs, url.c_str());
     if (!nfs_url) {
         log_write("[NFS] nfs_parse_url_dir() failed for url: %s error: %s\n", url.c_str(), nfs_get_error(nfs));
-        return Fail("network-nfs-url", EINVAL, "The NFS server or export address could not be read. Enter a hostname or IPv4 address in Server and the full exported folder path in Share / export.");
+        return Fail("network-nfs-url", EINVAL, "The NFS server or export address could not be read. Enter a hostname or IPv4 address in Server and the full exported folder path in Share / export."_nx);
     }
     ON_SCOPE_EXIT(nfs_destroy_url(nfs_url));
 
@@ -186,7 +187,7 @@ bool Device::Mount() {
         log_write("[NFS] nfs_mount() failed: %s errno: %s\n", nfs_get_error(nfs), std::strerror(-ret));
         const int error = ret < 0 ? -ret : ret;
         if (std::strstr(nfs_get_error(nfs), "RPC authentication rejected by server")) {
-            return Fail("network-nfs-auth", error, "The NFS server rejected this connection's access. NFS uses the server's export permissions, not the SMB username or password. Allow the Switch's IP address and its NFS access method on the server.");
+            return Fail("network-nfs-auth", error, "The NFS server rejected this connection's access. NFS uses the server's export permissions, not the SMB username or password. Allow the Switch's IP address and its NFS access method on the server."_nx);
         }
         return Fail("network-nfs-mount", error, NfsFailureMessage(error, false));
     }
@@ -494,7 +495,7 @@ Result common::ConnectNfsShare(const common::MountConfig& config, fs::FsPath& mo
         detail = device->FailureDetail();
         return MAKERESULT(Module_Libnx, LibnxError_IoError);
     }
-    detail = "Too many network locations are open. Close the other network browsers and try again.";
+    detail = "Too many network locations are open. Close the other network browsers and try again."_nx;
     if (!common::MountNetworkSession(std::move(device), config, sizeof(File), sizeof(Dir), mount)) {
         nexus::Log("network-nfs-register", MAKERESULT(Module_Libnx, LibnxError_IoError));
         return MAKERESULT(Module_Libnx, LibnxError_IoError);

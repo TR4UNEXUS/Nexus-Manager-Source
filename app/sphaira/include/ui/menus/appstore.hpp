@@ -1,4 +1,5 @@
 #pragma once
+#include "nexus/localize.hpp"
 
 #include "ui/menus/grid_menu_base.hpp"
 #include "ui/scrollable_text.hpp"
@@ -90,7 +91,7 @@ struct EntryMenu final : MenuBase {
     EntryMenu(Entry& entry, const LazyImage& default_icon, Menu& menu);
     ~EntryMenu();
 
-    auto GetShortTitle() const -> const char* override { return "Entry"; };
+    auto GetShortTitle() const -> const char* override { return "Entry"_nx; };
     void Update(Controller* controller, TouchInfo* touch) override;
     void Draw(NVGcontext* vg, Theme* theme) override;
     // void OnFocusGained() override;
@@ -168,7 +169,7 @@ struct Menu final : grid::Menu {
     Menu(u32 flags);
     ~Menu();
 
-    auto GetShortTitle() const -> const char* override { return "Store"; };
+    auto GetShortTitle() const -> const char* override { return "Store"_nx; };
     void Update(Controller* controller, TouchInfo* touch) override;
     void Draw(NVGcontext* vg, Theme* theme) override;
     void OnFocusGained() override;

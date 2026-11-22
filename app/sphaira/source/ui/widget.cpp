@@ -23,7 +23,7 @@ auto uiButton::Draw(NVGcontext* vg, Theme* /*theme*/) -> void {
 
     nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
     nvgFillColor(vg, nvgRGB(255, 255, 255));
-    nvgFontSize(vg, 20);
+    nvgFontSize(vg, m_hint_pos.h);
     nvgText(vg, m_hint_pos.x, m_hint_pos.y, m_action_str.c_str(), nullptr);
     nvgFontSize(vg, 26);
     nvgText(vg, m_button_pos.x, m_button_pos.y, m_button_str.c_str(), nullptr);
@@ -96,13 +96,42 @@ void Widget::SetupUiButtons(uiButtons& buttons, const Vec2& button_pos) {
     auto [x, y] = button_pos;
 
     float bounds[4]{};
+    // Fit translated controller hints to the footer before placing hit targets.
+    // Leave room on the left for the page/item count.
+    const float available=std::max(0.f,x-240.f);
+    auto total_width=[&](float font){
+        float width=0;
+        for(const auto& e:buttons){
+            nvgFontSize(vg,font);nvgTextBounds(vg,0,0,e.m_action_str.c_str(),nullptr,bounds);width+=bounds[2]-bounds[0];
+            nvgFontSize(vg,26.f);nvgTextBounds(vg,0,0,e.m_button_str.c_str(),nullptr,bounds);width+=bounds[2]-bounds[0]+42.f;
+        }
+        return width;
+    };
+    float font=20.f;
+    while(font>14.f && total_width(font)>available)font-=1.f;
+    const float full_width=total_width(font);
+    const float excess=std::max(0.f,full_width-available);
     for (auto& e : buttons) {
+        nvgFontSize(vg,font);
+        nvgTextBounds(vg,0,0,e.m_action_str.c_str(),nullptr,bounds);
+        const float limit=std::max(16.f,bounds[2]-bounds[0]-(buttons.empty()?0.f:excess/buttons.size()));
+        if(excess>0){
+            auto label=e.m_action_str;
+            while(!label.empty()){
+                const auto display=label+"...";
+                nvgTextBounds(vg,0,0,display.c_str(),nullptr,bounds);
+                if(bounds[2]-bounds[0]<=limit){e.m_action_str=display;break;}
+                auto pos=label.size()-1;
+                while(pos>0 && (static_cast<unsigned char>(label[pos])&0xc0)==0x80)--pos;
+                label.resize(pos);
+            }
+        }
         nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
 
-        nvgFontSize(vg, 20.f);
+        nvgFontSize(vg, font);
         nvgTextBounds(vg, x, y, e.m_action_str.c_str(), nullptr, bounds);
         auto len = bounds[2] - bounds[0];
-        e.m_hint_pos = {x, y, len, 20};
+        e.m_hint_pos = {x, y, len, font};
 
         x -= len + 8.f;
         nvgFontSize(vg, 26.f);

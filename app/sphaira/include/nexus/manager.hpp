@@ -4,6 +4,7 @@
 #include "nexus/batch.hpp"
 #include "nexus/install_diagnostics.hpp"
 #include "nexus/transfer_report.hpp"
+#include "nexus/move_checkpoint.hpp"
 #include "yati/source/base.hpp"
 #include "ui/progress_box.hpp"
 #include <array>
@@ -50,6 +51,7 @@ Result InspectGame(ui::ProgressBox* progress,u64 application,Game& game);
 Result RefreshHomeBadges(ui::ProgressBox* progress);
 Result CopyGame(ui::ProgressBox* progress, u64 app_id, Target source,Target destination,CopyReport* report=nullptr);
 Result RemoveVerifiedSource(ui::ProgressBox* progress, u64 app_id, Target source,Target destination,RemovalReport& report);
+Result ResumeMove(ui::ProgressBox*,const MoveCheckpoint&,TransferReport&);
 Result TransferGame(ui::ProgressBox* progress, u64 app_id, Target source,Target destination,bool move,TransferReport& report);
 Result ScanPlaceholders(ui::ProgressBox* progress, Target target, std::vector<Placeholder>& result);
 Result RemovePlaceholder(const Placeholder& item);

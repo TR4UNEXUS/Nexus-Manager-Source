@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "nexus/network_rate.hpp"
 #include <algorithm>
 #include <chrono>
@@ -67,10 +68,10 @@ public:
         // IDs never repeat across sessions: a stale UI scroll anchor cannot
         // point at a different message after reconnection.
         origin=now;connection=Clean(label);install_name.clear();install_target.clear();stage.clear();
-        installing=stopped=false;enabled=true;rate.Begin(now);Add("Preparing connection",now);
+        installing=stopped=false;enabled=true;rate.Begin(now);Add("Preparing connection"_nx,now);
     }
     void Connect(std::string_view label,Id now=Now()){
-        std::scoped_lock lock(mutex);connection=Clean(label);Add("Ready. Drop a package into Install to SD or Install to USB.",now);
+        std::scoped_lock lock(mutex);connection=Clean(label);Add("Ready. Drop a package into Install to SD or Install to USB."_nx,now);
     }
     void Event(std::string_view message,Id now=Now()){std::scoped_lock lock(mutex);Add(message,now);}
     void Failure(std::string_view message,std::uint32_t rc,Id now=Now()){
@@ -81,7 +82,7 @@ public:
         const auto id=++next_upload;latest={id,0,expected,Name(path),Clean(target,40),true};
         // Telemetry exhaustion never rejects an otherwise valid transfer.
         if(uploads.size()<32)uploads.push_back(latest);
-        Add("Receiving to "+latest.target+": "+latest.name,now);return id;
+        Add("Receiving to "_nx+latest.target+": "+latest.name,now);return id;
     }
     void Bytes(Id id,Id bytes,std::int64_t expected){
         std::scoped_lock lock(mutex);if(!id)return;
@@ -91,22 +92,22 @@ public:
     }
     void Saving(Id id,Id now=Now()){
         std::scoped_lock lock(mutex);const auto it=std::find_if(uploads.begin(),uploads.end(),[&](const auto& u){return u.id==id;});
-        if(it!=uploads.end())Add("Finishing upload to "+it->target+": "+it->name,now);
+        if(it!=uploads.end())Add("Finishing upload to "_nx+it->target+": "+it->name,now);
     }
     void Close(Id id,bool complete,bool for_install,std::uint32_t rc,Id now=Now()){
         std::scoped_lock lock(mutex);const auto it=std::find_if(uploads.begin(),uploads.end(),[&](const auto& u){return u.id==id;});
         if(it==uploads.end())return;
         latest=*it;latest.active=false;uploads.erase(it);
-        if(complete&&!rc){++uploaded;if(for_install)++queued;Add((for_install?"Upload complete; queued for install: ":"Upload complete: ")+latest.name,now);}
-        else{++errors;Add((rc?"Upload failed ["+Error(rc)+"]: ":std::string("Upload interrupted: "))+latest.name,now);Add("Unfinished upload kept. It will not be installed.",now);}
+        if(complete&&!rc){++uploaded;if(for_install)++queued;Add((for_install?"Upload complete; queued for install: "_nx:"Upload complete: "_nx)+latest.name,now);}
+        else{++errors;Add((rc?"Upload failed ["_nx+Error(rc)+"]: ":std::string("Upload interrupted: "_nx))+latest.name,now);Add("Unfinished upload kept. It will not be installed."_nx,now);}
         if(!uploads.empty())latest=uploads.back();
     }
     void CloseStream(Id id,bool complete,std::uint32_t rc,Id now=Now()){
         std::scoped_lock lock(mutex);const auto it=std::find_if(uploads.begin(),uploads.end(),[&](const auto& u){return u.id==id;});
         if(it==uploads.end())return;
         latest=*it;latest.active=false;uploads.erase(it);
-        if(complete&&!rc){++uploaded;Add("FTP stream finished: "+latest.name,now);}
-        else{++errors;Add("FTP stream stopped ["+Error(rc)+"]. Resend the original package from your PC.",now);}
+        if(complete&&!rc){++uploaded;Add("FTP stream finished: "_nx+latest.name,now);}
+        else{++errors;Add("FTP stream stopped ["_nx+Error(rc)+"]. Resend the original package from your PC."_nx,now);}
     }
     void Streaming(){std::scoped_lock lock(mutex);streaming=true;}
     void ContentFile(std::string_view name,std::string_view kind,std::string_view phase,Id size,Id packed=0,Id now=Now()){
@@ -128,22 +129,22 @@ public:
         std::scoped_lock lock(mutex);if(!enabled)return;
         if(queued)--queued;
         installing=true;content={};content_rate.End();streaming=false;install_name=Name(path);install_target=Clean(target,40);stage.clear();
-        Add("Installing to "+install_target+": "+install_name,now);
+        Add("Installing to "_nx+install_target+": "+install_name,now);
     }
     void Stage(std::string_view value,Id now=Now()){
         std::scoped_lock lock(mutex);if(!installing||value.empty())return;
-        auto next=Clean(value);if(next==stage)return;stage=next;Add("Step: "+stage,now);
+        auto next=Clean(value);if(next==stage)return;stage=next;Add("Step: "_nx+stage,now);
     }
     void FinishInstall(std::uint32_t rc,Id now=Now()){
         std::scoped_lock lock(mutex);if(!installing)return;installing=false;
         content.measuring=false;content_rate.End();
-        if(!rc){++installed;Add("Installed successfully: "+install_name,now);stage="Installation complete";}
-        else{++errors;Add("Installation stopped ["+Error(rc)+"]: "+install_name,now);Add(streaming?"Queue paused. Resend the original package from your PC.":"Queue paused. Package kept; retry from Install Games.",now);stage="Installation stopped";}
+        if(!rc){++installed;Add("Installed successfully: "_nx+install_name,now);stage="Installation complete"_nx;}
+        else{++errors;Add("Installation stopped ["_nx+Error(rc)+"]: "+install_name,now);Add(streaming?"Queue paused. Resend the original package from your PC."_nx:"Queue paused. Package kept; retry from Install Games."_nx,now);stage="Installation stopped"_nx;}
     }
     void Stop(Id now=Now()){
         std::scoped_lock lock(mutex);if(!enabled||stopped)return;stopped=true;
         queued=0;
-        Add("Connection stopped. Uploaded packages have been kept.",now);
+        Add("Connection stopped. Uploaded packages have been kept."_nx,now);
     }
     Snapshot Read(Id now=Now()){
         std::scoped_lock lock(mutex);

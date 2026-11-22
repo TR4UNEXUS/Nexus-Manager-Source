@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/manager_tools.hpp"
 #include "nexus/manager_backup.hpp"
@@ -81,7 +82,7 @@ struct Copier {
     Result WriteDestination(u64 off,const void* data,size_t n){return dest.Write(off,data,n,0);}
     Result ReadDestination(u64 off,void* data,size_t n,u64& actual){return dest.Read(off,data,n,0,&actual);}
     Result FlushDestination(){return fsFileFlush(&dest.m_native);}
-    void Advance(size_t n){done+=n;progress->SetOverallTransfer(done,std::max<u64>(total,1),"Copying and verifying save backup");}
+    void Advance(size_t n){done+=n;progress->SetOverallTransfer(done,std::max<u64>(total,1),"Copying and verifying save backup"_nx);}
 };
 Result WriteNew(fs::Fs& fs,const std::string& path,const std::string& text){
     R_TRY(fs.CreateFile(path,text.size()));fs::File file;
@@ -91,8 +92,8 @@ Result WriteNew(fs::Fs& fs,const std::string& path,const std::string& text){
 std::string Display(std::string text){for(auto& c:text)if(static_cast<unsigned char>(c)<32 || c==127)c='?';return text;}
 std::string SaveDetails(const Save& s){
     return Display(s.name)+"\n\nApplication: "+Id(s.info.application_id)+"\nSave: "+Id(s.info.save_data_id)+
-        "\nType: "+(s.info.save_data_type==FsSaveDataType_Account?"User save":"Device save")+
-        "\nUser: "+Id(s.info.uid.uid[1])+Id(s.info.uid.uid[0])+"\nAllocated size: "+utils::formatSizeStorage(s.info.size);
+        "\nType: "_nx+(s.info.save_data_type==FsSaveDataType_Account?"User save"_nx:"Device save"_nx)+
+        "\nUser: "+Id(s.info.uid.uid[1])+Id(s.info.uid.uid[0])+"\nAllocated size: "_nx+utils::formatSizeStorage(s.info.size);
 }
 Result ListSaves(ui::ProgressBox* p,std::vector<Save>& result){
     result.clear();FsSaveDataInfoReader reader{};R_TRY(fsOpenSaveDataInfoReader(&reader,FsSaveDataSpaceId_User));
@@ -103,7 +104,7 @@ Result ListSaves(ui::ProgressBox* p,std::vector<Save>& result){
         R_UNLESS(count>=0 && size_t(count)<=batch.size() && examined+count<=MaxEntries,Invalid);if(!count)break;examined+=count;
         for(s64 i=0;i<count;++i)if(Supported(batch[i])){
             auto name=title::GetCachedTitleName(batch[i].application_id);
-            if(name.empty())name="Game "+Id(batch[i].application_id);
+            if(name.empty())name="Game "_nx+Id(batch[i].application_id);
             result.push_back({batch[i],Display(name)});
         }
     }
@@ -112,7 +113,7 @@ Result ListSaves(ui::ProgressBox* p,std::vector<Save>& result){
 }
 Result BackupSave(ui::ProgressBox* p,const Save& save,std::string& detail,std::string* completed_path){
     if(completed_path)completed_path->clear();
-    detail="Save backup did not finish. The original save was not changed.";
+    detail="Save backup did not finish. The original save was not changed."_nx;
     R_UNLESS(Supported(save.info),Invalid);R_TRY(p->ShouldExitResult());
     nexus::Space space{};R_TRY(nexus::QueryPhysicalSd(space));
     // Require identity and commit metadata rather than guessing when unavailable.
@@ -133,10 +134,10 @@ Result BackupSave(ui::ProgressBox* p,const Save& save,std::string& detail,std::s
     const auto final=root+"/"+Id(save.info.application_id)+"-"+Id(save.info.save_data_id)+"-"+Id(armGetSystemTick());
     const auto stage=final+".partial";
     R_TRY(dest.CreateDirectory(stage)); // exclusive: no existing backup is reused
-    detail="Backup incomplete. Original save unchanged. Keep SD:"+stage+" for inspection; it is NOT a completed backup.";
+    detail="Backup incomplete. Original save unchanged. Keep SD:"_nx+stage+" for inspection; it is NOT a completed backup."_nx;
     R_TRY(dest.CreateDirectory(stage+"/data"));
     auto buffer=std::make_unique<u8[]>(BufferSize);u64 done{};std::string checksums;
-    p->SetProgressNote("Read-only source; complete copy plus SHA-256 readback");
+    p->SetProgressNote("Read-only source; complete copy plus SHA-256 readback"_nx);
     for(const auto& e:plan){
         R_TRY(p->ShouldExitResult());const auto dst=stage+"/data"+e.path;
         R_UNLESS(dst.size()<FS_MAX_PATH,Invalid);
@@ -158,16 +159,16 @@ Result BackupSave(ui::ProgressBox* p,const Save& save,std::string& detail,std::s
     const auto manifest="NEXUS-SAVE-BACKUP 2\napplication="+Id(save.info.application_id)+"\nsave="+Id(save.info.save_data_id)+
         "\nuser="+Id(save.info.uid.uid[1])+Id(save.info.uid.uid[0])+"\ntype="+std::to_string(save.info.save_data_type)+
         "\nindex="+std::to_string(save.info.save_data_index)+"\ncommit="+Id(before.commit_id)+"\nbytes="+std::to_string(total)+
-        "\nentries="+std::to_string(plan.size())+"\nverified=sha256-copy-readback\nformat=plain-files-in-data; NOT DBI format\n"+checksums;
+        "\nentries="+std::to_string(plan.size())+"\nverified=sha256-copy-readback\nformat=plain-files-in-data; NOT DBI format\n"_nx+checksums;
     R_TRY(WriteNew(dest,stage+"/backup.txt",manifest));R_TRY(dest.Commit());R_TRY(p->ShouldExitResult());
     // The final name is the completion marker; partial folders never become valid
     // because of size alone. Rename does not replace an existing destination.
     R_TRY(dest.RenameDirectory(stage,final));
-    detail="Backup files verified, but final SD commit was not confirmed. Original save unchanged. Inspect SD:"+final;
+    detail="Backup files verified, but final SD commit was not confirmed. Original save unchanged. Inspect SD:"_nx+final;
     R_TRY(dest.Commit());
-    p->SetOverallTransfer(1,1,"Save backup complete",true);
-    detail="Save backup complete\n\nEvery copied file passed SHA-256 readback; the source save commit stayed unchanged. Original save kept.\n\nSD:"+final+
-        "\n\nKeep the whole folder on your PC. Nexus restores version 2 backups to the same game/user; this is not a DBI backup.";
+    p->SetOverallTransfer(1,1,"Save backup complete"_nx,true);
+    detail="Save backup complete\n\nEvery copied file passed SHA-256 readback; the source save commit stayed unchanged. Original save kept.\n\nSD:"_nx+final+
+        "\n\nKeep the whole folder on your PC. Nexus restores version 2 backups to the same game/user; this is not a DBI backup."_nx;
     if(completed_path)*completed_path=final;
     return 0;
 }
@@ -230,13 +231,13 @@ Result ListSaveBackups(ui::ProgressBox* p,const Save& save,std::vector<std::stri
     }std::sort(result.begin(),result.end());return p->ShouldExitResult();
 }
 Result RestoreSave(ui::ProgressBox* p,const Save& save,const std::string& folder,std::string& detail){
-    detail="Restore stopped before changing the save. Use a complete Nexus version 2 backup for this same game/user. Disconnect PC transfer first.";
+    detail="Restore stopped before changing the save. Use a complete Nexus version 2 backup for this same game/user. Disconnect PC transfer first."_nx;
     R_UNLESS(nexus::transfer::Active()==nexus::transfer::Mode::Off && Supported(save.info),Invalid);
     nexus::Space space{};R_TRY(nexus::QueryPhysicalSd(space));fs::FsNativeSd sd;R_TRY(sd.GetFsOpenResult());
     BackupPlan plan;R_TRY(ReadBackup(p,sd,save,folder,plan,true));
     FsSaveDataExtraData before{},current{};R_TRY(Extra(save.info,before));R_UNLESS(SameSave(before,save.info) && before.journal_size>0,Invalid);
     std::string recovery;R_TRY(BackupSave(p,save,detail,&recovery));R_UNLESS(!recovery.empty(),Invalid);
-    detail="Restore did not finish. A verified recovery backup is kept at SD:"+recovery+". Do not delete it. Close the game and retry if needed.";
+    detail="Restore did not finish. A verified recovery backup is kept at SD:"_nx+recovery+". Do not delete it. Close the game and retry if needed."_nx;
     R_TRY(Extra(save.info,current));R_UNLESS(SameSave(current,save.info) && current.commit_id==before.commit_id,Invalid);
     // Horizon's save filesystem owns the transaction. Do not commit partial
     // replacement or a cancellation; closing the uncommitted session discards it.
@@ -244,7 +245,7 @@ Result RestoreSave(ui::ProgressBox* p,const Save& save,const std::string& folder
     fs::FsNative dest(&raw,true,false);
     R_TRY(p->ShouldExitResult());R_UNLESS(nexus::lifecycle::CanPoll(),nexus::Unavailable);R_TRY(fsFsCleanDirectoryRecursively(&dest.m_fs,"/"));
     auto buffer=std::make_unique<u8[]>(BufferSize);u64 done{};
-    p->SetProgressNote("Restoring and verifying; current save backed up first");
+    p->SetProgressNote("Restoring and verifying; current save backed up first"_nx);
     for(const auto& e:plan.files){
         R_TRY(p->ShouldExitResult());R_UNLESS(nexus::lifecycle::CanPoll(),nexus::Unavailable);p->SetTitle(Display(e.path));
         if(e.dir){R_TRY(dest.CreateDirectory(e.path));continue;}
@@ -256,10 +257,10 @@ Result RestoreSave(ui::ProgressBox* p,const Save& save,const std::string& folder
     R_UNLESS(actual==plan.files && bytes==plan.total,Invalid);R_TRY(p->ShouldExitResult());R_UNLESS(nexus::lifecycle::CanPoll(),nexus::Unavailable);
     // Commit exactly once, after every file passed source and readback hashes.
     R_TRY(dest.Commit());
-    detail="Save restored and verified.\n\nRecovery backup kept at SD:"+recovery+"\n\nThe uploaded backup is also kept.";return 0;
+    detail="Save restored and verified.\n\nRecovery backup kept at SD:"_nx+recovery+"\n\nThe uploaded backup is also kept."_nx;return 0;
 }
 Result InspectFile(ui::ProgressBox* p,bool usb,u64 gen,const nexusapp::Item& item,bool hash,std::string& detail){
-    detail="File inspection stopped. No files were changed.";
+    detail="File inspection stopped. No files were changed."_nx;
     R_UNLESS(!item.directory && nexus::VolumePathValid(item.path),Invalid);
     nexus::Client client;fs::FsNativeSd sd;fs::File file;
     auto size=[&](u64& out)->Result{
@@ -279,13 +280,13 @@ Result InspectFile(ui::ProgressBox* p,bool usb,u64 gen,const nexusapp::Item& ite
             if(i%16==0){char label[12];snprintf(label,sizeof(label),"%04X  ",unsigned(i));preview+=label;}
             char pair[4];snprintf(pair,sizeof(pair),"%02X ",buffer[i]);preview+=pair;if(i%16==15)preview+='\n';
         }
-        offset+=count;p->SetOverallTransfer(offset,std::max<u64>(limit,1),hash?"Calculating SHA-256":"Reading preview");
+        offset+=count;p->SetOverallTransfer(offset,std::max<u64>(limit,1),hash?"Calculating SHA-256"_nx:"Reading preview"_nx);
     }
     u64 after{};R_TRY(size(after));R_UNLESS(bytes==after,Invalid);if(usb)R_TRY(client.Check(gen));
-    detail=Display(item.name)+"\nSize: "+utils::formatSizeStorage(bytes)+"\n\n";
+    detail=Display(item.name)+"\nSize: "_nx+utils::formatSizeStorage(bytes)+"\n\n";
     if(hash){auto sum=digest.Final();detail+="SHA-256\n"+nexusapp::HexId(sum.data(),16)+"\n"+nexusapp::HexId(sum.data()+16,16)+
-        "\n\nCompare with a trusted checksum. A digest alone does not prove a game is intact. Close other apps that could change this file while hashing.";}
-    else detail+="First "+std::to_string(limit)+" bytes (hex)\n"+preview+"\nRead-only preview; nothing changed.";
+        "\n\nCompare with a trusted checksum. A digest alone does not prove a game is intact. Close other apps that could change this file while hashing."_nx;}
+    else detail+="First "+std::to_string(limit)+" bytes (hex)\n"+preview+"\nRead-only preview; nothing changed."_nx;
     return 0;
 }
 }

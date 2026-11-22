@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Shared Manager chrome for every modal, confirmation and action sheet.
 #pragma once
+#include "nexus/localize.hpp"
 #include "ui/nvg_util.hpp"
 #include "ui/nexus_violet.hpp"
 #include <algorithm>
@@ -63,7 +64,7 @@ struct ScrollableBody {
             gfx::drawTextBox(vg,r.x,r.y-offset,font,r.w,Text(),text);nvgRestore(vg);
         }
         if(overflowing){
-            const auto hint=std::string(gfx::getButton(::sphaira::Button::UP))+" "+gfx::getButton(::sphaira::Button::DOWN)+"  Scroll text";
+            const auto hint=std::string(gfx::getButton(::sphaira::Button::UP))+" "+gfx::getButton(::sphaira::Button::DOWN)+"  Scroll text"_nx;
             nvgSave(vg);nvgIntersectScissor(vg,r.x,r.y+height,r.w,r.h-height);
             gfx::drawText(vg,r.x,r.y+height+8,16,Text(),hint.c_str());
             gfx::drawTextArgs(vg,r.x+r.w,r.y+height+8,16,NVG_ALIGN_RIGHT|NVG_ALIGN_TOP,Text(),"%u%%",maximum>0?unsigned(offset/maximum*100):100u);

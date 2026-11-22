@@ -73,17 +73,6 @@ Result EnsureUsbContentRegistered(u64 generation,const NcmContentId& id,s64 expe
     if(R_FAILED(rc))Log("P2-ensure-generation-after",rc,generation);
     return rc;
 }
-void Log(const char *phase, Result rc, u64 value) {
-    // Phase/result only: no tickets, title keys, tokens, source URLs or payloads.
-    mkdir("sdmc:/switch/nexusmanager", 0777);
-    const char *path = "sdmc:/switch/nexusmanager/nexus.log";
-    struct stat st{};
-    const bool rotate = stat(path, &st) == 0 && st.st_size > 1024 * 1024;
-    if(FILE *f = fopen(path, rotate ? "w" : "a")) {
-        fprintf(f, "NM1 %s rc=0x%08X value=%llu\n", phase, static_cast<unsigned>(rc), static_cast<unsigned long long>(value));
-        fclose(f);
-    }
-}
 Provider Detect(Result &rc) {
     startup::Event("usb-service-detect", "begin");
     u8 present = 0;

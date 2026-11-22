@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/cartridge.hpp"
 #include "nexus/transfer_policy.hpp"
@@ -57,50 +58,50 @@ struct Output {
 };
 }
 Result Cartridge(ui::ProgressBox* p,bool dump,bool trimmed,std::string& detail){
-    detail="Could not read the cartridge. Close any game, keep the cartridge inserted, then try again. No cartridge data is changed.";
+    detail="Could not read the cartridge. Close any game, keep the cartridge inserted, then try again. No cartridge data is changed."_nx;
     Card card;R_TRY(card.Open());
-    if(!dump){detail="Cartridge detected\n\nUsed data: "+utils::formatSizeStorage(card.trim)+"\nFull image: "+utils::formatSizeStorage(card.normal+card.secure)+"\n\nTrimmed export keeps all used data. Both exports remove the private card certificate, then verify the complete written file. Reinsert the cartridge afterwards if HOME does not refresh it.";return 0;}
+    if(!dump){detail="Cartridge detected\n\nUsed data: "_nx+utils::formatSizeStorage(card.trim)+"\nFull image: "_nx+utils::formatSizeStorage(card.normal+card.secure)+"\n\nTrimmed export keeps all used data. Both exports remove the private card certificate, then verify the complete written file. Reinsert the cartridge afterwards if HOME does not refresh it."_nx;return 0;}
     const u64 total=trimmed?card.trim:card.normal+card.secure;
     Output out;R_TRY(fsOpenSdCardFileSystem(&out.fs));out.fsOpen=true;
     for(const char* dir:{"/switch","/switch/nexusmanager","/switch/nexusmanager/transfers","/switch/nexusmanager/transfers/exports"})R_TRY(out.Directory(dir));
     s64 free{};R_TRY(fsFsGetFreeSpace(&out.fs,"/",&free));
-    detail="Not enough free SD space for this cartridge export. No existing files were changed.";
+    detail="Not enough free SD space for this cartridge export. No existing files were changed."_nx;
     R_UNLESS(free>0 && u64(free)>total+32*1024*1024,nexus::Unavailable);
     u64 id{};randomGet(&id,sizeof(id));char filename[160]{};
     std::snprintf(filename,sizeof(filename),"/switch/nexusmanager/transfers/exports/cartridge-%016llx%s.xci",static_cast<unsigned long long>(id),trimmed?"-trimmed":"-full");
     const std::string final=filename,temp=final+".partial";
-    detail="Export did not finish. The cartridge is unchanged; any unfinished output remains .partial on SD. Check free space and keep the cartridge inserted.";
+    detail="Export did not finish. The cartridge is unchanged; any unfinished output remains .partial on SD. Check free space and keep the cartridge inserted."_nx;
     R_TRY(fsFsCreateFile(&out.fs,temp.c_str(),total,total>0xffffffffULL?FsCreateOption_BigFile:0));
     R_TRY(fsFsOpenFile(&out.fs,temp.c_str(),FsOpenMode_Write,&out.file));out.fileOpen=true;
     constexpr size_t Chunk=1024*1024;auto buffer=std::make_unique<u8[]>(Chunk);
     Sha256Context src{},dst{};sha256ContextCreate(&src);sha256ContextCreate(&dst);
-    p->SetProgressNote("Copy and complete SHA-256 readback; cartridge stays read-only");
+    p->SetProgressNote("Copy and complete SHA-256 readback; cartridge stays read-only"_nx);
     for(u64 offset=0;offset<total;){
         R_TRY(p->ShouldExitResult());const auto n=std::min<u64>(Chunk,total-offset);R_TRY(card.Read(offset,buffer.get(),n));
         // Never export the unique game-card certificate in a routine backup.
         const auto lo=std::max<u64>(offset,0x7000),hi=std::min<u64>(offset+n,0x7200);
         if(lo<hi)std::memset(buffer.get()+lo-offset,0xff,hi-lo);
         R_TRY(fsFileWrite(&out.file,offset,buffer.get(),n,FsWriteOption_None));sha256ContextUpdate(&src,buffer.get(),n);
-        offset+=n;p->SetOverallTransfer(offset,total*2,"Copying cartridge");
+        offset+=n;p->SetOverallTransfer(offset,total*2,"Copying cartridge"_nx);
     }
     R_TRY(card.VerifyHeader());R_TRY(fsFileFlush(&out.file));fsFileClose(&out.file);out.fileOpen=false;
     R_TRY(fsFsOpenFile(&out.fs,temp.c_str(),FsOpenMode_Read,&out.file));out.fileOpen=true;
     for(u64 offset=0;offset<total;){
         R_TRY(p->ShouldExitResult());const auto n=std::min<u64>(Chunk,total-offset);u64 actual{};
         R_TRY(fsFileRead(&out.file,offset,buffer.get(),n,FsReadOption_None,&actual));R_UNLESS(actual==n,nexus::Invalid);
-        sha256ContextUpdate(&dst,buffer.get(),n);offset+=n;p->SetOverallTransfer(total+offset,total*2,"Verifying export");
+        sha256ContextUpdate(&dst,buffer.get(),n);offset+=n;p->SetOverallTransfer(total+offset,total*2,"Verifying export"_nx);
     }
     std::array<u8,32>a{},b{};sha256ContextGetHash(&src,a.data());sha256ContextGetHash(&dst,b.data());R_UNLESS(a==b,nexus::Invalid);
     fsFileClose(&out.file);out.fileOpen=false;R_TRY(p->ShouldExitResult());
     R_TRY(fsFsRenameFile(&out.fs,temp.c_str(),final.c_str()));R_TRY(fsFsCommit(&out.fs));
-    detail="Cartridge export verified\n\nSD:"+final+"\n\nTo install: choose Install games, then SD card and this XCI. To copy it to your PC: open PC transfer. On FAT32, large exports use an archive folder; copy through MTP/FTP as a single file.\n\nPrivate card certificate removed. Original cartridge kept.";
+    detail="Cartridge export verified\n\nSD:"_nx+final+"\n\nTo install: choose Install games, then SD card and this XCI. To copy it to your PC: open PC transfer. On FAT32, large exports use an archive folder; copy through MTP/FTP as a single file.\n\nPrivate card certificate removed. Original cartridge kept."_nx;
     return 0;
 }
 Result StorageReport(ui::ProgressBox* p,std::string& detail){
     R_TRY(p->ShouldExitResult());nexus::Space sd{};R_TRY(nexus::QueryPhysicalSd(sd));
-    detail="microSD\nFree: "+utils::formatSizeStorage(sd.free)+" / "+utils::formatSizeStorage(sd.total);
+    detail="microSD\nFree: "_nx+utils::formatSizeStorage(sd.free)+" / "+utils::formatSizeStorage(sd.total);
     nexus::Client usb;nexus::Status state{};auto rc=usb.Query(state);
-    detail+="\n\nUSB companion: "+std::string(R_SUCCEEDED(rc)&&state.Available()?"ready":"not ready / disconnected");
-    detail+="\n\nRead-only status; this is not a corruption check. Use My games > Check / repair for a game, or Files > Calculate SHA-256 for a file. No format or system-storage tools are run.";return 0;
+    detail+="\n\nUSB companion: "_nx+std::string(R_SUCCEEDED(rc)&&state.Available()?"ready":"not ready / disconnected"_nx);
+    detail+="\n\nRead-only status; this is not a corruption check. Use My games > Check / repair for a game, or Files > Calculate SHA-256 for a file. No format or system-storage tools are run."_nx;return 0;
 }
 }

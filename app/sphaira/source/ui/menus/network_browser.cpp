@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/menus/network_browser.hpp"
 #include "ui/nexus_violet.hpp"
@@ -20,7 +21,7 @@ void Icon(NVGcontext* vg,nexus::network::browser::Kind kind,float x,float y){
     IconPainter painter{vg};view::PaintIcon(painter,kind==nexus::network::browser::Kind::Folder?view::MenuIcon::Folder:kind==nexus::network::browser::Kind::Action?view::MenuIcon::HomeInstall:view::MenuIcon::MoreCartridge);nvgRestore(vg);
 }
 }
-Browser::Browser(std::shared_ptr<nexus::network::browser::Model> state):MenuBase("Network browser",MenuFlag_None),model(std::move(state)){
+Browser::Browser(std::shared_ptr<nexus::network::browser::Model> state):MenuBase("Network browser"_nx,MenuFlag_None),model(std::move(state)){
     SetupActions();
     SetAction(Button::UP,Action{[this]{model->Move(false);}});
     SetAction(Button::DOWN,Action{[this]{model->Move(true);}});
@@ -28,17 +29,17 @@ Browser::Browser(std::shared_ptr<nexus::network::browser::Model> state):MenuBase
     SetAction(Button::RIGHT,Action{[this]{model->Move(true,nexus::network::browser::PageSize);}});
 }
 void Browser::SetupActions(){
-    SetAction(Button::A,Action{model->rows.empty()?"Select":model->rows[model->selected].kind==nexus::network::browser::Kind::Folder?"Open folder":"Select",[this]{model->Activate();}});
-    SetAction(Button::B,Action{model->back?"Parent folder":"Back",[this]{auto back=model->back;if(back)back();else SetPop();}});
+    SetAction(Button::A,Action{model->rows.empty()?"Select"_nx:model->rows[model->selected].kind==nexus::network::browser::Kind::Folder?"Open folder"_nx:"Select"_nx,[this]{model->Activate();}});
+    SetAction(Button::B,Action{model->back?"Parent folder"_nx:"Back"_nx,[this]{auto back=model->back;if(back)back();else SetPop();}});
     if(model->install_selected){
         if(model->selected<model->rows.size()&&!model->rows[model->selected].selection_path.empty())
-            SetAction(Button::Y,Action{model->IsMarked(model->rows[model->selected])?"Unmark":model->marked.size()>=nexus::network::browser::MaxSelection?"64 file limit":"Mark file",[this]{model->Toggle();}});
+            SetAction(Button::Y,Action{model->IsMarked(model->rows[model->selected])?"Unmark"_nx:model->marked.size()>=nexus::network::browser::MaxSelection?"64 file limit"_nx:"Mark file"_nx,[this]{model->Toggle();}});
         else RemoveAction(Button::Y);
-        SetAction(Button::X,Action{"Install selected",[this]{model->InstallSelected();}});
-        SetAction(Button::R,Action{"Refresh",[this]{auto refresh=model->refresh;if(refresh)refresh();}});
+        SetAction(Button::X,Action{"Install selected"_nx,[this]{model->InstallSelected();}});
+        SetAction(Button::R,Action{"Refresh"_nx,[this]{auto refresh=model->refresh;if(refresh)refresh();}});
     }else{
         RemoveAction(Button::Y);RemoveAction(Button::R);
-        SetAction(Button::X,Action{"Refresh",[this]{auto refresh=model->refresh;if(refresh)refresh();}});
+        SetAction(Button::X,Action{"Refresh"_nx,[this]{auto refresh=model->refresh;if(refresh)refresh();}});
     }
     last_selected=model->selected;last_revision=model->revision;
 }
@@ -61,7 +62,7 @@ void Browser::Draw(NVGcontext* vg,Theme* theme){
     const auto white=nvgRGB(255,255,255);
     violet::Card(vg,{42,106,1196,533},false);
     title_text.Draw(vg,HasFocus(),54,113,model->install_selected?950:1172,26,NVG_ALIGN_LEFT|NVG_ALIGN_TOP,white,model->title);
-    if(model->install_selected){const auto count=std::to_string(model->marked.size())+" selected";gfx::drawText(vg,1206,116,21,white,count.c_str(),NVG_ALIGN_RIGHT|NVG_ALIGN_TOP);}
+    if(model->install_selected){const auto count=std::to_string(model->marked.size())+" selected"_nx;gfx::drawText(vg,1206,116,21,white,count.c_str(),NVG_ALIGN_RIGHT|NVG_ALIGN_TOP);}
     path_text.Draw(vg,HasFocus(),54,146,1172,17,NVG_ALIGN_LEFT|NVG_ALIGN_TOP,white,model->location);
     const auto start=model->PageStart();
     for(size_t i=start;i<std::min(model->rows.size(),start+nexus::network::browser::PageSize);++i){

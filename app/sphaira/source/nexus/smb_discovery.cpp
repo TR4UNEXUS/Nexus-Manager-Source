@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/smb_discovery.hpp"
 #include "nexus/smb_discovery_core.hpp"
@@ -42,10 +43,10 @@ Result Check(ui::ProgressBox* p){R_TRY(p->ShouldExitResult());R_UNLESS(nexus::li
 }
 Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& result,std::string& detail,const std::string& protocol){
     R_UNLESS(protocol.empty()||protocol=="SMB"||protocol=="NFS",nexus::Invalid);
-    result.clear();detail="Network discovery did not finish. No shares or files were opened.";
+    result.clear();detail="Network discovery did not finish. No shares or files were opened."_nx;
     R_TRY(Check(progress));u32 address{},mask{};R_TRY(Network(address,mask));core::Range range;
     if(!core::Plan(ntohl(address),ntohl(mask),range)){
-        detail="Automatic discovery needs a private IPv4 local network. Enter the server address manually for this connection.";return nexus::Unavailable;
+        detail="Automatic discovery needs a private IPv4 local network. Enter the server address manually for this connection."_nx;return nexus::Unavailable;
     }
     std::array<u8,16> guid{};std::array<u8,32> salt{};randomGet(guid.data(),guid.size());randomGet(salt.data(),salt.size());
     guid[6]=(guid[6]&15)|0x40;guid[8]=(guid[8]&63)|0x80;
@@ -53,7 +54,7 @@ Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& 
     const size_t per_host=protocol.empty()?2:1,initial_total=range.hosts.size()*per_host;size_t total=initial_total;
     std::array<Peer,core::MaxPeers> peers;std::vector<Probe> retries,confirmed;std::array<Statistics,2> statistics{};
     const auto start=Clock::now();auto network_check=start;size_t finished{},socket_errors{},opened{};bool stopped=false,retry_limit=false;
-    progress->SetProgressNote("Scanning the full connected subnet for servers. B stops and shows servers found so far.");
+    progress->SetProgressNote("Scanning the full connected subnet for servers. B stops and shows servers found so far."_nx);
     const auto failure=[&](Result rc){result.clear();return rc;};
     const auto remember=[&](Probe probe){
         if(std::find(retries.begin(),retries.end(),probe)!=retries.end())return;
@@ -66,7 +67,7 @@ Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& 
         std::erase_if(retries,[&](const auto& probe){return std::find(confirmed.begin(),confirmed.end(),probe)!=confirmed.end();});
         std::sort(retries.begin(),retries.end());total+=retries.size();
         if(retries.empty())break;
-        progress->SetProgressNote("Rechecking services on reachable servers. B stops and keeps servers already found.");
+        progress->SetProgressNote("Rechecking services on reachable servers. B stops and keeps servers already found."_nx);
     }
     size_t next{};const auto batch_total=pass?retries.size():initial_total;
     const auto connect_wait=pass?RetryConnectWait:ConnectWait,reply_wait=pass?RetryReplyWait:ReplyWait;
@@ -77,7 +78,7 @@ Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& 
         const auto now=Clock::now();if(result.size()>=1024){stopped=true;break;}
         if(now>=network_check){
             u32 current{},current_mask{};const auto rc=Network(current,current_mask);
-            if(R_FAILED(rc)||current!=address||current_mask!=mask){detail="The network connection changed during discovery. Connect to the intended LAN and scan again.";return failure(R_FAILED(rc)?rc:nexus::Unavailable);}
+            if(R_FAILED(rc)||current!=address||current_mask!=mask){detail="The network connection changed during discovery. Connect to the intended LAN and scan again."_nx;return failure(R_FAILED(rc)?rc:nexus::Unavailable);}
             network_check=now+std::chrono::seconds(1);
         }
         for(auto& peer:peers){
@@ -103,7 +104,7 @@ Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& 
         std::array<pollfd,core::MaxPeers> fds{};
         for(size_t i=0;i<peers.size();++i){fds[i].fd=peers[i].fd;fds[i].events=peers[i].stage==Stage::Read?POLLIN:POLLOUT;}
         const auto polled=poll(fds.data(),fds.size(),50);
-        if(polled<0){if(errno==EINTR)continue;detail="The network service could not complete discovery. Close other network tools and try again.";return failure(MAKERESULT(Module_Libnx,LibnxError_IoError));}
+        if(polled<0){if(errno==EINTR)continue;detail="The network service could not complete discovery. Close other network tools and try again."_nx;return failure(MAKERESULT(Module_Libnx,LibnxError_IoError));}
         for(size_t i=0;i<peers.size();++i){auto& peer=peers[i];const auto events=fds[i].revents;if(peer.fd<0||!events)continue;
             const auto drop=[&]{peer.Close();++finished;};
             if(events&POLLNVAL){drop();continue;}
@@ -140,11 +141,11 @@ Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& 
                 else if(response==core::Reply::Invalid){++statistics[peer.nfs].invalid;drop();}
             }
         }
-        progress->SetOverallTransfer(finished,total,std::string(pass?"Rechecking servers - ":"Scanning network - ")+std::to_string(result.size())+" services found");
+        progress->SetOverallTransfer(finished,total,std::string(pass?"Rechecking servers - "_nx:"Scanning network - "_nx)+std::to_string(result.size())+" services found"_nx);
     }
     }
     for(auto& peer:peers)peer.Close();
-    if(!opened){detail="No network probe could be opened. Close other network tools and try again.";return MAKERESULT(Module_Libnx,LibnxError_IoError);}
+    if(!opened){detail="No network probe could be opened. Close other network tools and try again."_nx;return MAKERESULT(Module_Libnx,LibnxError_IoError);}
     if(!stopped){const auto final_check=Check(progress);if(R_FAILED(final_check))return failure(final_check);}
     const auto prefix=32-std::countr_zero(range.mask);
     // Counts only: never log addresses, credentials or server reply contents.
@@ -158,12 +159,12 @@ Result DiscoverNetworkServers(ui::ProgressBox* progress,std::vector<SmbServer>& 
         nexus::Log(i?"discovery-nfs-retried":"discovery-smb-retried",0,stats.retried);
     }
     nexus::Log("discovery-socket-errors",0,socket_errors);
-    detail=std::to_string(statistics[0].found)+" SMB and "+std::to_string(statistics[1].found)+" NFS service(s) found. Checked "+std::to_string(finished)+" of "+std::to_string(total)+" service probes on "+Address(range.network)+"/"+std::to_string(prefix)+".\n\n";
-    if(stopped)detail+="Scan stopped early; these are the servers found so far. Scan again to check the remaining addresses.\n\n";
-    if(socket_errors)detail+="Some probes could not be opened. Retry after closing other network tools.\n\n";
-    if(retry_limit)detail+="The reachable-server recheck limit was reached. A manual connection can check a missing server.\n\n";
-    if(statistics[0].retried||statistics[1].retried)detail+="Reachable servers were rechecked with a longer wait for missing services.\n\n";
-    detail+="The full connected IPv4 subnet is scanned. Other VLANs, sleeping or firewalled servers and nonstandard ports may need manual entry. Choose a server and shared folder to browse.";
+    detail=std::to_string(statistics[0].found)+" SMB and "_nx+std::to_string(statistics[1].found)+" NFS service(s) found. Checked "_nx+std::to_string(finished)+" of "_nx+std::to_string(total)+" service probes on "_nx+Address(range.network)+"/"+std::to_string(prefix)+".\n\n";
+    if(stopped)detail+="Scan stopped early; these are the servers found so far. Scan again to check the remaining addresses.\n\n"_nx;
+    if(socket_errors)detail+="Some probes could not be opened. Retry after closing other network tools.\n\n"_nx;
+    if(retry_limit)detail+="The reachable-server recheck limit was reached. A manual connection can check a missing server.\n\n"_nx;
+    if(statistics[0].retried||statistics[1].retried)detail+="Reachable servers were rechecked with a longer wait for missing services.\n\n"_nx;
+    detail+="The full connected IPv4 subnet is scanned. Other VLANs, sleeping or firewalled servers and nonstandard ports may need manual entry. Choose a server and shared folder to browse."_nx;
     return 0;
 }
 Result DiscoverSmbServers(ui::ProgressBox* p,std::vector<SmbServer>& servers,std::string& detail){return DiscoverNetworkServers(p,servers,detail,"SMB");}

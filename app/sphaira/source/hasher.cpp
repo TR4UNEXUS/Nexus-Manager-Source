@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "hasher.hpp"
 #include "app.hpp"
 #include "threaded_file_transfer.hpp"
@@ -70,7 +71,7 @@ struct HashNull final : HashSource {
 
     void Get(std::string& out) override {
         char str[64];
-        std::snprintf(str, sizeof(str), "%zu bytes", m_in_size);
+        std::snprintf(str, sizeof(str), "%zu bytes"_nx, m_in_size);
         out = str;
     }
 

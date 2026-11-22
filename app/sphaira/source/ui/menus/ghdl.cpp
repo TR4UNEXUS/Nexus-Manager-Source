@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/menus/ghdl.hpp"
 #include "ui/menus/homebrew.hpp"
 
@@ -453,7 +454,7 @@ void LoadDirectLinksFile(std::vector<Entry>& entries) {
             continue;
         }
 
-        entry.owner = "Direct";
+        entry.owner = "Direct"_nx;
         entry.repo = entry.name;
         entry.json_path = DIRECT_LINKS_PATH;
         entry.saved_direct_link = true;
@@ -616,7 +617,7 @@ auto ParseSwitchPortsCatalog(std::string_view markdown, std::vector<SwitchPortCa
             }
         } else if (current && trimmed.starts_with("|") && trimmed.find('|', 1) != std::string::npos) {
             const auto cells = SplitMarkdownRow(trimmed);
-            const bool emulators = !strcasecmp(current->name.c_str(), "Emulators");
+            const bool emulators = !strcasecmp(current->name.c_str(), "Emulators"_nx);
             const auto title_index = emulators ? 1U : 0U;
             const auto version_index = emulators ? 2U : 1U;
             if (cells.size() > version_index) {
@@ -776,7 +777,7 @@ auto DownloadApp(ProgressBox* pbox, const GhApiAsset& gh_asset, const AssetEntry
 
     // 2. download the asset
     if (!pbox->ShouldExit()) {
-        pbox->NewTransfer(i18n::Reorder("Downloading ", gh_asset.name));
+        pbox->NewTransfer(i18n::Reorder("Downloading "_nx, gh_asset.name));
         log_write("starting download: %s\n", gh_asset.browser_download_url.c_str());
 
         const auto result = curl::Api().ToFile(
@@ -987,7 +988,7 @@ auto InstallSwitchPort(ProgressBox* pbox, const SwitchPortEntry& port, const GhA
     ON_SCOPE_EXIT(fs.DeleteFile(temp_file));
 
     R_UNLESS(!asset.browser_download_url.empty(), Result_GhdlEmptyAsset);
-    pbox->NewTransfer(i18n::Reorder("Downloading ", asset.name));
+    pbox->NewTransfer(i18n::Reorder("Downloading "_nx, asset.name));
     const auto result = curl::Api().ToFile(
         curl::Url{asset.browser_download_url},
         curl::Path{temp_file},
@@ -1057,7 +1058,7 @@ void StartSwitchPortInstall(const SwitchPortEntry& port, const GhApiAsset& asset
         destination = "/switch/" + SanitizeFolder(stem);
     }
 
-    const auto prompt = i18n::Reorder("Install ", port.name) + "\n\n" +
+    const auto prompt = i18n::Reorder("Install "_nx, port.name) + "\n\n" +
         "Destination: "_i18n + destination + "\n\n" +
         "Only the homebrew port is downloaded. Original game data may still be required."_i18n;
     App::Push<OptionBox>(prompt, "Back"_i18n, "Install"_i18n, 1, [port, asset](auto op_index) {
@@ -1070,7 +1071,7 @@ void StartSwitchPortInstall(const SwitchPortEntry& port, const GhApiAsset& asset
             homebrew::SignalChange();
             App::PushErrorBox(rc, "Failed to download app!"_i18n);
             if (R_SUCCEEDED(rc)) {
-                App::Notify(i18n::Reorder("Downloaded ", port.name));
+                App::Notify(i18n::Reorder("Downloaded "_nx, port.name));
             }
         });
     });
@@ -1193,7 +1194,7 @@ void ShowSwitchPortsCatalog(const std::shared_ptr<std::vector<SwitchPortCategory
 
 void OpenSwitchPortsCatalog() {
     auto catalog = std::make_shared<std::vector<SwitchPortCategory>>();
-    App::Push<ProgressBox>(0, "Downloading "_i18n, "Switch Ports", [catalog](auto pbox) -> Result {
+    App::Push<ProgressBox>(0, "Downloading "_i18n, "Switch Ports"_nx, [catalog](auto pbox) -> Result {
         return DownloadSwitchPortsCatalog(pbox, *catalog);
     }, [catalog](Result rc) {
         App::PushErrorBox(rc, "Failed to download Switch Ports catalog"_i18n);
@@ -1230,7 +1231,7 @@ void DownloadDirectEntry(const Entry& entry, const std::function<void()>& on_suc
             }
 
             homebrew::SignalChange();
-            App::Notify(i18n::Reorder("Downloaded ", entry.name));
+            App::Notify(i18n::Reorder("Downloaded "_nx, entry.name));
 
             if (!entry.post_install_message.empty()) {
                 App::Push<OptionBox>(entry.post_install_message, "OK"_i18n, [on_success](auto) {
@@ -1334,7 +1335,7 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
         nvgSave(vg);
         nvgIntersectScissor(vg, x + text_xoffset, y, w-(x+text_xoffset+50), h);
             if (e.name.empty()) {
-                gfx::drawTextArgs(vg, x + text_xoffset, y + (h / 2.f), 20.f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, theme->GetColour(text_id), "%s By %s", e.repo.c_str(), e.owner.c_str());
+                gfx::drawTextArgs(vg, x + text_xoffset, y + (h / 2.f), 20.f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, theme->GetColour(text_id), "%s By %s"_nx, e.repo.c_str(), e.owner.c_str());
             } else {
                 gfx::drawText(vg, x + text_xoffset, y + (h / 2.f), 20.f, theme->GetColour(text_id), e.name.c_str(), NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             }
@@ -1444,7 +1445,7 @@ void Menu::LoadEntriesFromPath(const fs::FsPath& path) {
             if (!IsSafeInstallPath(entry.path)) {
                 continue;
             }
-            entry.owner = "Direct";
+            entry.owner = "Direct"_nx;
             entry.repo = entry.name;
         } else if (entry.owner.empty() || entry.repo.empty()) {
             continue;
@@ -1503,7 +1504,7 @@ void Menu::PromptDirectLink() {
     entry.name = GetDirectLinkName(url);
     entry.direct_url = std::move(url);
     entry.path = "/";
-    entry.owner = "Direct";
+    entry.owner = "Direct"_nx;
     entry.repo = entry.name;
 
     DownloadDirectEntry(entry, [this, entry]() {
@@ -1625,7 +1626,7 @@ void Menu::RemoveSelectedDirectLink() {
             }
 
             SetIndex(m_entries.empty() ? 0 : std::min<s64>(m_index, m_entries.size() - 1));
-            App::Notify(i18n::Reorder("Removed ", name));
+            App::Notify(i18n::Reorder("Removed "_nx, name));
         }
     );
 }
@@ -1661,7 +1662,7 @@ void Menu::RemoveSelectedRepository() {
             }
 
             SetIndex(m_entries.empty() ? 0 : std::min<s64>(m_index, m_entries.size() - 1));
-            App::Notify(i18n::Reorder("Removed ", repo));
+            App::Notify(i18n::Reorder("Removed "_nx, repo));
         }
     );
 }
@@ -1781,7 +1782,7 @@ void DownloadEntries(const Entry& entry) {
                         App::PushErrorBox(rc, "Failed to download app!"_i18n);
 
                         if (R_SUCCEEDED(rc)) {
-                            App::Notify(i18n::Reorder("Downloaded ", entry.repo));
+                            App::Notify(i18n::Reorder("Downloaded "_nx, entry.repo));
                             auto post_install_message = entry.post_install_message;
                             if (asset_config && !asset_config->post_install_message.empty()) {
                                 post_install_message = asset_config->post_install_message;

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_ticket_store.hpp"
 #include "nexus/nx_Client.hpp"

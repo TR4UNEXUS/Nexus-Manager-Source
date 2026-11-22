@@ -1,8 +1,12 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/update.hpp"
 #include "nexus/update_transaction.hpp"
 #include "nexus/nx_Client.hpp"
 #include "nexus/network_socket_config.hpp"
+#include "nexus/repair_catalog.hpp"
+#include "nexus/lifecycle.hpp"
+#include "nexus/report_config.hpp"
 #include "yati/yati.hpp"
 #include "ui/progress_box.hpp"
 #include "utils/thread.hpp"
@@ -99,16 +103,16 @@ Result Fetch(ProgressBox* p,std::string url,size_t limit,std::vector<char>& byte
         curl_easy_setopt(handle,CURLOPT_XFERINFODATA,&request);
         curl_easy_setopt(handle,CURLOPT_NOPROGRESS,0L);
         const auto rc=curl_easy_perform(handle);
-        if(rc!=CURLE_OK){detail=std::string("HTTPS request failed: ")+curl_easy_strerror(rc)+". Check Wi-Fi and the console clock.";return Unavailable;}
+        if(rc!=CURLE_OK){detail=std::string("HTTPS request failed: "_nx)+curl_easy_strerror(rc)+". Check Wi-Fi and the console clock."_nx;return Unavailable;}
         long code{};curl_easy_getinfo(handle,CURLINFO_RESPONSE_CODE,&code);
         if(code==200){R_UNLESS(!request.Stopped(),Unavailable);bytes=std::move(body.bytes);R_SUCCEED();}
         if(code==301 || code==302 || code==307 || code==308){
             char* next{};curl_easy_getinfo(handle,CURLINFO_REDIRECT_URL,&next);
             if(next && AllowedRedirect(next)){url=next;continue;}
         }
-        detail="GitHub returned HTTP "+std::to_string(code)+". Try again later.";return Unavailable;
+        detail="GitHub returned HTTP "_nx+std::to_string(code)+". Try again later."_nx;return Unavailable;
     }
-    detail="Too many GitHub redirects.";return Invalid;
+    detail="Too many GitHub redirects."_nx;return Invalid;
 }
 std::string Hex(const unsigned char* bytes,size_t size){
     constexpr char digits[]="0123456789abcdef";std::string text;
@@ -193,24 +197,55 @@ void StopStartupCheck(){
     startup_check.cancel.store(true,std::memory_order_relaxed);
     JoinStartupWorker();
 }
+Result FetchRepairCatalog(ProgressBox* p,std::vector<u8>& output,std::string& detail){
+    Network network;R_TRY(network.Open());std::vector<char> bytes;
+    const std::string_view server=reports::CatalogEndpoint;
+    auto rc=Unavailable;
+    if(server.starts_with("https://")&&server.size()<512&&server.find_first_of("@?#\r\n")==server.npos)
+        rc=Fetch(p,reports::CatalogEndpoint,catalog::MaxBytes,bytes,detail,nullptr,15000,5000);
+    if(R_FAILED(rc)){if(p)R_TRY(p->ShouldExitResult());R_TRY(Fetch(p,catalog::Url,catalog::MaxBytes,bytes,detail,nullptr,30000,10000));}
+    output.assign(bytes.begin(),bytes.end());return 0;
+}
+Result SendDiagnosticReport(const std::string& payload,std::string& receipt,const std::atomic_bool& cancel){
+    receipt.clear();const std::string_view endpoint=reports::Endpoint;
+    R_UNLESS(endpoint.starts_with("https://")&&endpoint.size()<512&&endpoint.find_first_of("@?#\r\n")==endpoint.npos&&payload.size()<=128*1024,Invalid);
+    Network network;R_TRY(network.Open());R_TRY(romfsInit());ON_SCOPE_EXIT(romfsExit());
+    Request request{nullptr,&cancel,Clock::now()+std::chrono::seconds(20)};Body body{{},4096,&request};
+    auto* handle=curl_easy_init();R_UNLESS(handle,Unavailable);ON_SCOPE_EXIT(curl_easy_cleanup(handle));
+    auto* headers=curl_slist_append(nullptr,"Content-Type: application/json");R_UNLESS(headers,Unavailable);ON_SCOPE_EXIT(curl_slist_free_all(headers));
+    const std::string agent=std::string("Nexus-Manager/")+Version;
+    curl_easy_setopt(handle,CURLOPT_URL,reports::Endpoint);curl_easy_setopt(handle,CURLOPT_USERAGENT,agent.c_str());
+    curl_easy_setopt(handle,CURLOPT_HTTPHEADER,headers);curl_easy_setopt(handle,CURLOPT_POST,1L);
+    curl_easy_setopt(handle,CURLOPT_POSTFIELDS,payload.data());curl_easy_setopt(handle,CURLOPT_POSTFIELDSIZE_LARGE,curl_off_t(payload.size()));
+    curl_easy_setopt(handle,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(handle,CURLOPT_SSL_VERIFYHOST,2L);
+    curl_easy_setopt(handle,CURLOPT_CAINFO,"romfs:/certs/cacert.pem");curl_easy_setopt(handle,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
+    curl_easy_setopt(handle,CURLOPT_FOLLOWLOCATION,0L);curl_easy_setopt(handle,CURLOPT_CONNECTTIMEOUT_MS,5000L);
+    curl_easy_setopt(handle,CURLOPT_TIMEOUT_MS,20000L);curl_easy_setopt(handle,CURLOPT_NOSIGNAL,1L);
+    curl_easy_setopt(handle,CURLOPT_WRITEFUNCTION,Write);curl_easy_setopt(handle,CURLOPT_WRITEDATA,&body);
+    curl_easy_setopt(handle,CURLOPT_XFERINFOFUNCTION,+[](void* ptr,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return static_cast<Request*>(ptr)->Stopped()||!lifecycle::CanPoll();});
+    curl_easy_setopt(handle,CURLOPT_XFERINFODATA,&request);curl_easy_setopt(handle,CURLOPT_NOPROGRESS,0L);
+    R_UNLESS(!request.Stopped()&&curl_easy_perform(handle)==CURLE_OK,Unavailable);
+    long code{};curl_easy_getinfo(handle,CURLINFO_RESPONSE_CODE,&code);R_UNLESS(code==200||code==201,Unavailable);
+    receipt.assign(body.bytes.begin(),body.bytes.end());return 0;
+}
 Result Check(ProgressBox* p,Release& release,std::string& detail){
-    detail="Connect the Switch to the internet, then try again.";
+    detail="Connect the Switch to the internet, then try again."_nx;
     Network network;R_TRY(network.Open());
     std::vector<char> bytes;R_TRY(Fetch(p,ReleaseApi,2*1024*1024,bytes,detail));
     if(!SelectRelease({bytes.data(),bytes.size()},release,envIsNso()?Artifact::Nsp:Artifact::Nro)){
-        detail="No verified Nexus Manager update is published for this edition yet.";return Unavailable;
+        detail="No verified Nexus Manager update is published for this edition yet."_nx;return Unavailable;
     }
     R_SUCCEED();
 }
 Result Install(ProgressBox* p,const Release& release,std::string& detail){
     const bool standalone=envIsNso();
-    detail="Update refused: incorrect app, release or launch mode. Use Nexus Manager in full-memory mode.";
+    detail="Update refused: incorrect app, release or launch mode. Use Nexus Manager in full-memory mode."_nx;
     R_UNLESS(!sphaira::App::IsApplet() && ValidRelease(release) &&
         release.kind==(standalone?Artifact::Nsp:Artifact::Nro) && VersionCode(release.version)>VersionCode(Version),Invalid);
     if(!standalone)R_UNLESS(!strcasecmp(sphaira::App::GetExePath(),"/switch/nexusmanager/NexusManager.nro"),Invalid);
     NcmStorageId install_storage=NcmStorageId_None;
     if(standalone){
-        detail="Could not identify this installed Manager app. The existing app was kept.";
+        detail="Could not identify this installed Manager app. The existing app was kept."_nx;
         u64 program_id{};NcmStorageId update_storage=NcmStorageId_None;
         R_UNLESS(appletGetAppletType()==AppletType_Application,Invalid);
         R_TRY(svcGetInfo(&program_id,InfoType_ProgramId,CUR_PROCESS_HANDLE,0));
@@ -227,21 +262,21 @@ Result Install(ProgressBox* p,const Release& release,std::string& detail){
     } store;
     constexpr const char* nro="sdmc:/switch/nexusmanager/NexusManager.nro";
     if(!standalone)R_UNLESS(store.Regular(nro),Invalid);
-    detail="Connect the Switch to the internet, then try again. The installed app was kept.";
+    detail="Connect the Switch to the internet, then try again. The installed app was kept."_nx;
     std::vector<char> bytes;
     {Network network;R_TRY(network.Open());R_TRY(Fetch(p,release.url,release.size,bytes,detail));}
     unsigned char digest[32];sha256CalculateHash(digest,bytes.data(),bytes.size());
-    detail="Downloaded update failed validation. The installed app was kept.";
+    detail="Downloaded update failed validation. The installed app was kept."_nx;
     R_UNLESS(bytes.size()==release.size && Hex(digest,32)==release.sha256 &&
         (standalone?ValidNsp({bytes.data(),bytes.size()}):ValidNro({bytes.data(),bytes.size()},release.version)),Invalid);
     const auto token=std::to_string(armGetSystemTick());
     const char* folder="sdmc:/switch/nexusmanager/updates";
-    detail="Could not create the Manager update folder on SD. The installed app was kept.";
+    detail="Could not create the Manager update folder on SD. The installed app was kept."_nx;
     if(mkdir(folder,0777)!=0){struct stat st{};R_UNLESS(errno==EEXIST && stat(folder,&st)==0 && S_ISDIR(st.st_mode),Unavailable);}
     const auto temp=std::string(folder)+"/download-"+token+".part";
     const auto backup=std::string(folder)+"/NexusManager-"+Version+"-"+token+".nro.bak";
     const auto current=standalone?std::string(folder)+"/NexusManager-"+release.version+"-"+token+".nsp":std::string(nro);
-    detail="Could not stage the update on SD. Current app was kept.";
+    detail="Could not stage the update on SD. Current app was kept."_nx;
     FILE* f=fopen(temp.c_str(),"wbx");R_UNLESS(f,Unavailable);
     bool partial=true;ON_SCOPE_EXIT(if(partial)remove(temp.c_str()));
     const auto written=fwrite(bytes.data(),1,bytes.size(),f);
@@ -257,10 +292,10 @@ Result Install(ProgressBox* p,const Release& release,std::string& detail){
     R_TRY(p->ShouldExitResult());
     const auto result=PublishVerified(store,temp.c_str(),current.c_str(),backup.c_str(),!standalone);
     if(result!=Publish::Ok){
-        detail=result==Publish::Restored?"Update stopped; the original app was restored.":
+        detail=result==Publish::Restored?"Update stopped; the original app was restored."_nx:
             result==Publish::RestoreFailed || result==Publish::CommitFailed?
-                "SD could not confirm the update. Do not retry or remove files. Reconnect SD to a PC and inspect switch/nexusmanager/updates; any .nro.bak is the original app.":
-                "Could not publish the update safely. The installed app was not replaced.";
+                "SD could not confirm the update. Do not retry or remove files. Reconnect SD to a PC and inspect switch/nexusmanager/updates; any .nro.bak is the original app."_nx:
+                "Could not publish the update safely. The installed app was not replaced."_nx;
         return Unavailable;
     }
     partial=false;
@@ -268,13 +303,13 @@ Result Install(ProgressBox* p,const Release& release,std::string& detail){
     if(standalone){
         // Install only this verified Manager package into its current native
         // storage. Never inherit the user's game-install destination or skips.
-        p->NewTransfer("Installing Nexus Manager");
-        detail="The update was downloaded, but installation could not start. Your existing Manager app was kept.";
+        p->NewTransfer("Installing Nexus Manager"_nx);
+        detail="The update was downloaded, but installation could not start. Your existing Manager app was kept."_nx;
         fs::FsNativeSd sd;
         R_TRY(sd.GetFsOpenResult());
         R_TRY(sphaira::yati::InstallManagerUpdateFromLocalNsp(p,&sd,current.substr(5),release.version,release.sha256,release.size,install_storage,detail));
     }
-    detail="Update installed. Restarting Nexus Manager.";
+    detail="Update installed. Restarting Nexus Manager."_nx;
     R_SUCCEED();
 }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Portable production engine. Platform IO never chooses a fallback volume.
 #pragma once
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -90,13 +91,13 @@ inline bool ValidDestination(bool source_usb,bool destination_usb,const Snapshot
 }
 template<class IO> auto HashFile(IO& io,bool usb,const std::string& path,std::uint64_t size,Digest& out,std::span<std::uint8_t> buffer){
     using R=typename IO::Result;if(buffer.empty())return R{IO::Invalid};typename IO::Hash hash;
-    io.Progress("Checking",path,0,size);
+    io.Progress("Checking"_nx,path,0,size);
     Entry e;bool exists{};if(auto rc=io.Stat(usb,path,e,exists))return rc;
     if(!exists||e.directory||e.size!=size)return R{IO::Invalid};
     for(std::uint64_t off=0;off<size;){if(auto rc=io.Check())return rc;
         const auto n=std::min<std::uint64_t>(buffer.size(),size-off);std::uint64_t got{};
         if(auto rc=io.Read(usb,path,off,buffer.data(),n,got))return rc;
-        if(got!=n)return R{IO::Invalid};hash.Update(buffer.data(),n);off+=n;io.Progress("Checking",path,off,size);}
+        if(got!=n)return R{IO::Invalid};hash.Update(buffer.data(),n);off+=n;io.Progress("Checking"_nx,path,off,size);}
     io.EndRead();if(auto rc=io.Stat(usb,path,e,exists))return rc;
     if(!exists||e.directory||e.size!=size)return R{IO::Invalid};out=hash.Final();return R{};
 }
@@ -115,7 +116,7 @@ template<class IO> auto Inventory(IO& io,bool usb,const std::string& root,Snapsh
     if(auto rc=CheckSpelling(io,usb,root))return rc;
     std::vector<std::pair<std::string,unsigned>> pending{{"",0}};std::set<std::string> seen;
     for(std::size_t at=0;at<pending.size();++at){if(auto rc=io.Check())return rc;const auto [relative,depth]=pending[at];const auto full=root+relative;
-        io.Progress("Reading folders",full,0,0);
+        io.Progress("Reading folders"_nx,full,0,0);
         if(depth>MaxDepth||!SnapshotPath(out,full)||!seen.insert(Fold(full)).second)return R{IO::Invalid};
         Entry e;bool exists{};if(auto rc=io.Stat(usb,full,e,exists))return rc;
         if(!exists||e.size>MaxBytes-out.bytes)return R{IO::Invalid};e.path=relative;if(e.directory)e.size=0;out.bytes+=e.size;out.entries.push_back(e);
@@ -159,16 +160,16 @@ template<class IO> auto RemoveReviewed(IO& io,bool usb,const Snapshot& s,Report&
     }return io.Flush(usb);
 }
 template<class IO> auto Transfer(IO& io,bool source_usb,bool destination_usb,const Snapshot& s,const std::string& final,bool move,Report& report){
-    using R=typename IO::Result;report={};report.detail="Checking the reviewed source and destination";
+    using R=typename IO::Result;report={};report.detail="Checking the reviewed source and destination"_nx;
     if(!ValidDestination(source_usb,destination_usb,s,final))return R{IO::Invalid};
     if(auto rc=CheckSpelling(io,destination_usb,Parent(final)))return rc;
     if(auto rc=io.Check())return rc;Entry exists_entry;bool exists{};
-    if(auto rc=io.Stat(destination_usb,final,exists_entry,exists))return rc;if(exists){report.detail="The destination name already exists. Nothing was replaced.";return R{IO::Conflict};}
+    if(auto rc=io.Stat(destination_usb,final,exists_entry,exists))return rc;if(exists){report.detail="The destination name already exists. Nothing was replaced."_nx;return R{IO::Conflict};}
     Snapshot current;if(auto rc=Inventory(io,source_usb,s.root,current))return rc;if(!SameInventory(s,current))return R{IO::Invalid};
     if(auto rc=io.Preflight(s.bytes))return rc;
     std::vector<std::uint8_t> buffer(io.BufferSize());if(buffer.empty())return R{IO::Invalid};
     if constexpr(requires {io.BeginWork(s.bytes);})io.BeginWork(s.bytes*(move?4:2));
-    report.detail="Copying into a new temporary item";
+    report.detail="Copying into a new temporary item"_nx;
     if(auto rc=io.NewStage(s.entries[0].directory,s.entries[0].size,report.staged_path))return rc;
     if(!StagePath(report.staged_path)||Parent(report.staged_path)!=Parent(final))return R{IO::Invalid};
     for(const auto& e:s.entries){const auto path=report.staged_path+e.path;if(!Canonical(path))return R{IO::Invalid};
@@ -177,39 +178,39 @@ template<class IO> auto Transfer(IO& io,bool source_usb,bool destination_usb,con
         if(!e.path.empty())if(auto rc=io.Create(destination_usb,path,e.size))return rc;typename IO::Hash hash;
         for(std::uint64_t off=0;off<e.size;){if(auto rc=io.Check())return rc;const auto n=std::min<std::uint64_t>(buffer.size(),e.size-off);std::uint64_t got{};
             if(auto rc=io.Read(source_usb,s.root+e.path,off,buffer.data(),n,got))return rc;if(got!=n)return R{IO::Invalid};hash.Update(buffer.data(),n);
-            if(auto rc=io.Write(destination_usb,path,off,buffer.data(),n))return rc;off+=n;io.Progress("Copying",s.root+e.path,off,e.size);}
+            if(auto rc=io.Write(destination_usb,path,off,buffer.data(),n))return rc;off+=n;io.Progress("Copying"_nx,s.root+e.path,off,e.size);}
         io.EndRead();if(hash.Final()!=e.hash)return R{IO::Invalid};if(auto rc=io.Flush(destination_usb))return rc;++report.copied;
     }
-    report.detail="Verifying the temporary copy";
+    report.detail="Verifying the temporary copy"_nx;
     for(const auto& e:s.entries)if(!e.directory){Digest digest;if(auto rc=HashFile(io,destination_usb,report.staged_path+e.path,e.size,digest,buffer))return rc;if(digest!=e.hash)return R{IO::Invalid};}
     Snapshot staged=s;staged.root=report.staged_path;staged.staging=true;
     if(auto rc=Inventory(io,destination_usb,staged.root,current,true))return rc;if(!SameInventory(staged,current))return R{IO::Invalid};
     // Recheck the source tree before publishing. A rename is exclusive and
     // publishes the whole folder in one operation; no merging or overwrite.
     if(auto rc=Inventory(io,source_usb,s.root,current))return rc;if(!SameInventory(s,current))return R{IO::Invalid};
-    report.detail="Publishing the verified copy";
+    report.detail="Publishing the verified copy"_nx;
     if(auto rc=io.Publish(report.staged_path,final,s.entries[0].directory))return rc;report.published=true;report.staged_path.clear();
     if(auto rc=io.Flush(destination_usb))return rc;
-    if(move){report.detail="Checking both folders before removing the source";
+    if(move){report.detail="Checking both folders before removing the source"_nx;
         if(auto rc=Inventory(io,source_usb,s.root,current))return rc;if(!SameInventory(s,current))return R{IO::Invalid};
         Snapshot destination=s;destination.root=final;if(auto rc=Inventory(io,destination_usb,final,current))return rc;if(!SameInventory(destination,current))return R{IO::Invalid};
-        report.detail="Removing verified source items";
+        report.detail="Removing verified source items"_nx;
         if(auto rc=RemoveReviewed(io,source_usb,s,report,buffer,true,destination_usb,final))return rc;
     }
-    report.complete=true;report.detail=move?"Move complete. The destination was verified before the source was removed.":"Copy complete. The source was kept.";return R{};
+    report.complete=true;report.detail=move?"Move complete. The destination was verified before the source was removed."_nx:"Copy complete. The source was kept."_nx;return R{};
 }
 template<class IO> auto Delete(IO& io,bool usb,const Snapshot& s,Report& report){
-    using R=typename IO::Result;report={};report.detail="Checking the exact items reviewed for deletion";
+    using R=typename IO::Result;report={};report.detail="Checking the exact items reviewed for deletion"_nx;
     if(!ValidSnapshot(s))return R{IO::Invalid};std::vector<std::uint8_t> buffer(io.BufferSize());
     if(s.staging){Snapshot current;if(auto rc=Inventory(io,usb,s.root,current,true))return rc;if(!SameInventory(s,current))return R{IO::Invalid};}
-    else if(auto rc=Recheck(io,usb,s,buffer))return rc;report.detail="Deleting reviewed items";
+    else if(auto rc=Recheck(io,usb,s,buffer))return rc;report.detail="Deleting reviewed items"_nx;
     if(auto rc=RemoveReviewed(io,usb,s,report,buffer))return rc;
-    report.complete=true;report.detail="Deletion complete.";return R{};
+    report.complete=true;report.detail="Deletion complete."_nx;return R{};
 }
 // Explicit deletion needs names, types and sizes, not payload hashes. Keep
 // non-recursive, exact-path removal and refuse newly added directory contents.
 template<class IO> auto QuickDelete(IO& io,bool usb,const Snapshot& s,Report& report){
-    using R=typename IO::Result;report={};report.detail="Deleting selected items";
+    using R=typename IO::Result;report={};report.detail="Deleting selected items"_nx;
     if(!ValidSnapshot(s))return R{IO::Invalid};
     if(auto rc=CheckSpelling(io,usb,s.root))return rc;
     for(auto it=s.entries.rbegin();it!=s.entries.rend();++it){
@@ -222,6 +223,6 @@ template<class IO> auto QuickDelete(IO& io,bool usb,const Snapshot& s,Report& re
         ++report.removed;io.Progress("Removing",path,report.removed,s.entries.size());
     }
     if(auto rc=io.Flush(usb))return rc;
-    report.complete=true;report.detail="Deletion complete.";return R{};
+    report.complete=true;report.detail="Deletion complete."_nx;return R{};
 }
 }

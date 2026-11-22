@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/dump.hpp"
 #include "nexus/dump_stream.hpp"
@@ -142,7 +143,7 @@ Result OriginalLicense(const FsRightsId& id,std::vector<u8>& ticket,std::vector<
 
 Result BuildPackage(ui::ProgressBox* p,u64 app,nexus::Target source,NcmContentStorage& cs,u64 gen,Package& out,DumpReport& report) {
     const auto cancelled=[&]()->Result{return p?p->ShouldExitResult():(nexus::lifecycle::CanPoll()?0:Invalid);};
-    report.stage="Checking installed content";
+    report.stage="Checking installed content"_nx;
     std::vector<DumpRecord> records;R_TRY(CollectDumpRecords(app,source,gen,records));
     keys::Keys keys{};R_TRY(keys::parse_keys(keys,true));
     std::map<std::string,NcmContentInfo> unique;
@@ -166,7 +167,7 @@ Result BuildPackage(ui::ProgressBox* p,u64 app,nexus::Target source,NcmContentSt
     for(bool meta:{false,true})for(const auto& [id,info]:unique){
         if((info.content_type==NcmContentType_Meta)!=meta)continue;
         R_TRY(cancelled());report.content=id;
-        report.stage="Reading game headers";if(p)p->NewTransfer(report.stage).UpdateTransfer(out.parts.size(),unique.size());
+        report.stage="Reading game headers"_nx;if(p)p->NewTransfer(report.stage).UpdateTransfer(out.parts.size(),unique.size());
         u64 size{};ncmContentInfoSizeToU64(&info,&size);
         R_UNLESS(size>=sizeof(nca::Header),Invalid);
         nca::Header header{};
@@ -177,7 +178,7 @@ Result BuildPackage(ui::ProgressBox* p,u64 app,nexus::Target source,NcmContentSt
         if(es::IsRightsIdValid(header.rights_id))licenses.insert(HexId(&header.rights_id));
     }
     if(!licenses.empty()){
-        report.stage="Reading original licenses";
+        report.stage="Reading original licenses"_nx;
         R_TRY(es::Initialize());ON_SCOPE_EXIT(es::Exit());
         u64 license_bytes{};
         for(const auto& id:licenses){
@@ -186,7 +187,7 @@ Result BuildPackage(ui::ProgressBox* p,u64 app,nexus::Target source,NcmContentSt
             std::vector<u8> ticket,cert;
             const auto rc=OriginalLicense(rights,ticket,cert);
             if(R_FAILED(rc)){
-                report.detail="The original common license could not be read. Personalized or missing licenses are not supported by this dump version. No license was changed or created.";
+                report.detail="The original common license could not be read. Personalized or missing licenses are not supported by this dump version. No license was changed or created."_nx;
                 return rc;
             }
             license_bytes+=ticket.size()+cert.size();
@@ -255,12 +256,12 @@ Result VirtualNsp::Read(u64 offset,void* data,u64 size,u64& actual){
 }
 std::string DumpReport::Message() const {
     const auto location=std::string(nexus::TargetName(destination))+":";
-    if(completed)return "NSP backup saved and verified.\n\n"+location+path+"\n\nInstalled files and saves are unchanged. Keep this backup private."+
-        (destination==nexus::Target::Sd?" On FAT32, a large NSP may appear as a split-file folder on a PC.":"")+
-        (partial_kept?"\nTemporary cleanup could not be confirmed: "+location+path+".partial":"");
-    return "Backup stopped while: "+stage+".\n\n"+(detail.empty()?"Check the connection and free space on "+location+", then try again.":detail)+
-        "\n\nInstalled files and saves are unchanged."+(renamed?std::string{}:" No completed NSP was published.")+
-        (partial_kept?"\nTemporary data may remain at "+location+path+".partial":"")+
+    if(completed)return "NSP backup saved and verified.\n\n"_nx+location+path+"\n\nInstalled files and saves are unchanged. Keep this backup private."_nx+
+        (destination==nexus::Target::Sd?" On FAT32, a large NSP may appear as a split-file folder on a PC."_nx:"")+
+        (partial_kept?"\nTemporary cleanup could not be confirmed: "_nx+location+path+".partial":"");
+    return "Backup stopped while: "_nx+stage+".\n\n"+(detail.empty()?"Check the connection and free space on "_nx+location+", then try again."_nx:detail)+
+        "\n\nInstalled files and saves are unchanged."_nx+(renamed?std::string{}:" No completed NSP was published."_nx)+
+        (partial_kept?"\nTemporary data may remain at "_nx+location+path+".partial":"")+
         "\nDetails: switch/nexusmanager/nexus.log";
 }
 
@@ -277,12 +278,12 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
         R_TRY(OpenStorage(source,cs,&gen));ON_SCOPE_EXIT(ncmContentStorageClose(&cs));
         Package pkg;R_TRY(BuildPackage(p,app,source,cs,gen,pkg,report));
         report.size=pkg.size;
-        report.stage="Checking destination space";
+        report.stage="Checking destination space"_nx;
         BackupOutput output;R_TRY(output.Open(destination));
         if(source==nexus::Target::Usb && destination==nexus::Target::Usb)R_UNLESS(gen==output.generation,nexus::Unavailable);
         u64 free{};R_TRY(output.Space(free));
         if(free<Reserve || pkg.size>free-Reserve){
-            report.detail="There is not enough free space on "+std::string(nexus::TargetName(destination))+" for this backup (plus 32 MB safety space).";return Invalid;
+            report.detail="There is not enough free space on "_nx+std::string(nexus::TargetName(destination))+" for this backup (plus 32 MB safety space)."_nx;return Invalid;
         }
         R_TRY(p->ShouldExitResult());
         R_TRY(output.Directories());
@@ -293,10 +294,10 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
         // Only exact NotFound allows creation. Never delete a preexisting dump.
         for(const auto& path:{final_path,partial}){
             bool directory{};const auto rc=output.Stat(path,directory);
-            if(R_SUCCEEDED(rc)){report.detail="A backup with this name already exists. Try again to create a new name.";return Invalid;}
+            if(R_SUCCEEDED(rc)){report.detail="A backup with this name already exists. Try again to create a new name."_nx;return Invalid;}
             R_UNLESS(rc==FsError_PathNotFound,rc);
         }
-        report.stage="Creating the backup";
+        report.stage="Creating the backup"_nx;
         bool owned=false;
         ON_SCOPE_EXIT({
             if(owned){
@@ -307,7 +308,7 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
         });
         const auto create=output.Create(partial,pkg.size,owned);
         if(R_FAILED(create)){
-            if(destination==nexus::Target::Usb)report.detail="USB could not create the backup. Check free space and write access. Backups of 4 GiB or more need exFAT; FAT32 USB is limited to smaller files.";
+            if(destination==nexus::Target::Usb)report.detail="USB could not create the backup. Check free space and write access. Backups of 4 GiB or more need exFAT; FAT32 USB is limited to smaller files."_nx;
             return create;
         }
         std::vector<u8> buffer(1024*1024);
@@ -318,13 +319,13 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
             ui::ProgressScope copying(p,0,5000);
             R_TRY(output.OpenWrite());ON_SCOPE_EXIT(output.Close());
             Sha256Context hash;sha256ContextCreate(&hash);
-            report.stage="Writing the NSP backup";p->NewTransfer(report.stage);report.offset=0;
+            report.stage="Writing the NSP backup"_nx;p->NewTransfer(report.stage);report.offset=0;
             R_TRY(nexus::dump::Stream(pkg.size,buffer,cancel,
                 [&](u64 off,void* dst,u64 size,u64& actual){return ReadPackage(pkg,source,cs,gen,off,dst,size,actual);},
                 [&](u64 off,const void* src,u64 size)->Result{
                     R_TRY(output.Write(off,src,size));sha256ContextUpdate(&hash,src,size);return 0;
                 },progress,Invalid));
-            report.stage="Flushing the backup";R_TRY(output.FlushWrite());
+            report.stage="Flushing the backup"_nx;R_TRY(output.FlushWrite());
             sha256ContextGetHash(&hash,written_hash.data());
         }
         R_TRY(output.Commit());
@@ -332,24 +333,24 @@ Result DumpGameToNsp(ui::ProgressBox* p,u64 app,const std::string& name,nexus::T
             ui::ProgressScope verifying(p,5000,9800);
             R_TRY(output.OpenRead(pkg.size));ON_SCOPE_EXIT(output.Close());
             Sha256Context hash;sha256ContextCreate(&hash);
-            report.stage="Verifying the saved backup";p->NewTransfer(report.stage);report.offset=0;
+            report.stage="Verifying the saved backup"_nx;p->NewTransfer(report.stage);report.offset=0;
             R_TRY(nexus::dump::Stream(pkg.size,buffer,cancel,
                 [&](u64 off,void* dst,u64 count,u64& actual){return output.Read(off,dst,count,actual);},
                 [&](u64,const void* src,u64 count)->Result{sha256ContextUpdate(&hash,src,count);return 0;},progress,Invalid));
             sha256ContextGetHash(&hash,read_hash.data());
         }
-        if(written_hash!=read_hash){report.detail="The saved backup did not match the bytes read from the game. Check the destination drive before retrying.";return Invalid;}
+        if(written_hash!=read_hash){report.detail="The saved backup did not match the bytes read from the game. Check the destination drive before retrying."_nx;return Invalid;}
         R_TRY(cancel());
         if(source==nexus::Target::Usb){nexus::Client c;R_TRY(c.Check(gen));}
         ui::ProgressScope finishing(p,9800,10000);
-        report.stage="Finishing the backup";p->NewTransfer(report.stage);
+        report.stage="Finishing the backup"_nx;p->NewTransfer(report.stage);
         R_TRY(output.Rename(final_path));report.renamed=true;
         if(destination==nexus::Target::Sd)owned=false;
         const auto commit=output.Commit();
         if(R_FAILED(commit)){
             // Rename succeeded but persistence is uncertain. Do not claim a
             // completed backup or delete a final file after an ambiguous commit.
-            report.detail="The backup was verified, but finalization failed. A file may exist at "+std::string(nexus::TargetName(destination))+":"+report.path+". Do not rely on it until checked.";
+            report.detail="The backup was verified, but finalization failed. A file may exist at "_nx+std::string(nexus::TargetName(destination))+":"+report.path+". Do not rely on it until checked."_nx;
             return commit;
         }
         report.completed=true;R_SUCCEED();

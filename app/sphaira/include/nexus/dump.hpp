@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include "nexus/nx_Client.hpp"
 #include "ui/progress_box.hpp"
 #include <string>
@@ -12,7 +13,7 @@ struct DumpRecord {
     std::vector<NcmContentInfo> contents;
 };
 struct DumpReport {
-    std::string stage{"Preparing the backup"}, path, content, detail;
+    std::string stage{"Preparing the backup"_nx}, path, content, detail;
     u64 offset{}, size{};
     nexus::Target destination{nexus::Target::Sd};
     bool completed{}, partial_kept{}, renamed{};

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/port_manager.hpp"
 #include "nexus/port_catalog.hpp"
@@ -33,7 +34,7 @@ class Disk {
     FsDeviceOperator device{};bool opened{},provider{};std::array<u8,16> cid{};
 public:
     bool is_usb;u64 gen;bool quiet_hash{};
-    void TaskProgress(u64 done,u64 total){if(progress)progress->SetDetailedProgress(nexus::WorkPart(done,total,99),"Applying port mod",{},"Overall task progress");}
+    void TaskProgress(u64 done,u64 total){if(progress)progress->SetDetailedProgress(nexus::WorkPart(done,total,99),"Applying port mod"_nx,{},"Overall task progress"_nx);}
     Disk(ui::ProgressBox* p,bool u,u64 g):progress(p),is_usb(u),gen(g){}
     ~Disk(){if(opened)fsDeviceOperatorClose(&device);}
     Result Open(){
@@ -117,12 +118,12 @@ class ModIO {
 public:
     Result rc{};ModIO(Disk& d,const core::ModPlan& p,std::string& text):disk(d),plan(p),detail(text){disk.quiet_hash=true;}
     ~ModIO(){disk.quiet_hash=false;}
-    bool Take(Result r){if(R_FAILED(r)){rc=r;detail="The mod operation stopped. Use Disable / recover to restore its original files. Changed or missing files are kept for review.";return false;}return true;}
+    bool Take(Result r){if(R_FAILED(r)){rc=r;detail="The mod operation stopped. Use Disable / recover to restore its original files. Changed or missing files are kept for review."_nx;return false;}return true;}
     bool Fail(const std::string& s){rc=Bad;detail=s;return false;}
     void Progress(size_t done,size_t total){disk.TaskProgress(done,total);}
     bool Check(){return Take(disk.Check());}
-    bool Exists(const std::string& path,bool& out){Info i;if(!Take(disk.Stat(path,i)))return false;if(i.exists&&i.directory)return Fail("A folder conflicts with a mod file. Nothing was replaced.");out=i.exists;return true;}
-    bool Match(const std::string& path,bool wanted,u64 size,const std::string& hash){Info i;if(!Take(disk.Stat(path,i)))return false;if(i.exists!=wanted||i.directory||(wanted&&i.size!=size))return Fail("A mod or original file changed: "+path);if(!wanted)return true;std::string got;return Take(disk.Hash(path,size,got))&&(got==hash||Fail("File content changed: "+path));}
+    bool Exists(const std::string& path,bool& out){Info i;if(!Take(disk.Stat(path,i)))return false;if(i.exists&&i.directory)return Fail("A folder conflicts with a mod file. Nothing was replaced."_nx);out=i.exists;return true;}
+    bool Match(const std::string& path,bool wanted,u64 size,const std::string& hash){Info i;if(!Take(disk.Stat(path,i)))return false;if(i.exists!=wanted||i.directory||(wanted&&i.size!=size))return Fail("A mod or original file changed: "_nx+path);if(!wanted)return true;std::string got;return Take(disk.Hash(path,size,got))&&(got==hash||Fail("File content changed: "_nx+path));}
     bool Parents(const std::string& path){return Take(disk.Parents(path));}
     bool Rename(const std::string& a,const std::string& b){return Take(disk.Rename(a,b));}
     bool Flush(){return Take(disk.Flush());}
@@ -140,11 +141,11 @@ Result Scan(ui::ProgressBox* p,bool usb,std::vector<Port>& ports,std::string& de
             if(!nexus_vsd::Nro(item.path)||!paths.insert(item.path).second)continue;
             Port port;port.usb=usb;port.generation=disk.gen;port.nro=item.path;port.name=f::Leaf(f::Parent(item.path));if(f::Parent(item.path)=="/switch")port.name=item.name;
             if(const auto* known=nexus::port::FindKnownPort(0,item.path)){port.name=known->name;port.args=known->args;port.address=known->address;if(titles.contains(known->title))port.application=known->title;}
-            if(usb){const auto identity="USB Loader VSD v1:"+port.nro;u8 h[32];sha256CalculateHash(h,identity.data(),identity.size());u64 id{};memcpy(&id,h,8);id=0x0500000000000000ULL|(id&0x00FFFFFFFFFFF000ULL);if(titles.contains(id))port.application=id;}
+            if(usb){const auto identity="USB Loader VSD v1:"_nx+port.nro;u8 h[32];sha256CalculateHash(h,identity.data(),identity.size());u64 id{};memcpy(&id,h,8);id=0x0500000000000000ULL|(id&0x00FFFFFFFFFFF000ULL);if(titles.contains(id))port.application=id;}
             Defaults(port);R_TRY(LoadProfile(p,port,true));ports.push_back(std::move(port));
         }
     }
-    Info gta;R_TRY(disk.Stat("/atmosphere/contents/0100b00b51230000",gta));if(gta.exists&&gta.directory){Port port{"Grand Theft Auto V",{},usb,disk.gen,0x0100b00b51230000ULL,{}};Defaults(port);R_TRY(LoadProfile(p,port,true));ports.push_back(std::move(port));}
+    Info gta;R_TRY(disk.Stat("/atmosphere/contents/0100b00b51230000",gta));if(gta.exists&&gta.directory){Port port{"Grand Theft Auto V"_nx,{},usb,disk.gen,0x0100b00b51230000ULL,{}};Defaults(port);R_TRY(LoadProfile(p,port,true));ports.push_back(std::move(port));}
     Disk profiles(p,false,0);R_TRY(profiles.Open());Info profiles_info;R_TRY(profiles.Stat("/switch/nexusmanager/ports",profiles_info));
     if(profiles_info.exists){std::vector<nexusapp::Item> saved;R_TRY(profiles.List("/switch/nexusmanager/ports",saved));R_UNLESS(saved.size()<=1024,Bad);
         for(const auto& file:saved){if(file.directory||!file.name.ends_with(".json"))continue;std::string text;R_TRY(profiles.Text(file.path,text));auto doc=Parse(text);R_UNLESS(doc,Bad);auto* o=yyjson_doc_get_root(doc.get());if(yyjson_get_bool(yyjson_obj_get(o,"usb"))!=usb)continue;
@@ -153,13 +154,13 @@ Result Scan(ui::ProgressBox* p,bool usb,std::vector<Port>& ports,std::string& de
             if(std::any_of(ports.begin(),ports.end(),[&](const auto& existing){return Key(existing)==Key(extra);}))continue;
             if(!extra.nro.empty()){Info present;R_TRY(disk.Stat(extra.nro,present));if(!present.exists||present.directory)continue;}
             Defaults(extra);R_TRY(LoadProfile(p,extra,true));ports.push_back(std::move(extra));}}
-    std::sort(ports.begin(),ports.end(),[](const auto& a,const auto& b){return f::Fold(a.name)<f::Fold(b.name);});detail="Choose a port to manage its folders, mods and HOME shortcut. Add NRO finds apps outside the usual folders.";return 0;
+    std::sort(ports.begin(),ports.end(),[](const auto& a,const auto& b){return f::Fold(a.name)<f::Fold(b.name);});detail="Choose a port to manage its folders, mods and HOME shortcut. Add NRO finds apps outside the usual folders."_nx;return 0;
 }
 Result FromGame(ui::ProgressBox* p,const nexusapp::Game& game,Port& port,std::string& detail){
     port={};port.name=game.name;port.application=game.id;port.usb=game.usb_forwarder;port.args=game.forwarder_args;port.address=game.forwarder_address_space;
     port.nro=game.usb_forwarder?game.forwarder_usb_path:game.forwarder_path;if(port.nro.starts_with("sdmc:"))port.nro.erase(0,5);
     R_UNLESS((!port.nro.empty()&&core::Root(port.nro))||port.application==0x0100b00b51230000ULL,Bad);
-    Disk disk(p,port.usb,0);R_TRY(disk.Open());port.generation=disk.gen;Defaults(port);R_TRY(LoadProfile(p,port));detail="Manage this port's files separately from its HOME shortcut.";return 0;
+    Disk disk(p,port.usb,0);R_TRY(disk.Open());port.generation=disk.gen;Defaults(port);R_TRY(LoadProfile(p,port));detail="Manage this port's files separately from its HOME shortcut."_nx;return 0;
 }
 Result RememberPort(ui::ProgressBox* p,const Port& port){R_UNLESS(core::Root(port.nro)&&nexus_vsd::Nro(port.nro)&&!port.roots.empty(),Bad);return SaveProfile(p,port);}
 Result ReadIcon(const Port& port,std::vector<u8>& icon){
@@ -172,12 +173,12 @@ Result ReadIcon(const Port& port,std::vector<u8>& icon){
     icon.resize(assets.icon_size);R_TRY(read(assets.icon,icon.data(),icon.size()));return disk.Check();
 }
 Result PrepareTransfer(ui::ProgressBox* p,const Port& port,bool move,nexus::port::Plan& plan,std::string& detail){
-    plan={};detail="Checking the selected port files";R_TRY(GuardPort(port));
+    plan={};detail="Checking the selected port files"_nx;R_TRY(GuardPort(port));
     R_UNLESS(!port.nro.empty(),Bad);Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());
-    std::vector<Mod> mods;R_TRY(ListMods(p,port,mods,detail));for(const auto& mod:mods)if(mod.active||mod.pending){detail="Disable / recover port mods before transferring its files.";return Bad;}
+    std::vector<Mod> mods;R_TRY(ListMods(p,port,mods,detail));for(const auto& mod:mods)if(mod.active||mod.pending){detail="Disable / recover port mods before transferring its files."_nx;return Bad;}
     std::string destination_root;
     if(!port.usb&&!port.nro.starts_with("/switch/")){const auto id=port.nro+"\n"+port.args;destination_root="/homebrew/port-"+Digest(id.data(),id.size()).substr(0,16)+"/sdmc";}
-    detail="Choose a port NRO and its own data folders. Atmosphere content needs its existing firmware mapping.";
+    detail="Choose a port NRO and its own data folders. Atmosphere content needs its existing firmware mapping."_nx;
     R_UNLESS(nexus::port::FilesPlan(port.usb,port.nro,port.roots,destination_root,plan),Bad);
     plan.name=port.name;plan.args=port.args;plan.address_space=port.address;plan.move=move;
     nexus::Client client;nexus::Status state{};R_TRY(client.Query(state));R_UNLESS(state.Available(),nexus::Unavailable);
@@ -201,41 +202,41 @@ Result Transfer(ui::ProgressBox* p,const Port& port,const nexus::port::Plan& pla
     destination=port;destination.usb=!port.usb;destination.application=0;destination.nro=plan.Destination(plan.nro);destination.roots.clear();
     for(const auto& root:plan.roots)destination.roots.push_back(plan.Destination(root));
     Disk target(p,destination.usb,0);R_TRY(target.Open());destination.generation=target.gen;
-    const auto saved=SaveProfile(p,destination);if(R_FAILED(saved))report.detail="Files transferred, but the destination's saved folder links could not be updated. Use Add NRO to open it again.";
+    const auto saved=SaveProfile(p,destination);if(R_FAILED(saved))report.detail="Files transferred, but the destination's saved folder links could not be updated. Use Add NRO to open it again."_nx;
     return saved;
 }
 Result PrepareShortcutRemoval(ui::ProgressBox* p,const Port& port,nexus::Target target,nexusapp::GameRemovalPlan& plan){
-    plan={};plan.detail="Could not confirm that this HOME application launches the selected port. Its files were kept.";
+    plan={};plan.detail="Could not confirm that this HOME application launches the selected port. Its files were kept."_nx;
     R_UNLESS(port.application,Bad);nexusapp::Game current;R_TRY(nexusapp::InspectGame(p,port.application,current));
     if(port.application!=0x0100b00b51230000ULL){auto path=current.usb_forwarder?current.forwarder_usb_path:current.forwarder_path;if(path.starts_with("sdmc:"))path.erase(0,5);
         R_UNLESS(!path.empty()&&path==port.nro&&current.usb_forwarder==port.usb&&current.forwarder_args==port.args,Bad);}
     nexusapp::CleanupItem item;item.kind=nexusapp::CleanupKind::Game;item.target=target;item.application=port.application;item.name=port.name;return nexusapp::PreviewGameRemoval(p,item,plan);
 }
 Result LinkFolder(ui::ProgressBox* p,Port& port,const nexusfiles::Selection& selected,std::string& detail){
-    detail="Choose a specific port folder on the same storage. System folders and shared storage roots cannot be linked.";
+    detail="Choose a specific port folder on the same storage. System folders and shared storage roots cannot be linked."_nx;
     R_UNLESS(selected.usb==port.usb&&selected.generation==port.generation&&selected.item.directory&&core::Root(selected.item.path)&&port.roots.size()<16,Bad);
     for(const auto& root:port.roots)R_UNLESS(!core::Overlap(root,selected.item.path),Bad);
     Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());Info i;R_TRY(disk.Stat(selected.item.path,i));R_UNLESS(i.exists&&i.directory,Bad);
-    auto next=port;next.roots.push_back(selected.item.path);R_TRY(SaveProfile(p,next));port=std::move(next);detail="Folder linked. It will appear in the deletion review and as a mod destination.";return 0;
+    auto next=port;next.roots.push_back(selected.item.path);R_TRY(SaveProfile(p,next));port=std::move(next);detail="Folder linked. It will appear in the deletion review and as a mod destination."_nx;return 0;
 }
 Result UnlinkFolder(ui::ProgressBox* p,Port& port,const std::string& root,std::string& detail){
-    detail="Keep at least one port folder linked.";R_UNLESS(port.roots.size()>1,Bad);std::vector<Mod> mods;R_TRY(ListMods(p,port,mods,detail));for(const auto& mod:mods)if(mod.root==root){detail="Disable and delete imported mods for this folder before unlinking it. Their original-file backups must remain reachable.";return Bad;}auto next=port;const auto n=std::erase(next.roots,root);R_UNLESS(n==1,Bad);R_TRY(SaveProfile(p,next));port=std::move(next);detail="Folder unlinked. Its files were not changed.";return 0;
+    detail="Keep at least one port folder linked."_nx;R_UNLESS(port.roots.size()>1,Bad);std::vector<Mod> mods;R_TRY(ListMods(p,port,mods,detail));for(const auto& mod:mods)if(mod.root==root){detail="Disable and delete imported mods for this folder before unlinking it. Their original-file backups must remain reachable."_nx;return Bad;}auto next=port;const auto n=std::erase(next.roots,root);R_UNLESS(n==1,Bad);R_TRY(SaveProfile(p,next));port=std::move(next);detail="Folder unlinked. Its files were not changed."_nx;return 0;
 }
 Result PrepareRemoval(ui::ProgressBox* p,const Port& port,Removal& removal,std::string& detail){
-    R_TRY(GuardPort(port));removal={};removal.port=port;detail="Checking this port's folders. Nothing has been deleted.";R_UNLESS(!port.roots.empty(),Bad);
+    R_TRY(GuardPort(port));removal={};removal.port=port;detail="Checking this port's folders. Nothing has been deleted."_nx;R_UNLESS(!port.roots.empty(),Bad);
     Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());std::vector<Mod> mods;R_TRY(ListMods(p,port,mods,detail));
-    for(const auto& mod:mods)if(mod.active||mod.pending){detail="Disable / recover this port's mods before deleting its files. Original-file backups must be restored first.";return Bad;}
+    for(const auto& mod:mods)if(mod.active||mod.pending){detail="Disable / recover this port's mods before deleting its files. Original-file backups must be restored first."_nx;return Bad;}
     std::vector<Port> all;R_TRY(Scan(p,port.usb,all,detail));
     for(const auto& root:port.roots){R_UNLESS(core::Root(root),Bad);
-        for(const auto& other:all)if(Key(other)!=Key(port)){for(const auto& owned:other.roots)if(core::Overlap(root,owned)){detail="This folder is shared with "+other.name+": "+root+". Manage its individual files in File manager instead.";return Bad;}}
-        if(std::any_of(nexus::port::KnownPorts.begin(),nexus::port::KnownPorts.end(),[&](const auto& k){return k.shared&&k.nro==port.nro;})){detail="This port uses a shared runtime. Its whole folder cannot be deleted as one game. Use File manager for the game's own data folder.";return Bad;}
+        for(const auto& other:all)if(Key(other)!=Key(port)){for(const auto& owned:other.roots)if(core::Overlap(root,owned)){detail="This folder is shared with "_nx+other.name+": "+root+". Manage its individual files in File manager instead."_nx;return Bad;}}
+        if(std::any_of(nexus::port::KnownPorts.begin(),nexus::port::KnownPorts.end(),[&](const auto& k){return k.shared&&k.nro==port.nro;})){detail="This port uses a shared runtime. Its whole folder cannot be deleted as one game. Use File manager for the game's own data folder."_nx;return Bad;}
         bool covered=false;for(const auto& other:port.roots)if(root!=other&&f::Within(root,other))covered=true;if(covered)continue;
         Info info;R_TRY(disk.Stat(root,info));if(!info.exists)continue;nexusfiles::Selection selection{port.usb,port.generation,{f::Leaf(root),root,info.size,info.directory}};
         nexusfiles::DeletePlan plan;R_TRY(nexusfiles::PrepareDelete(p,selection,plan,detail));removal.bytes+=plan.snapshot.bytes;removal.folders.push_back(std::move(plan));
     }
-    if(removal.folders.empty()){detail="No linked port files remain on this storage. You can still remove its HOME shortcut separately.";return Bad;}detail=port.name+"\n\nPermanently delete these folders/files?\n";
+    if(removal.folders.empty()){detail="No linked port files remain on this storage. You can still remove its HOME shortcut separately."_nx;return Bad;}detail=port.name+"\n\nPermanently delete these folders/files?\n"_nx;
     for(const auto& plan:removal.folders)detail+=std::string(port.usb?"USB:":"SD:")+plan.source.item.path+"\n";
-    detail+="\n"+utils::formatSizeStorage(removal.bytes)+"\n\nSaves and settings INSIDE these folders will also be deleted. There is no backup or recycle bin. Console saves are kept. The HOME shortcut is removed separately.";return 0;
+    detail+="\n"+utils::formatSizeStorage(removal.bytes)+"\n\nSaves and settings INSIDE these folders will also be deleted. There is no backup or recycle bin. Console saves are kept. The HOME shortcut is removed separately."_nx;return 0;
 }
 Result Remove(ui::ProgressBox* p,const Removal& removal,std::string& detail){
     // The confirmation's worker just prepared ownership and metadata. Delete
@@ -243,8 +244,8 @@ Result Remove(ui::ProgressBox* p,const Removal& removal,std::string& detail){
     R_TRY(GuardPort(removal.port));
     u64 total{},done{};for(const auto& plan:removal.folders)total+=plan.snapshot.entries.size();
     for(const auto& plan:removal.folders){ui::ProgressScope scope(p,nexus::WorkPart(done,total),nexus::WorkPart(done+plan.snapshot.entries.size(),total));
-        nexusfiles::Report report;const auto rc=nexusfiles::Delete(p,plan,report);if(R_FAILED(rc)){detail=report.detail+"\nEarlier folders may already have been removed. Refresh before retrying.";return rc;}done+=plan.snapshot.entries.size();}
-    detail="Port files removed. Console save data was kept. Remove its HOME shortcut separately if no longer needed.";return 0;
+        nexusfiles::Report report;const auto rc=nexusfiles::Delete(p,plan,report);if(R_FAILED(rc)){detail=report.detail+"\nEarlier folders may already have been removed. Refresh before retrying."_nx;return rc;}done+=plan.snapshot.entries.size();}
+    detail="Port files removed. Console save data was kept. Remove its HOME shortcut separately if no longer needed."_nx;return 0;
 }
 Result CreateShortcut(ui::ProgressBox* p,Port& port){
     R_TRY(GuardPort(port));R_UNLESS(core::Root(port.nro)&&nexus_vsd::Nro(port.nro),Bad);Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());Info info;R_TRY(disk.Stat(port.nro,info));R_UNLESS(info.exists&&!info.directory,Bad);
@@ -255,31 +256,31 @@ Result CreateShortcut(ui::ProgressBox* p,Port& port){
         nexusapp::Game game;R_TRY(nexusapp::ReadHomebrew({port.name,port.nro,info.size,false},port.generation,game));
         if(R_SUCCEEDED(nexusapp::ReadHomebrewIcon(game,cfg.icon)))cfg.icon=ImageNormalizeIcon(cfg.icon);
         std::array<u8,128> header{};u64 got{};R_TRY(disk.Read(port.nro,0,header.data(),header.size(),got));R_UNLESS(got==header.size(),Bad);nexus::library::Assets assets{};R_UNLESS(nexus::library::Header(header,info.size,assets),Bad);
-        ui::ProgressScope executable(p,0,3000);Sha256Context hash;sha256ContextCreate(&hash);std::vector<u8> buffer(256*1024);p->NewTransfer("Checking the port executable");
+        ui::ProgressScope executable(p,0,3000);Sha256Context hash;sha256ContextCreate(&hash);std::vector<u8> buffer(256*1024);p->NewTransfer("Checking the port executable"_nx);
         for(u64 off=0;off<assets.code;){const auto n=std::min<u64>(buffer.size(),assets.code-off);R_TRY(disk.Read(port.nro,off,buffer.data(),n,got));R_UNLESS(got==n,Bad);sha256ContextUpdate(&hash,buffer.data(),n);off+=n;p->UpdateTransferBytes(off,assets.code);}cfg.usb_nro_hash.resize(32);sha256ContextGetHash(&hash,cfg.usb_nro_hash.data());
     }else{NroEntry entry{};R_TRY(nro_parse(port.nro.c_str(),entry));cfg.icon=nro_get_icon(port.nro.c_str(),entry.icon_size,entry.icon_offset);if(!cfg.icon.empty())cfg.icon=ImageNormalizeIcon(cfg.icon);}
     if(cfg.icon.empty()){fs::FsStdio rom;R_TRY(rom.read_entire_file("romfs:/usb-loader-icon.jpg",cfg.icon));}
     R_TRY(disk.Check());{ui::ProgressScope install(p,port.usb?3000:0,10000);R_TRY(install_forwarder(p,cfg,NcmStorageId_BuiltInUser));}auto updated=port;
-    const auto identity="Nexus Manager port v1:"+(port.usb?"usb:"+cfg.usb_path:"sd:"+cfg.nro_path)+":"+cfg.args;
+    const auto identity="Nexus Manager port v1:"_nx+(port.usb?"usb:"+cfg.usb_path:"sd:"+cfg.nro_path)+":"+cfg.args;
     u8 hash[32];sha256CalculateHash(hash,identity.data(),identity.size());u64 id{};memcpy(&id,hash,8);updated.application=0x0500000000000000ULL|(id&0x00FFFFFFFFFFF000ULL);R_TRY(SaveProfile(p,updated));port=std::move(updated);return 0;
 }
 Result ListMods(ui::ProgressBox* p,const Port& port,std::vector<Mod>& mods,std::string& detail){mods.clear();Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());Info i;R_TRY(disk.Stat(ModRoot(port),i));if(!i.exists)return 0;R_UNLESS(i.directory,Bad);std::vector<nexusapp::Item> entries;R_TRY(disk.List(ModRoot(port),entries));R_UNLESS(entries.size()<=128,Bad);
     for(const auto& e:entries){if(!e.directory||!core::Hex(e.name,16))continue;Mod mod;mod.path=e.path;Info manifest;R_TRY(disk.Stat(e.path+"/manifest.json",manifest));if(!manifest.exists)continue;
         core::ModPlan plan;R_TRY(LoadMod(disk,port,mod,"manifest.json",plan));mod.name=plan.name;mod.root=plan.root;mod.bytes=plan.bytes;mod.files=plan.files.size();Info active,session;R_TRY(disk.Stat(e.path+"/active",active));R_TRY(disk.Stat(e.path+"/session.json",session));R_UNLESS(!active.exists||session.exists,Bad);mod.active=active.exists;mod.pending=session.exists&&!active.exists;mods.push_back(std::move(mod));}
-    detail="Enable a mod to apply its files. Disable restores the originals. Recover completes restoration after an interrupted change.";return 0;}
+    detail="Enable a mod to apply its files. Disable restores the originals. Recover completes restoration after an interrupted change."_nx;return 0;}
 Result ReviewEnable(ui::ProgressBox* p,const Port& port,const Mod& mod,core::ModPlan& plan,std::string& detail){R_TRY(GuardPort(port));Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());R_TRY(LoadMod(disk,port,mod,"manifest.json",plan));if(port.usb&&f::Fold(plan.root).starts_with("/atmosphere/")){detail="USB Atmosphere mods need the firmware mapping and SD cache managed by More > Game mods. Use that tool for these folders; this switcher supports NRO port folders on SD/USB and Atmosphere port folders on SD.";return Bad;}Info session;R_TRY(disk.Stat(mod.path+"/session.json",session));R_UNLESS(!session.exists,Bad);
-    std::vector<Mod> all;R_TRY(ListMods(p,port,all,detail));for(const auto& other:all)if((other.active||other.pending)&&core::Overlap(other.root,plan.root)){detail="Disable the active mod for this folder first. One mod is active per destination, so originals can be restored reliably.";return Bad;}
+    std::vector<Mod> all;R_TRY(ListMods(p,port,all,detail));for(const auto& other:all)if((other.active||other.pending)&&core::Overlap(other.root,plan.root)){detail="Disable the active mod for this folder first. One mod is active per destination, so originals can be restored reliably."_nx;return Bad;}
     std::vector<nexusapp::Item> groups;R_TRY(disk.List(std::string(core::Store),groups));R_UNLESS(groups.size()<=1024,Bad);
     for(const auto& group:groups){if(!group.directory||!core::Hex(group.name,16))continue;std::vector<nexusapp::Item> packs;R_TRY(disk.List(group.path,packs));R_UNLESS(packs.size()<=128,Bad);
         for(const auto& pack:packs){if(!pack.directory||!core::Hex(pack.name,16)||pack.path==plan.store)continue;Info active;R_TRY(disk.Stat(pack.path+"/session.json",active));if(!active.exists)continue;
             std::string text;R_TRY(disk.Text(pack.path+"/session.json",text));core::ModPlan other;R_UNLESS(Decode(text,other)&&other.store==pack.path,Bad);
-            if(core::Overlap(other.root,plan.root)){detail="Another mod manages files in this destination. Disable / recover it before enabling this one.";return Bad;}}}
+            if(core::Overlap(other.root,plan.root)){detail="Another mod manages files in this destination. Disable / recover it before enabling this one."_nx;return Bad;}}}
     std::vector<nexusapp::Item> checked;R_TRY(disk.List(plan.root,checked));
     size_t replaced{},checked_files{};for(auto& file:plan.files){ui::ProgressScope range(p,nexus::WorkPart(checked_files,plan.files.size()),nexus::WorkPart(checked_files+1,plan.files.size()));++checked_files;Info i;const auto path=f::Child(plan.root,file.relative);R_TRY(disk.Stat(path,i));R_UNLESS(!i.directory,Bad);file.had_original=i.exists;file.original_size=i.size;if(i.exists){R_TRY(disk.Hash(path,i.size,file.original_hash));++replaced;}}
-    detail=plan.name+"\n\nDestination: "+std::string(port.usb?"USB:":"SD:")+plan.root+"\n"+std::to_string(plan.files.size())+" files / "+utils::formatSizeStorage(plan.bytes)+"\n"+std::to_string(replaced)+" existing files will be kept for restoration.\n\nClose the port first. Disable restores the originals. If a mod changes its NRO, recreate the USB shortcut afterwards.";return 0;}
+    detail=plan.name+"\n\nDestination: "_nx+std::string(port.usb?"USB:":"SD:")+plan.root+"\n"+std::to_string(plan.files.size())+" files / "_nx+utils::formatSizeStorage(plan.bytes)+"\n"+std::to_string(replaced)+" existing files will be kept for restoration.\n\nClose the port first. Disable restores the originals. If a mod changes its NRO, recreate the USB shortcut afterwards."_nx;return 0;}
 Result Enable(ui::ProgressBox* p,const Port& port,const core::ModPlan& plan,std::string& detail){R_UNLESS(Allowed(port,plan),Bad);Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());
-    Mod mod;mod.path=plan.store;core::ModPlan current;{ui::ProgressScope review(p,0,2000);R_TRY(ReviewEnable(p,port,mod,current,detail));}R_UNLESS(Encode(current)==Encode(plan),Bad);ui::ProgressScope apply(p,2000,10000);ModIO io(disk,plan,detail);if(!core::Enable(io,plan))return io.rc?io.rc:Bad;detail="Mod enabled. Close and reopen the port to use it. Original files are retained until you disable the mod.";return 0;}
-Result Disable(ui::ProgressBox* p,const Port& port,const Mod& mod,std::string& detail){R_TRY(GuardPort(port));Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());core::ModPlan plan;R_TRY(LoadMod(disk,port,mod,"session.json",plan));ModIO io(disk,plan,detail);if(!core::Disable(io,plan))return io.rc?io.rc:Bad;detail="Mod disabled. Original files restored; the mod is kept for reuse. Empty folders may remain.";return 0;}
+    Mod mod;mod.path=plan.store;core::ModPlan current;{ui::ProgressScope review(p,0,2000);R_TRY(ReviewEnable(p,port,mod,current,detail));}R_UNLESS(Encode(current)==Encode(plan),Bad);ui::ProgressScope apply(p,2000,10000);ModIO io(disk,plan,detail);if(!core::Enable(io,plan))return io.rc?io.rc:Bad;detail="Mod enabled. Close and reopen the port to use it. Original files are retained until you disable the mod."_nx;return 0;}
+Result Disable(ui::ProgressBox* p,const Port& port,const Mod& mod,std::string& detail){R_TRY(GuardPort(port));Disk disk(p,port.usb,port.generation);R_TRY(disk.Open());core::ModPlan plan;R_TRY(LoadMod(disk,port,mod,"session.json",plan));ModIO io(disk,plan,detail);if(!core::Disable(io,plan))return io.rc?io.rc:Bad;detail="Mod disabled. Original files restored; the mod is kept for reuse. Empty folders may remain."_nx;return 0;}
 }
 namespace sphaira::nexusports {
 namespace {
@@ -304,12 +305,12 @@ Result CopyPayload(ui::ProgressBox* p,Disk& source,Disk& dest,const std::string&
 
 }
 Result ImportMod(ui::ProgressBox* p,const Port& port,const std::string& root,const nexusfiles::Selection& selected,Mod& mod,std::string& detail){
-    detail="Choose a mod folder or ZIP containing files relative to its destination. Other game or system folders cannot be imported here.";
+    detail="Choose a mod folder or ZIP containing files relative to its destination. Other game or system folders cannot be imported here."_nx;
     R_UNLESS(core::Root(root)&&std::find(port.roots.begin(),port.roots.end(),root)!=port.roots.end(),Bad);
     if(port.usb&&f::Fold(root).starts_with("/atmosphere/")){detail="For Atmosphere content stored on USB, use More > Game mods so its firmware mapping and SD cache are updated together. Port mod import supports NRO folders on SD/USB and Atmosphere folders on SD.";return Bad;}
     Disk target(p,port.usb,port.generation),source(p,selected.usb,selected.generation);R_TRY(target.Open());R_TRY(source.Open());Info targetinfo,srcinfo;R_TRY(target.Stat(root,targetinfo));R_UNLESS(targetinfo.exists&&targetinfo.directory,Bad);R_TRY(source.Stat(selected.item.path,srcinfo));R_UNLESS(srcinfo.exists&&srcinfo.directory==selected.item.directory&&srcinfo.size==selected.item.size,Bad);
     core::ModPlan plan;plan.root=root;plan.name=selected.item.name;plan.store=ModRoot(port)+"/"+Random();
-    detail="Import stopped. Original port files are unchanged. An incomplete copy may remain at "+std::string(port.usb?"USB:":"SD:")+plan.store+"; it can be reviewed in File manager.";
+    detail="Import stopped. Original port files are unchanged. An incomplete copy may remain at "_nx+std::string(port.usb?"USB:":"SD:")+plan.store+"; it can be reviewed in File manager."_nx;
     const auto add=[&](const std::string& relative,u64 size)->Result{R_UNLESS(core::Relative(relative)&&plan.files.size()<core::MaxModFiles&&size<=core::MaxModBytes-plan.bytes&&core::Root(f::Child(root,relative))&&f::Canonical(plan.store+"/original/"+relative),Bad);
         for(const auto& existing:plan.files)R_UNLESS(!core::Overlap(existing.relative,relative),Bad);plan.files.push_back({relative,{},size,false,{},0});plan.bytes+=size;return 0;};
     if(srcinfo.directory){
@@ -345,6 +346,6 @@ Result ImportMod(ui::ProgressBox* p,const Port& port,const std::string& root,con
             R_UNLESS(unzReadCurrentFile(zip,buffer.data(),1)==0,Bad);const auto crc=unzCloseCurrentFile(zip);open=false;R_UNLESS(crc==UNZ_OK&&!reader.error,Bad);R_TRY(target.Flush());}u8 digest[32];sha256ContextGetHash(&sha,digest);file.hash=nexusapp::HexId(digest);{ui::ProgressScope verify(p,7000,10000);std::string check;R_TRY(target.Hash(destination,file.size,check));R_UNLESS(check==file.hash,Bad);}
         }
     }
-    ui::ProgressScope finish(p,9500,10000);R_UNLESS(core::Valid(plan),Bad);R_TRY(target.NewText(plan.store+"/manifest.json",Encode(plan)));mod={plan.name,plan.store,plan.root,false,false,plan.bytes,plan.files.size()};detail="Mod imported and checked. It is disabled. Choose Enable to review changes before applying it.";return 0;
+    ui::ProgressScope finish(p,9500,10000);R_UNLESS(core::Valid(plan),Bad);R_TRY(target.NewText(plan.store+"/manifest.json",Encode(plan)));mod={plan.name,plan.store,plan.root,false,false,plan.bytes,plan.files.size()};detail="Mod imported and checked. It is disabled. Choose Enable to review changes before applying it."_nx;return 0;
 }
 }

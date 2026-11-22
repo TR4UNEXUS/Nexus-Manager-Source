@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_ticket_prepare.hpp"
 #include "nexus/usb_ticket_store.hpp"
@@ -22,7 +23,7 @@ constexpr Result MissingSd=MAKERESULT(2,1);
 Rights Id(const FsRightsId& rights){Rights out{};memcpy(out.data(),&rights,sizeof(rights));return out;}
 std::string Code(Result rc){char text[24];snprintf(text,sizeof(text),"0x%08X",rc);return text;}
 std::string Identity(const UsbImportTitle& row){char id[24];snprintf(id,sizeof(id),"%016llX",static_cast<unsigned long long>(row.record.key.id));return std::string(id)+" | version "+std::to_string(row.record.key.version);}
-const char* Type(u8 type){switch(type){case NcmContentMetaType_Application:return "Base game";case NcmContentMetaType_Patch:return "Update";case NcmContentMetaType_AddOnContent:return "DLC";case NcmContentMetaType_DataPatch:return "DLC update";default:return "Unidentified content";}}
+const char* Type(u8 type){switch(type){case NcmContentMetaType_Application:return "Base game"_nx;case NcmContentMetaType_Patch:return "Update"_nx;case NcmContentMetaType_AddOnContent:return "DLC";case NcmContentMetaType_DataPatch:return "DLC update"_nx;default:return "Unidentified content"_nx;}}
 struct Hash {
     Sha256Context context{};
     Hash(){sha256ContextCreate(&context);}
@@ -80,13 +81,13 @@ Result InspectTicket(Session& s,const FsRightsId& rights,UsbTicketPrepareCandida
     out={};out.rights=rights;R_TRY(s.Check());UsbTicketPair pair;
     const auto archive=LoadUsbTicketPair(s.generation,rights,pair);
     if(R_SUCCEEDED(archive)){out.status=UsbTicketPrepareStatus::AlreadyPrepared;out.digest=PairDigest(pair);return 0;}
-    if(archive==InvalidUsbTicket){out.reason="The saved ticket is invalid. It was not overwritten. Reinstall from your original backup.";return 0;}
+    if(archive==InvalidUsbTicket){out.reason="The saved ticket is invalid. It was not overwritten. Reinstall from your original backup."_nx;return 0;}
     R_UNLESS(archive==MissingUsbTicket,archive);
     if(!s.common.contains(Id(rights))){out.reason=s.personal.contains(Id(rights))?
-        "This ticket cannot be exported safely by this tool. Reinstall from your original backup on the new SD/system.":
-        "This system has no ticket. Try the original SD card and original emuMMC/sysMMC, or reinstall from your original backup.";return 0;}
+        "This ticket cannot be exported safely by this tool. Reinstall from your original backup on the new SD/system."_nx:
+        "This system has no ticket. Try the original SD card and original emuMMC/sysMMC, or reinstall from your original backup."_nx;return 0;}
     const auto extracted=OriginalCommon(rights,pair);
-    if(R_FAILED(extracted)){out.reason="The original ticket and certificate could not be read ("+Code(extracted)+"). Reinstall from your original backup.";return s.Check();}
+    if(R_FAILED(extracted)){out.reason="The original ticket and certificate could not be read ("_nx+Code(extracted)+"). Reinstall from your original backup."_nx;return s.Check();}
     R_TRY(s.Check());out.status=UsbTicketPrepareStatus::Ready;out.digest=PairDigest(pair);return 0;
 }
 struct Path {char text[FS_MAX_PATH]{};explicit Path(const std::string& s){snprintf(text,sizeof(text),"%s",s.c_str());}};
@@ -98,9 +99,9 @@ Result SaveReport(const UsbTicketPrepareResult& result,std::string& path){
         Path p(dir);FsDirEntryType type{};const auto rc=fsFsGetEntryType(&sd,p.text,&type);
         if(rc==MissingSd){R_TRY(fsFsCreateDirectory(&sd,p.text));}else{R_TRY(rc);R_UNLESS(type==FsDirEntryType_Dir,nexus::Invalid);}
     }
-    std::string text="Prepare USB for another SD card\nResult: "+Code(result.result)+"\n"+result.detail+"\n\n";
+    std::string text="Prepare USB for another SD card\nResult: "_nx+Code(result.result)+"\n"+result.detail+"\n\n";
     for(const auto& entry:result.entries)text+=entry+"\n";
-    text+="\nGame files, saves and system registration were not changed. Existing ticket archives were not overwritten.\n";
+    text+="\nGame files, saves and system registration were not changed. Existing ticket archives were not overwritten.\n"_nx;
     char name[128];snprintf(name,sizeof(name),"/switch/nexusmanager/recovery-reports/prepare-%016llx.txt",static_cast<unsigned long long>(armGetSystemTick()));
     Path temporary(std::string(name)+".tmp"),final(name);R_TRY(fsFsCreateFile(&sd,temporary.text,text.size(),0));
     FsFile file{};R_TRY(fsFsOpenFile(&sd,temporary.text,FsOpenMode_Write,&file));
@@ -112,21 +113,21 @@ Result SaveReport(const UsbTicketPrepareResult& result,std::string& path){
 }
 }
 
-const char* UsbTicketPrepareStatusText(UsbTicketPrepareStatus status){switch(status){case UsbTicketPrepareStatus::Ready:return "Ready to prepare";case UsbTicketPrepareStatus::AlreadyPrepared:return "Already prepared";case UsbTicketPrepareStatus::NeedsBackup:return "Needs original backup";case UsbTicketPrepareStatus::Incomplete:return "Skipped";}return "Skipped";}
+const char* UsbTicketPrepareStatusText(UsbTicketPrepareStatus status){switch(status){case UsbTicketPrepareStatus::Ready:return "Ready to prepare"_nx;case UsbTicketPrepareStatus::AlreadyPrepared:return "Already prepared"_nx;case UsbTicketPrepareStatus::NeedsBackup:return "Needs original backup"_nx;case UsbTicketPrepareStatus::Incomplete:return "Skipped"_nx;}return "Skipped"_nx;}
 std::string UsbTicketPreparePreview(const UsbTicketPreparePlan& plan){
     size_t ready{},already{},backup{},skipped{};
     for(const auto& row:plan.titles)switch(row.status){case UsbTicketPrepareStatus::Ready:++ready;break;case UsbTicketPrepareStatus::AlreadyPrepared:++already;break;case UsbTicketPrepareStatus::NeedsBackup:++backup;break;case UsbTicketPrepareStatus::Incomplete:++skipped;break;}
-    return std::to_string(ready)+" titles ready to prepare; "+std::to_string(already)+" already prepared; "+std::to_string(backup)+" need the original backup; "+std::to_string(skipped)+" skipped.\n\n"+std::to_string(plan.tickets_to_save)+" small ticket/certificate copies will be saved on USB. Game files and saves will not be copied.\n\nUse the drive with another SD card or emuMMC/sysMMC on this same Switch, then choose Use games from this USB.";
+    return std::to_string(ready)+" titles ready to prepare; "_nx+std::to_string(already)+" already prepared; "_nx+std::to_string(backup)+" need the original backup; "_nx+std::to_string(skipped)+" skipped.\n\n"+std::to_string(plan.tickets_to_save)+" small ticket/certificate copies will be saved on USB. Game files and saves will not be copied.\n\nUse the drive with another SD card or emuMMC/sysMMC on this same Switch, then choose Use games from this USB."_nx;
 }
 Result PlanUsbTicketPreparation(ui::ProgressBox* progress,const UsbImportScan& scan,UsbTicketPreparePlan& plan){
     plan={};R_UNLESS(progress&&scan.complete&&scan.generation&&scan.titles.size()<=4096,nexus::Invalid);Session session(progress,scan.generation);R_TRY(session.Open());
-    plan.generation=scan.generation;plan.source_digest=ScanDigest(scan);progress->SetTitle("Prepare USB for another SD card");progress->NewTransfer("Checking existing tickets; no changes");
+    plan.generation=scan.generation;plan.source_digest=ScanDigest(scan);progress->SetTitle("Prepare USB for another SD card"_nx);progress->NewTransfer("Checking existing tickets; no changes"_nx);
     std::map<std::pair<u64,u8>,u32> newest;for(const auto& row:scan.titles)if(row.record.key.id){auto& version=newest[{row.record.key.id,row.record.key.type}];version=std::max(version,row.record.key.version);}
     std::map<Rights,size_t> known;std::set<size_t> selected;
     for(const auto& row:scan.titles){
         R_TRY(session.Check());UsbTicketPrepareTitle title;title.name=row.name+" - "+Type(row.record.key.type);title.identity=Identity(row);
-        if(!row.record.key.id||row.status==UsbImportStatus::Incomplete){title.reason=row.reason.empty()?"The game content could not be checked. Reinstall from your original backup.":row.reason;}
-        else if(row.record.key.version!=newest[{row.record.key.id,row.record.key.type}])title.reason="A newer version is on this drive. Only the newest version is prepared.";
+        if(!row.record.key.id||row.status==UsbImportStatus::Incomplete){title.reason=row.reason.empty()?"The game content could not be checked. Reinstall from your original backup."_nx:row.reason;}
+        else if(row.record.key.version!=newest[{row.record.key.id,row.record.key.type}])title.reason="A newer version is on this drive. Only the newest version is prepared."_nx;
         else{
             title.status=UsbTicketPrepareStatus::AlreadyPrepared;
             for(const auto& rights:row.required_tickets){
@@ -136,8 +137,8 @@ Result PlanUsbTicketPreparation(ui::ProgressBox* progress,const UsbImportScan& s
                 if(ticket.status==UsbTicketPrepareStatus::NeedsBackup){title.status=UsbTicketPrepareStatus::NeedsBackup;if(title.reason.empty())title.reason=ticket.reason;}
                 else if(ticket.status==UsbTicketPrepareStatus::Ready&&title.status!=UsbTicketPrepareStatus::NeedsBackup)title.status=UsbTicketPrepareStatus::Ready;
             }
-            if(title.status==UsbTicketPrepareStatus::Ready){title.reason="The original ticket/certificate can be saved from this system.";for(auto i:title.tickets)if(plan.tickets[i].status==UsbTicketPrepareStatus::Ready)selected.insert(i);}
-            else if(title.status==UsbTicketPrepareStatus::AlreadyPrepared)title.reason=title.tickets.empty()?"No ticket is required by this content.":"All required tickets are already saved on this USB for this Switch.";
+            if(title.status==UsbTicketPrepareStatus::Ready){title.reason="The original ticket/certificate can be saved from this system."_nx;for(auto i:title.tickets)if(plan.tickets[i].status==UsbTicketPrepareStatus::Ready)selected.insert(i);}
+            else if(title.status==UsbTicketPrepareStatus::AlreadyPrepared)title.reason=title.tickets.empty()?"No ticket is required by this content."_nx:"All required tickets are already saved on this USB for this Switch."_nx;
         }
         plan.titles.push_back(std::move(title));progress->UpdateTransfer(plan.titles.size(),scan.titles.size());
     }
@@ -157,22 +158,22 @@ Result PrepareUsbTickets(ui::ProgressBox* progress,const UsbTicketPreparePlan& p
         for(const auto& row:plan.titles)if(row.status==UsbTicketPrepareStatus::Ready||row.status==UsbTicketPrepareStatus::AlreadyPrepared)for(auto i:row.tickets){R_UNLESS(i<plan.tickets.size(),nexus::Invalid);if(plan.tickets[i].status==UsbTicketPrepareStatus::Ready)selected.insert(i);else relied.insert(i);}
         for(auto i:relied){
             R_TRY(session.Check());UsbTicketPair pair;const auto rc=LoadUsbTicketPair(plan.generation,plan.tickets[i].rights,pair);
-            if(R_FAILED(rc)){failures[i]="A previously saved ticket is missing or could not be checked. Scan again; no replacement was written.";return rc;}
+            if(R_FAILED(rc)){failures[i]="A previously saved ticket is missing or could not be checked. Scan again; no replacement was written."_nx;return rc;}
             confirmed_archives.insert(i);
         }
         R_UNLESS(selected.size()==plan.tickets_to_save,nexus::Invalid);
-        progress->SetTitle("Prepare USB for another SD card");progress->NewTransfer("Saving small ticket copies; games stay on USB");
+        progress->SetTitle("Prepare USB for another SD card"_nx);progress->NewTransfer("Saving small ticket copies; games stay on USB"_nx);
         size_t done{};
         for(auto index:selected){
             R_TRY(session.Check());const auto& candidate=plan.tickets[index];UsbTicketPair pair;
             const auto existing=LoadUsbTicketPair(plan.generation,candidate.rights,pair);
             if(R_SUCCEEDED(existing)){saved.insert(index);progress->UpdateTransfer(++done,selected.size());continue;}
-            if(existing==InvalidUsbTicket){failures[index]="The saved ticket changed or is invalid. Nothing was overwritten; scan again.";return existing;}
+            if(existing==InvalidUsbTicket){failures[index]="The saved ticket changed or is invalid. Nothing was overwritten; scan again."_nx;return existing;}
             R_UNLESS(existing==MissingUsbTicket,existing);
             const auto extracted=OriginalCommon(candidate.rights,pair);
-            if(R_FAILED(extracted)||PairDigest(pair)!=candidate.digest){failures[index]="The original ticket changed or could not be read. Nothing was written for it; scan again or use the original backup.";return R_FAILED(extracted)?extracted:nexus::Invalid;}
+            if(R_FAILED(extracted)||PairDigest(pair)!=candidate.digest){failures[index]="The original ticket changed or could not be read. Nothing was written for it; scan again or use the original backup."_nx;return R_FAILED(extracted)?extracted:nexus::Invalid;}
             R_TRY(session.Check());const auto stored=SaveUsbTicketPair(plan.generation,candidate.rights,pair.ticket,pair.certificate);
-            if(R_FAILED(stored)){failures[index]="The ticket copy could not be confirmed ("+Code(stored)+"). Keep the original backup and scan again.";return stored;}
+            if(R_FAILED(stored)){failures[index]="The ticket copy could not be confirmed ("_nx+Code(stored)+"). Keep the original backup and scan again."_nx;return stored;}
             saved.insert(index);++out.saved;progress->UpdateTransfer(++done,selected.size());R_TRY(session.Check());
         }
         return session.Check();
@@ -182,17 +183,17 @@ Result PrepareUsbTickets(ui::ProgressBox* progress,const UsbTicketPreparePlan& p
         const auto label=row.name+" ["+row.identity+"]";
         std::string reason=row.reason;auto status=row.status;
         if(status==UsbTicketPrepareStatus::Ready||status==UsbTicketPrepareStatus::AlreadyPrepared){
-            bool complete=checked_source;reason=checked_source?reason:"The drive could not be rechecked. No preparation was confirmed; scan again.";
-            for(auto i:row.tickets){if(i>=plan.tickets.size()){complete=false;break;}const bool verified=plan.tickets[i].status==UsbTicketPrepareStatus::Ready?saved.contains(i):confirmed_archives.contains(i);if(!verified){complete=false;const auto failure=failures.find(i);reason=failure==failures.end()?"Not finished. Any completed ticket copies were kept; scan again to continue.":failure->second;}}
-            if(complete&&status==UsbTicketPrepareStatus::Ready){++out.prepared;out.entries.push_back("Prepared: "+label+" - Tickets are saved for this Switch. Import will check them in the other SD/system.");continue;}
-            if(complete){++out.already_prepared;out.entries.push_back("Already prepared: "+label+" - "+row.reason);continue;}
+            bool complete=checked_source;reason=checked_source?reason:"The drive could not be rechecked. No preparation was confirmed; scan again."_nx;
+            for(auto i:row.tickets){if(i>=plan.tickets.size()){complete=false;break;}const bool verified=plan.tickets[i].status==UsbTicketPrepareStatus::Ready?saved.contains(i):confirmed_archives.contains(i);if(!verified){complete=false;const auto failure=failures.find(i);reason=failure==failures.end()?"Not finished. Any completed ticket copies were kept; scan again to continue."_nx:failure->second;}}
+            if(complete&&status==UsbTicketPrepareStatus::Ready){++out.prepared;out.entries.push_back("Prepared: "_nx+label+" - Tickets are saved for this Switch. Import will check them in the other SD/system."_nx);continue;}
+            if(complete){++out.already_prepared;out.entries.push_back("Already prepared: "_nx+label+" - "+row.reason);continue;}
             status=UsbTicketPrepareStatus::Incomplete;
         }
         if(status==UsbTicketPrepareStatus::AlreadyPrepared)++out.already_prepared;else if(status==UsbTicketPrepareStatus::NeedsBackup)++out.needs_backup;else ++out.skipped;
         out.entries.push_back(std::string(UsbTicketPrepareStatusText(status))+": "+label+" - "+reason);
     }
-    out.detail=std::string(R_SUCCEEDED(out.result)?"Preparation finished.":"Preparation stopped. Completed ticket copies were kept.")+"\n\nPrepared: "+std::to_string(out.prepared)+"   Already prepared: "+std::to_string(out.already_prepared)+"\nNeeds original backup: "+std::to_string(out.needs_backup)+"   Skipped: "+std::to_string(out.skipped)+"\nNew ticket copies saved: "+std::to_string(out.saved)+"\n\nGame files, saves and system registration were not changed.";
-    const auto report=SaveReport(out,out.report_path);if(R_FAILED(report))out.detail+="\nThe SD report could not be saved. Details are still available here.";
+    out.detail=std::string(R_SUCCEEDED(out.result)?"Preparation finished."_nx:"Preparation stopped. Completed ticket copies were kept."_nx)+"\n\nPrepared: "_nx+std::to_string(out.prepared)+"   Already prepared: "_nx+std::to_string(out.already_prepared)+"\nNeeds original backup: "_nx+std::to_string(out.needs_backup)+"   Skipped: "_nx+std::to_string(out.skipped)+"\nNew ticket copies saved: "_nx+std::to_string(out.saved)+"\n\nGame files, saves and system registration were not changed."_nx;
+    const auto report=SaveReport(out,out.report_path);if(R_FAILED(report))out.detail+="\nThe SD report could not be saved. Details are still available here."_nx;
     return out.result;
 }
 }

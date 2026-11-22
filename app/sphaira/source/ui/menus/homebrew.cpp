@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "app.hpp"
 #include "log.hpp"
 #include "fs.hpp"
@@ -318,13 +319,13 @@ void Menu::SetIndex(s64 index) {
         if (fs::FsNativeSd().FileExists(star_path)) {
             SetAction(Button::R3, Action{"Unstar"_i18n, [this](){
                 fs::FsNativeSd().DeleteFile(GenerateStarPath(GetEntry().path));
-                App::Notify(i18n::Reorder("Unstarred ", GetEntry().GetName()));
+                App::Notify(i18n::Reorder("Unstarred "_nx, GetEntry().GetName()));
                 SortAndFindLastFile();
             }});
         } else {
             SetAction(Button::R3, Action{"Star"_i18n, [this](){
                 fs::FsNativeSd().CreateFile(GenerateStarPath(GetEntry().path));
-                App::Notify(i18n::Reorder("Starred ", GetEntry().GetName()));
+                App::Notify(i18n::Reorder("Starred "_nx, GetEntry().GetName()));
                 SortAndFindLastFile();
             }});
         }
@@ -766,7 +767,7 @@ void Menu::DisplayOptions() {
         },  "Mounts the NRO FileSystem (icon, nacp and RomFS)."_i18n);
 
         options->Add<SidebarEntryCallback>("Delete"_i18n, [this](){
-            const auto buf = i18n::Reorder("Are you sure you want to delete ", GetEntry().path.toString()) + "?";
+            const auto buf = i18n::Reorder("Are you sure you want to delete "_nx, GetEntry().path.toString()) + "?";
             App::Push<OptionBox>(
                 buf,
                 "Back"_i18n, "Delete"_i18n, 1, [this](auto op_index){

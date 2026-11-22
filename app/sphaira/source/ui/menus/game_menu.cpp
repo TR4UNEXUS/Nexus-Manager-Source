@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "app.hpp"
 #include "log.hpp"
 #include "fs.hpp"
@@ -622,7 +623,7 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                     SyncEntryToMaster(e);
 
                     App::Push<OptionBox>(
-                        i18n::Reorder("Launch ", e.GetName()) + '?',
+                        i18n::Reorder("Launch "_nx, e.GetName()) + '?',
                         "Back"_i18n, "Launch"_i18n, 1, [this, &e](auto op_index){
                             if (op_index && *op_index) {
                                 LaunchEntry(e);
@@ -647,7 +648,7 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
 
                 // completely deletes the application record and all data.
                 options->Add<SidebarEntryCallback>("Delete"_i18n, [this](){
-                    const auto buf = i18n::Reorder("Are you sure you want to delete ", m_entries[m_index].GetName()) + "?";
+                    const auto buf = i18n::Reorder("Are you sure you want to delete "_nx, m_entries[m_index].GetName()) + "?";
                     App::Push<OptionBox>(
                         buf,
                         "Back"_i18n, "Delete"_i18n, 0, [this](auto op_index){

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/port_transfer.hpp"
 #include "nexus/library.hpp"
@@ -169,7 +170,7 @@ public:
 };
 }
 Result PreparePortTransfer(ui::ProgressBox* p,const Game& selected,bool move,Plan& plan,std::string& detail){
-    plan={};detail="Reading the installed forwarder's launch target";Game fresh;R_TRY(InspectGame(p,selected.id,fresh));
+    plan={};detail="Reading the installed forwarder's launch target"_nx;Game fresh;R_TRY(InspectGame(p,selected.id,fresh));
     R_UNLESS(fresh.forwarder_migratable&&!fresh.forwarder_path.empty(),nexus::Invalid);
     plan.application=selected.id;plan.name=selected.name;plan.move=move;plan.source_usb=fresh.usb_forwarder;plan.args=fresh.forwarder_args;
     if(plan.name.ends_with(" (USB)"))plan.name.resize(plan.name.size()-6);
@@ -187,7 +188,7 @@ Result PreparePortTransfer(ui::ProgressBox* p,const Game& selected,bool move,Pla
     const auto root=DefaultRoot(plan.nro);R_UNLESS(!root.empty(),nexus::Invalid);plan.roots.push_back(root);
     plan.address_space=fresh.forwarder_address_space;
     if(const auto known=FindKnownPort(selected.id,plan.nro,plan.args)){
-        if(known->blocked){detail="The catalogue reports a mismatched launch target for "+std::string(known->name)+". Correct its forwarder before transferring this port.";return nexus::Invalid;}
+        if(known->blocked){detail="The catalogue reports a mismatched launch target for "_nx+std::string(known->name)+". Correct its forwarder before transferring this port."_nx;return nexus::Invalid;}
         R_UNLESS(known->nro==plan.nro&&known->args==plan.args,nexus::Invalid);
         plan.address_space=known->address;plan.roots.clear();
         for(size_t at=0;at<known->roots.size();){auto end=known->roots.find('\n',at);if(end==known->roots.npos)end=known->roots.size();
@@ -195,21 +196,21 @@ Result PreparePortTransfer(ui::ProgressBox* p,const Game& selected,bool move,Pla
         if(known->shared)plan.retained_roots=plan.roots;
     }
     nexus::Client c;nexus::Status status{};R_TRY(c.Query(status));R_UNLESS(status.Available(),nexus::Unavailable);plan.generation=status.generation;
-    PortIO io(p,plan);R_TRY(io.Open());detail="Reading the complete port folder";R_TRY(Inventory(io,plan));
+    PortIO io(p,plan);R_TRY(io.Open());detail="Reading the complete port folder"_nx;R_TRY(Inventory(io,plan));
     detail=PortTransferPreview(plan);return 0;
 }
 std::string PortTransferPreview(const Plan& p){
     std::string text=p.name+"\n\n";
     for(const auto& root:p.roots)text+=(p.source_usb?"usb:":"sdmc:")+p.Source(root)+"\n  -> "+(p.source_usb?"sdmc:":"usb:")+p.Destination(root)+"\n";
-    if(!p.retained_roots.empty())text+="\nShared runtime: source files will be kept for other ports.\n";
-    text+="\n"+utils::formatSizeStorage(p.bytes)+" — all files and subfolders included.\n";
-    text+=p.create_launcher?"A new HOME shortcut will launch the destination copy.\n\n":"No forwarder is required. HOME shortcuts are managed separately.\n\n";
-    text+=p.move?"Source files are removed only after the destination is verified.":"The original folder is kept.";
+    if(!p.retained_roots.empty())text+="\nShared runtime: source files will be kept for other ports.\n"_nx;
+    text+="\n"+utils::formatSizeStorage(p.bytes)+" — all files and subfolders included.\n"_nx;
+    text+=p.create_launcher?"A new HOME shortcut will launch the destination copy.\n\n"_nx:"No forwarder is required. HOME shortcuts are managed separately.\n\n"_nx;
+    text+=p.move?"Source files are removed only after the destination is verified."_nx:"The original folder is kept."_nx;
     return text;
 }
 Result InspectPortFiles(ui::ProgressBox* p,Plan& plan,std::string& detail){
     R_UNLESS(!plan.application&&!plan.create_launcher&&!plan.roots.empty(),nexus::Invalid);
-    PortIO io(p,plan);R_TRY(io.Open());detail="Reading the complete port folders";R_TRY(Inventory(io,plan));
+    PortIO io(p,plan);R_TRY(io.Open());detail="Reading the complete port folders"_nx;R_TRY(Inventory(io,plan));
     detail=PortTransferPreview(plan);return 0;
 }
 Result TransferPort(ui::ProgressBox* p,const Plan& plan,Report& report){

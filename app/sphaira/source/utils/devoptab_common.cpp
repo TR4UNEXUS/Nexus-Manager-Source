@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "utils/devoptab_common.hpp"
 #include "utils/thread.hpp"
 
@@ -27,25 +28,25 @@ void InitNetworkLock() {
 // todo: update libcurl and send patches to dkp.
 const char* curl_url_strerror_wrap(CURLUcode code) {
     switch (code) {
-        case CURLUE_OK: return "No error";
-        case CURLUE_BAD_HANDLE: return "Invalid handle";
-        case CURLUE_BAD_PARTPOINTER: return "Invalid pointer to a part of the URL";
-        case CURLUE_MALFORMED_INPUT: return "Malformed input";
-        case CURLUE_BAD_PORT_NUMBER: return "Invalid port number";
-        case CURLUE_UNSUPPORTED_SCHEME: return "Unsupported scheme";
-        case CURLUE_URLDECODE: return "Failed to decode URL component";
-        case CURLUE_OUT_OF_MEMORY: return "Out of memory";
-        case CURLUE_USER_NOT_ALLOWED: return "User not allowed in URL";
-        case CURLUE_UNKNOWN_PART: return "Unknown URL part";
-        case CURLUE_NO_SCHEME: return "No scheme found in URL";
-        case CURLUE_NO_USER: return "No user found in URL";
-        case CURLUE_NO_PASSWORD: return "No password found in URL";
-        case CURLUE_NO_OPTIONS: return "No options found in URL";
-        case CURLUE_NO_HOST: return "No host found in URL";
-        case CURLUE_NO_PORT: return "No port number found in URL";
-        case CURLUE_NO_QUERY: return "No query found in URL";
-        case CURLUE_NO_FRAGMENT: return "No fragment found in URL";
-        default: return "Unknown error code";
+        case CURLUE_OK: return "No error"_nx;
+        case CURLUE_BAD_HANDLE: return "Invalid handle"_nx;
+        case CURLUE_BAD_PARTPOINTER: return "Invalid pointer to a part of the URL"_nx;
+        case CURLUE_MALFORMED_INPUT: return "Malformed input"_nx;
+        case CURLUE_BAD_PORT_NUMBER: return "Invalid port number"_nx;
+        case CURLUE_UNSUPPORTED_SCHEME: return "Unsupported scheme"_nx;
+        case CURLUE_URLDECODE: return "Failed to decode URL component"_nx;
+        case CURLUE_OUT_OF_MEMORY: return "Out of memory"_nx;
+        case CURLUE_USER_NOT_ALLOWED: return "User not allowed in URL"_nx;
+        case CURLUE_UNKNOWN_PART: return "Unknown URL part"_nx;
+        case CURLUE_NO_SCHEME: return "No scheme found in URL"_nx;
+        case CURLUE_NO_USER: return "No user found in URL"_nx;
+        case CURLUE_NO_PASSWORD: return "No password found in URL"_nx;
+        case CURLUE_NO_OPTIONS: return "No options found in URL"_nx;
+        case CURLUE_NO_HOST: return "No host found in URL"_nx;
+        case CURLUE_NO_PORT: return "No port number found in URL"_nx;
+        case CURLUE_NO_QUERY: return "No query found in URL"_nx;
+        case CURLUE_NO_FRAGMENT: return "No fragment found in URL"_nx;
+        default: return "Unknown error code"_nx;
     }
 }
 

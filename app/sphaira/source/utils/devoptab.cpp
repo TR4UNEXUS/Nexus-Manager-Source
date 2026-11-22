@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "utils/devoptab_common.hpp"
 #include "utils/thread.hpp"
 
@@ -183,7 +184,7 @@ void DevoptabForm::SetupButtons(bool type_change) {
 
     #if 0
     m_timeout = this->Add<SidebarEntryTextInput>(
-        "Timeout"_i18n, m_config.timeout, "Timeout in milliseconds", 1, 5,
+        "Timeout"_i18n, m_config.timeout, "Timeout in milliseconds"_nx, 1, 5,
         "Optional: Set the timeout in seconds."_i18n
     );
     #endif

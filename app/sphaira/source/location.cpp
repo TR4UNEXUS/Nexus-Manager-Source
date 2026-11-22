@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "location.hpp"
 #include "fs.hpp"
 #include "app.hpp"
@@ -30,7 +31,7 @@ auto GetStdio(bool write) -> StdioEntries {
             }
 
             if (e.flags & FsEntryFlag::FsEntryFlag_ReadOnly) {
-                e.name += i18n::get(" (Read Only)");
+                e.name += i18n::get(" (Read Only)"_nx);
             }
 
             out.emplace_back(e);

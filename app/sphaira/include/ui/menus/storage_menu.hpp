@@ -1,4 +1,5 @@
 #pragma once
+#include "nexus/localize.hpp"
 
 #include "ui/menus/menu_base.hpp"
 #include "ui/menus/game_menu.hpp"
@@ -57,7 +58,7 @@ struct Menu final : MenuBase {
     Menu(u32 flags);
     ~Menu();
 
-    auto GetShortTitle() const -> const char* override { return "Storage"; };
+    auto GetShortTitle() const -> const char* override { return "Storage"_nx; };
     void Update(Controller* controller, TouchInfo* touch) override;
     void Draw(NVGcontext* vg, Theme* theme) override;
     void OnFocusGained() override;

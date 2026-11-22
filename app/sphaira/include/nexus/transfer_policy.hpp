@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "nexus/localize.hpp"
 #include <string>
 #include <string_view>
 #include <cstdint>
@@ -15,11 +16,11 @@ inline bool Installing(Use u){return u==Use::InstallSd || u==Use::InstallUsb;}
 // Stable, distinct roots: libhaze indexes objects by their complete path.
 // Use the same names as FTP root folders so destinations mean the same thing.
 inline const char* VolumeName(Use u){switch(u){
-case Use::FilesSd:return "3 - SD Card Files";case Use::FilesUsb:return "4 - USB Transfer Files";
-case Use::InstallSd:return "1 - Install to SD";case Use::InstallUsb:return "2 - Install to USB";
-case Use::GamesSd:return "5 - Games on SD";case Use::GamesUsb:return "6 - Games on USB";
-case Use::GamesInternal:return "7 - Games in System Memory";
-case Use::SaveDownloads:return "6 - Save Backups";case Use::SaveUploads:return "7 - Upload Save Backups";}return nullptr;}
+case Use::FilesSd:return "3 - SD Card Files"_nx;case Use::FilesUsb:return "4 - USB Transfer Files"_nx;
+case Use::InstallSd:return "1 - Install to SD"_nx;case Use::InstallUsb:return "2 - Install to USB"_nx;
+case Use::GamesSd:return "5 - Games on SD"_nx;case Use::GamesUsb:return "6 - Games on USB"_nx;
+case Use::GamesInternal:return "7 - Games in System Memory"_nx;
+case Use::SaveDownloads:return "6 - Save Backups"_nx;case Use::SaveUploads:return "7 - Upload Save Backups"_nx;}return nullptr;}
 inline constexpr char FtpGamesName[]="5 - Export Installed Games";
 inline constexpr char InstallGuideName[]="START HERE - Install games.txt";
 // Install folders are drop boxes. A repeated FTP upload gets its own package;
@@ -38,10 +39,10 @@ inline std::string RetryUploadPath(std::string_view original,unsigned attempt){
     return std::string(original.substr(0,slash==original.npos?0:slash+1))+std::string(leaf.substr(0,length))+suffix+std::string(extension);
 }
 inline const char* Label(Use u){switch(u){
-case Use::FilesSd:return "SD file transfer";case Use::FilesUsb:return "USB file transfer";
-case Use::InstallSd:return "Install games to SD";case Use::InstallUsb:return "Install games to USB";
-case Use::SaveDownloads:return "Download save backups";case Use::SaveUploads:return "Upload save backups";
-case Use::GamesSd:return "Installed games on SD";case Use::GamesUsb:return "Installed games on USB";case Use::GamesInternal:return "Installed games in system memory";}return "Invalid";}
+case Use::FilesSd:return "SD file transfer"_nx;case Use::FilesUsb:return "USB file transfer"_nx;
+case Use::InstallSd:return "Install games to SD"_nx;case Use::InstallUsb:return "Install games to USB"_nx;
+case Use::SaveDownloads:return "Download save backups"_nx;case Use::SaveUploads:return "Upload save backups"_nx;
+case Use::GamesSd:return "Installed games on SD"_nx;case Use::GamesUsb:return "Installed games on USB"_nx;case Use::GamesInternal:return "Installed games in system memory"_nx;}return "Invalid";}
 inline const char* Base(Use u){switch(u){
 case Use::FilesSd:case Use::FilesUsb:return Root;
 case Use::InstallSd:case Use::InstallUsb:return "/switch/nexusmanager/transfers/install";
@@ -51,24 +52,10 @@ case Use::GamesSd:case Use::GamesUsb:case Use::GamesInternal:return "/installed-
 inline bool IsInstallGuide(Use use,std::string_view path){return Installing(use)&&path==std::string(Base(use))+"/"+InstallGuideName;}
 inline std::string InstallGuide(Use use,bool ready,std::string_view problem={}){
     const bool usb=use==Use::InstallUsb;
-    std::string text="NEXUS MANAGER - INSTALL TO "+std::string(usb?"USB DRIVE":"SD CARD")+"\r\n\r\n";
-    if(!ready)text+="USB INSTALL IS NOT READY\r\n"+std::string(problem)+"\r\nConnect your USB drive, stop PC Transfer on the Switch, then open it again.\r\nUploads are blocked until USB is ready. They will never be redirected to SD.\r\n\r\n";
-    text+="1. Drag and drop your NSP, NSZ, XCI or XCZ files into this folder.\r\n"
-          "2. Keep Nexus Manager open and the storage connected.\r\n"
-          "3. Wait for installation to finish on the Switch before disconnecting.\r\n\r\n"
-          "Use binary transfers and one simultaneous upload in your FTP app.\r\n"
-          "Upload the original filename directly; do not use temporary names or resume an interrupted upload.\r\n\r\n";
-    text+="FTP STREAM INSTALL\r\n"
-          "NSP, NSZ, XCI and XCZ content installs as it arrives, directly to the "+std::string(usb?"USB drive":"SD card")+".\r\n"
-          "No complete package is copied to SD or USB first. Allow space for the installed content.\r\n"
-          "Your original package stays on your PC. Existing uploaded packages are left untouched.\r\n"
-          "Wait for Installed successfully on the Switch; FTP confirms success after installation.\r\n"
-          "If interrupted, resend the original file from the beginning. Do not use Resume.\r\n\r\n"
-          "USB CABLE / MTP\r\n"
-          "Cable uploads are saved in switch/nexusmanager/transfers/install, then installed automatically.\r\n"
-          "Allow space for the package and installed content. The temporary package is removed after a complete successful install.\r\n"
-          "Failed or skipped installs keep the package for retry. Your PC original is never removed.\r\n\r\n"
-          "This instruction file is read-only and does not get installed.\r\n";
+    std::string text="NEXUS MANAGER - INSTALL TO "_nx+std::string(usb?"USB DRIVE"_nx:"SD CARD"_nx)+"\r\n\r\n";
+    if(!ready)text+="USB INSTALL IS NOT READY\r\n"_nx+std::string(problem)+"\r\nConnect your USB drive, stop PC Transfer on the Switch, then open it again.\r\nUploads are blocked until USB is ready. They will never be redirected to SD.\r\n\r\n"_nx;
+    text+="1. Drag and drop your NSP, NSZ, XCI or XCZ files into this folder.\r\n2. Keep Nexus Manager open and the storage connected.\r\n3. Wait for installation to finish on the Switch before disconnecting.\r\n\r\nUse binary transfers and one simultaneous upload in your FTP app.\r\nUpload the original filename directly; do not use temporary names or resume an interrupted upload.\r\n\r\n"_nx;
+    text+="FTP STREAM INSTALL\r\nNSP, NSZ, XCI and XCZ content installs as it arrives, directly to the "_nx+std::string(usb?"USB drive"_nx:"SD card"_nx)+".\r\nNo complete package is copied to SD or USB first. Allow space for the installed content.\r\nYour original package stays on your PC. Existing uploaded packages are left untouched.\r\nWait for Installed successfully on the Switch; FTP confirms success after installation.\r\nIf interrupted, resend the original file from the beginning. Do not use Resume.\r\n\r\nUSB CABLE / MTP\r\nCable uploads are saved in switch/nexusmanager/transfers/install, then installed automatically.\r\nAllow space for the package and installed content. The temporary package is removed after a complete successful install.\r\nFailed or skipped installs keep the package for retry. Your PC original is never removed.\r\n\r\nThis instruction file is read-only and does not get installed.\r\n"_nx;
     return text;
 }
 // Foreground FTP display aliases only; underlying SD/game devoptabs stay fixed.

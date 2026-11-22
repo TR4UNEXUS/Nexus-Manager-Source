@@ -48,8 +48,10 @@ static bool duplicate{},cancelled{},vsd{},boot=true,report_fault{};
 static int reads{},cancel_after=-1,disconnect_after=-1,short_after=-1;
 static std::map<u64,std::string> title_names;
 static u64 generation=1;
+static Result routed_path_result{};
+static unsigned routed_path_queries{};
 static constexpr const char* live="/atmosphere/usb_content";
-void Reset(){records.clear();disk.clear();usb_disk.clear();dirs.clear();title_names.clear();handles=writes=commits=fault=renames=reads=0;fail_rename=cancel_after=disconnect_after=short_after=-1;duplicate=cancelled=vsd=report_fault=false;boot=true;generation=1;}
+void Reset(){records.clear();disk.clear();usb_disk.clear();dirs.clear();title_names.clear();handles=writes=commits=fault=renames=reads=0;fail_rename=cancel_after=disconnect_after=short_after=-1;duplicate=cancelled=vsd=report_fault=false;boot=true;generation=1;routed_path_queries=0;routed_path_result=0;}
 std::string NcaPath(u8 id){char p[80];snprintf(p,sizeof(p),"/registered/%02x000000000000000000000000000000.nca",id);return p;}
 bool nexusHasSdBootstrap(const char*,size_t){return boot;}
 const char* envGetLoaderInfo(){return "";}size_t envGetLoaderInfoSize(){return 0;}
@@ -78,7 +80,7 @@ Result fsFsRenameDirectory(FsFileSystem*,const char* from,const char* to){Path(f
 void ncmContentMetaDatabaseClose(NcmContentMetaDatabase*){}void ncmContentStorageClose(NcmContentStorage*){}void ncmExit(){}
 Result ncmInitialize(){return fault==15?Fault:0;}
 Result ncmOpenContentMetaDatabase(NcmContentMetaDatabase*,int){return 0;}
-Result ncmContentStorageGetPath(NcmContentStorage*,char* p,size_t n,const NcmContentId* id){snprintf(p,n,"@SdCardContent:%s",NcaPath(id->c[0]).c_str());return 0;}
+Result ncmContentStorageGetPath(NcmContentStorage*,char* p,size_t n,const NcmContentId* id){++routed_path_queries;if(routed_path_result)return routed_path_result;snprintf(p,n,"@SdCardContent:%s",NcaPath(id->c[0]).c_str());return 0;}
 Result ncmContentStorageHas(NcmContentStorage* s,bool* out,const NcmContentId*){assert(s->native);*out=duplicate;return 0;}
 void ncmContentInfoSizeToU64(const NcmContentInfo* i,u64* size){*size=i->size_low|((u64)i->size_high<<32);}
 Record& Get(const NcmContentMetaKey* k){for(auto& r:records)if(r.key.id==k->id && r.key.type==k->type && r.key.version==k->version)return r;assert(false);return records[0];}
@@ -97,6 +99,7 @@ void sha256ContextGetHash(Sha256Context* c,void* out){memcpy(out,c->value.data()
 // separately tested against the actual ContentHash in test_compat.py.
 namespace sphaira::keys {struct Keys{u8 header_key[32]{};};Result parse_keys(Keys&,bool){return Fault;}}
 namespace sphaira::crypto {void cryptoAes128Xts(const void* in,void* out,const u8*,u64,u64,u64 count,bool){memmove(out,in,count);}}
+namespace nexus::reports {inline void QueueFailure(const char*,Result){}}
 namespace nexus {
 constexpr Result Invalid=99,Unavailable=100;
 Result CheckUsbFirmware(){return 0;}
@@ -113,7 +116,7 @@ public:
 }
 namespace sphaira::ui{class ProgressBox{public:
     s64 offset{};std::vector<s64> points;std::string note;
-    Result ShouldExitResult(){return cancelled?Fault:0;}
+    bool ShouldExit(){return cancelled;} Result ShouldExitResult(){return cancelled?Fault:0;}
     void NewTransfer(const std::string&){}void UpdateTransfer(u64,u64){}
     void SetProgressNote(const std::string& n){note=n;}
     void SetOverallTransfer(s64 o,s64 total,const std::string&,bool=false){
@@ -127,7 +130,24 @@ namespace sphaira::ui{class ProgressBox{public:
 };}
 namespace sphaira::nexusapp{
 using nexus::Target;
+// Mock physical paths, independent of the routed NCM lookup above. The real
+// SHA-256 bucket path helper is exercised by the USB import service tests.
+std::string CanonicalUsbContentPath(const NcmContentId& id){return NcaPath(id.c[0]);}
 Result OpenStorage(Target t,NcmContentStorage& cs,u64* =nullptr){cs.native=t==Target::Sd;return 0;}
 std::string HexId(const void* p,size_t n=16){std::string s;const auto* b=static_cast<const u8*>(p);for(size_t i=0;i<n;++i){char v[3];snprintf(v,sizeof(v),"%02x",b[i]);s+=v;}return s;}
 }
 namespace sphaira::title {std::string GetCachedTitleName(u64 id){return title_names[id];}}
+
+namespace nexus::diagnostics {struct Operation{explicit Operation(const char*){}};}
+namespace sphaira::nexusapp {inline Result backup_failure{};inline unsigned backup_calls{};
+Result ConfirmConsoleRoutingBackup(u64& sequence){++backup_calls;sequence=backup_failure?0:7;return backup_failure;}
+}
+
+namespace nexus {inline void Log(const char*,Result,u64=0){}}
+#include "nexus/verified_meta_core.hpp"
+constexpr int NcmContentType_Meta=0;
+inline void sha256CalculateHash(void* out,const void* data,size_t size){Sha256Context ctx;sha256ContextCreate(&ctx);sha256ContextUpdate(&ctx,data,size);sha256ContextGetHash(&ctx,out);}
+namespace sphaira::nexusapp {
+// The real encrypted metadata adapter and core have separate integrity tests.
+inline bool DecodeVerifiedMeta(const keys::Keys&,std::span<const u8>,nexus::usb_import::Meta&){return false;}
+}

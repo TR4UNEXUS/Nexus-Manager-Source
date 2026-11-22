@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/menus/appstore.hpp"
 #include "ui/menus/homebrew.hpp"
 #include "ui/sidebar.hpp"
@@ -65,26 +66,26 @@ constexpr const u8 INSTALLED_IMAGE_DATA[]{
 };
 
 constexpr const char* FILTER_STR[] = {
-    "All",
-    "Games",
-    "Emulators",
-    "Tools",
-    "Advanced",
-    "Themes",
-    "Legacy",
-    "Misc",
+    "All"_nx,
+    "Games"_nx,
+    "Emulators"_nx,
+    "Tools"_nx,
+    "Advanced"_nx,
+    "Themes"_nx,
+    "Legacy"_nx,
+    "Misc"_nx,
 };
 
 constexpr const char* SORT_STR[] = {
-    "Updated",
-    "Downloads",
-    "Size",
-    "Alphabetical",
+    "Updated"_nx,
+    "Downloads"_nx,
+    "Size"_nx,
+    "Alphabetical"_nx,
 };
 
 constexpr const char* ORDER_STR[] = {
-    "Desc",
-    "Asc",
+    "Desc"_nx,
+    "Asc"_nx,
 };
 
 auto HashStore(std::string_view value) -> u64 {
@@ -513,7 +514,7 @@ auto UninstallApp(ProgressBox* pbox, const Entry& entry) -> Result {
 
     // remove directory, this will also delete manifest and info
     const auto dir = BuildPackageCachePath(entry);
-    pbox->NewTransfer(i18n::Reorder("Removing ", dir.toString()));
+    pbox->NewTransfer(i18n::Reorder("Removing "_nx, dir.toString()));
     if (R_FAILED(fs.DeleteDirectoryRecursively(dir))) {
         log_write("failed to delete folder: %s\n", dir.s);
     } else {
@@ -544,7 +545,7 @@ auto InstallApp(ProgressBox* pbox, const Entry& entry) -> Result {
 
     // 1. download the zip
     if (!pbox->ShouldExit()) {
-        pbox->NewTransfer(i18n::Reorder("Downloading ", entry.title));
+        pbox->NewTransfer(i18n::Reorder("Downloading "_nx, entry.title));
         log_write("starting download\n");
 
         const auto url = BuildZipUrl(entry);
@@ -768,7 +769,7 @@ EntryMenu::EntryMenu(Entry& entry, const LazyImage& default_icon, Menu& menu)
 
             options->Add<SidebarEntryCallback>("Leave Feedback"_i18n, [this](){
                 std::string out;
-                std::string header = "Leave feedback for " + m_entry.title;
+                std::string header = "Leave feedback for "_nx + m_entry.title;
                 if (R_SUCCEEDED(swkbd::ShowText(out, header.c_str())) && !out.empty()) {
                     const auto post = "name=" "switch_user" "&package=" + m_entry.name + "&message=" + out;
                     const auto file = BuildFeedbackCachePath(m_entry);
@@ -975,7 +976,7 @@ void EntryMenu::UpdateOptions() {
             App::PushErrorBox(rc, "Failed to install app"_i18n);
 
             if (R_SUCCEEDED(rc)) {
-                App::Notify(i18n::Reorder("Downloaded ", m_entry.title));
+                App::Notify(i18n::Reorder("Downloaded "_nx, m_entry.title));
                 m_entry.status = EntryStatus::Installed;
                 m_menu.SetDirty();
                 UpdateOptions();
@@ -991,7 +992,7 @@ void EntryMenu::UpdateOptions() {
             App::PushErrorBox(rc, "Failed to remove app"_i18n);
 
             if (R_SUCCEEDED(rc)) {
-                App::Notify(i18n::Reorder("Removed ", m_entry.title));
+                App::Notify(i18n::Reorder("Removed "_nx, m_entry.title));
                 m_entry.status = EntryStatus::Get;
                 m_menu.SetDirty();
                 UpdateOptions();
@@ -1002,7 +1003,7 @@ void EntryMenu::UpdateOptions() {
     const Option install_option{"Install"_i18n, install};
     const Option update_option{"Update"_i18n, install};
     const Option launch_option{"Launch"_i18n, launch};
-    const Option remove_option{"Remove"_i18n, i18n::Reorder("Completely remove ", m_entry.title) + '?', uninstall};
+    const Option remove_option{"Remove"_i18n, i18n::Reorder("Completely remove "_nx, m_entry.title) + '?', uninstall};
 
     m_options.clear();
     switch (m_entry.status) {
@@ -1269,7 +1270,7 @@ void Menu::DeleteActiveStore() {
 
     const auto name = m_store_sources[m_active_store].name;
     App::Push<OptionBox>(
-        i18n::Reorder("Delete custom store ", "'" + name + "'") + "?",
+        i18n::Reorder("Delete custom store "_nx, "'" + name + "'") + "?",
         "Back"_i18n,
         "Delete"_i18n,
         0,

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/menus/gc_menu.hpp"
 #include "ui/menus/filebrowser.hpp"
 
@@ -78,10 +79,10 @@ enum DumpFileFlag {
 };
 
 const char *g_option_list[] = {
-    "Install",
-    "Export XCI (Gamecard)",
-    "Export XCZ (Compressed XCI)",
-    "Mount Fs",
+    "Install"_nx,
+    "Export XCI (Gamecard)"_nx,
+    "Export XCZ (Compressed XCI)"_nx,
+    "Mount Fs"_nx,
 };
 
 auto GetXciSizeFromRomSize(u8 rom_size) -> s64 {
@@ -104,10 +105,10 @@ auto GetDumpTypeStr(u8 type) -> const char* {
             } [[fallthrough]];
 
         case DumpFileType_XCI: return ".xci";
-        case DumpFileType_Set: return " (Card ID Set).bin";
-        case DumpFileType_UID: return " (Card UID).bin";
+        case DumpFileType_Set: return " (Card ID Set).bin"_nx;
+        case DumpFileType_UID: return " (Card UID).bin"_nx;
         case DumpFileType_Cert: return " (Certificate).bin";
-        case DumpFileType_Initial: return " (Initial Data).bin";
+        case DumpFileType_Initial: return " (Initial Data).bin"_nx;
         case DumpFileType_XCZ: return ".xcz";
     }
 
@@ -349,7 +350,7 @@ Result NszExport(ProgressBox* pbox, const keys::Keys& keys, dump::BaseSource* _s
 
     // writes padding between partitions and files.
     const auto write_padding = [&](const std::string& name, s64& read_offset, s64& write_offset, s64 size) -> Result {
-        return threaded_write("Writing padding - " + name, read_offset, write_offset, size);
+        return threaded_write("Writing padding - "_nx + name, read_offset, write_offset, size);
     };
 
     Test yati_source(source->menu);

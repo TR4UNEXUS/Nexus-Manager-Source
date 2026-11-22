@@ -9,7 +9,9 @@ struct RecoveryContent {
     bool mismatch{};
     bool converted_hash{};
     bool plaintext_origin{};
+    bool verified_modified_meta{};
     std::array<u8,32> actual_hash{};
+    std::array<u8,32> matched_hash{};
 };
 struct RecoveryMeta {
     NcmContentMetaKey key{}; std::vector<u8> raw;
@@ -23,7 +25,14 @@ struct RecoveryIssue {
     u64 application_id{}, record_id{};
     u32 version{};
 };
+struct RecoveryScanRecord {
+    u64 application{},record{};u32 version{};u8 type{};std::string name,status;
+};
 struct RecoveryPlan {
+    std::vector<RecoveryScanRecord> scan_records;
+    Result backup_result{};bool backup_attempted{},backup_confirmed{};
+    size_t remaining_route_gaps{};
+    std::string backup_detail;
     u64 console_backup_sequence{};
     u64 only_application{};
     u64 generation{};
@@ -35,7 +44,7 @@ struct RecoveryPlan {
     std::vector<RecoveryIssue> issues;
     size_t records{}, complete{}, skipped{}, intact{}, repair_records{}, conflicts{}, limits{};
     size_t mismatch_files{}, blocked_records{}, verified_records{}, repaired_records{};
-    size_t converted_files{}, plaintext_files{};
+    size_t converted_files{}, plaintext_files{}, modified_meta_files{};
     bool folder_exists{}, ready{}, published{}, pending{};
     bool verification_started{}, verification_complete{}, repair_complete{};
     std::string detail, report_path, report_text;
@@ -44,6 +53,7 @@ Result ScanUsbRecovery(ui::ProgressBox*, RecoveryPlan&, u64 only_application=0);
 Result ApplyUsbRecovery(ui::ProgressBox*, RecoveryPlan&);
 Result ScanConsoleRoutingRestore(ui::ProgressBox*, RecoveryPlan&);
 Result ApplyConsoleRoutingRestore(ui::ProgressBox*, RecoveryPlan&);
+Result CheckUsbRecordRouting(ui::ProgressBox*,u64,const NcmContentMetaKey&,const std::vector<NcmContentInfo>&);
 Result ReadUsbRoutingContent(std::set<std::array<u8,16>>&);
 Result UsbRoutingReferences(const std::set<std::array<u8,16>>&,bool&);
 Result RemoveDeletedUsbRouting(ui::ProgressBox*,u64 generation,const std::vector<NcmContentId>&,

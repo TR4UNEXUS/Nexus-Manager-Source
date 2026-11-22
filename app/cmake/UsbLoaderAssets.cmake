@@ -7,15 +7,12 @@ file(COPY "${SOURCE_DIR}/assets/usb-loader-icon.jpg" DESTINATION "${DEST}")
 foreach(folder certs theme i18n fonts)
     file(COPY "${SOURCE_DIR}/assets/romfs/${folder}" DESTINATION "${DEST}")
 endforeach()
+file(MAKE_DIRECTORY "${DEST}/nexus")
+file(COPY "${SOURCE_DIR}/assets/romfs/nexus/repair-catalog.nxrc"
+     DESTINATION "${DEST}/nexus")
 file(COPY "${SOURCE_DIR}/assets/romfs/themes/base_black_theme.ini"
           "${SOURCE_DIR}/assets/romfs/themes/usb_loader_theme.ini"
      DESTINATION "${DEST}/themes")
-# Preserve upstream translation sources and attribution. Rebrand the generated
-# runtime copies, including keys matching rebranded generic dialog messages.
-file(GLOB translations "${DEST}/i18n/*.json")
-foreach(path IN LISTS translations)
-    file(READ "${path}" text)
-    string(REPLACE "Sphaira" "Nexus Manager" text "${text}")
-    string(REPLACE "sphaira" "Nexus Manager" text "${text}")
-    file(WRITE "${path}" "${text}")
-endforeach()
+# Catalogues include both legacy keys and the current Nexus UI messages.
+# Copy them unchanged: replacing text here changes lookup keys, attribution
+# and documented paths after the source catalogue has already been validated.

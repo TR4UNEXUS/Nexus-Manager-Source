@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "dumper.hpp"
 #include "app.hpp"
 #include "log.hpp"
@@ -178,9 +179,9 @@ private:
 };
 
 constexpr DumpLocationEntry DUMP_LOCATIONS[]{
-    { DumpLocationType_SdCard, "microSD card (/dumps/)" },
-    { DumpLocationType_Usb, "USB export to PC (usb_export.py)" },
-    { DumpLocationType_UsbS2S, "USB transfer (Switch 2 Switch)" },
+    { DumpLocationType_SdCard, "microSD card (/dumps/)"_nx },
+    { DumpLocationType_Usb, "USB export to PC (usb_export.py)"_nx },
+    { DumpLocationType_UsbS2S, "USB transfer (Switch 2 Switch)"_nx },
     { DumpLocationType_DevNull, "/dev/null (Speed Test)" },
 };
 

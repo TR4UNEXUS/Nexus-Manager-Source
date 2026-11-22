@@ -1,3 +1,6 @@
+#include "nexus/problem_reports.hpp"
+#include "nexus/localize.hpp"
+#include "nexus/diagnostics.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/game_cleanup.hpp"
 #include "nexus/game_cleanup_core.hpp"
@@ -28,11 +31,11 @@ using Id=core::Id;
 using Digest=std::array<u8,32>;
 constexpr Result Invalid=nexus::Invalid,MissingUsb=MAKERESULT(140,205);
 constexpr size_t MaxFiles=262144,MaxReferences=1048576;
-thread_local const char* cleanup_stage="starting the storage check";
+thread_local const char* cleanup_stage="starting the storage check"_nx;
 void CleanupStage(const char* stage){cleanup_stage=stage;}
 std::string CleanupFailure(Result rc){
     nexus::Log(cleanup_stage,rc);
-    return nexus::usbimport::FailureDetail(cleanup_stage,rc,"No files were removed. The check below could not finish. Details: switch/nexusmanager/nexus.log");
+    return nexus::usbimport::FailureDetail(cleanup_stage,rc,"No files were removed. The check below could not finish. Details: switch/nexusmanager/nexus.log"_nx);
 }
 Id Identity(const NcmContentId& id){Id out;memcpy(out.data(),&id,16);return out;}
 NcmContentId Content(const Id& id){NcmContentId out;memcpy(&out,id.data(),16);return out;}
@@ -59,16 +62,16 @@ struct Session {
         if(target==Target::Usb){nexus::Client c;R_TRY(c.Check(generation));}return 0;}
     Result Open(Target t,bool placeholders=true){
         R_UNLESS(nexus::ValidTarget(t),Invalid);target=t;
-        CleanupStage("opening content manager");R_TRY(ncmInitialize());ncm=true;CleanupStage("opening HOME records");R_TRY(sphaira::ns::Initialize());ns=true;
-        CleanupStage("opening physical game storage");R_TRY(OpenStorage(t,storage,&generation));
+        CleanupStage("opening content manager"_nx);R_TRY(ncmInitialize());ncm=true;CleanupStage("opening HOME records"_nx);R_TRY(sphaira::ns::Initialize());ns=true;
+        CleanupStage("opening physical game storage"_nx);R_TRY(OpenStorage(t,storage,&generation));
         if(t==Target::Usb && placeholders){
             // Bind placeholder inventory to physical USB, never the routed SD
             // view. The generation-scoped object cannot fall through to SD.
-            CleanupStage("opening generation-bound USB storage");ncmContentStorageClose(&storage);storage={};R_TRY(nexus::CheckUsbFirmware());
+            CleanupStage("opening generation-bound USB storage"_nx);ncmContentStorageClose(&storage);storage={};R_TRY(nexus::CheckUsbFirmware());
             R_TRY(serviceDispatchIn(ncmGetServiceSession(),65031,generation,
                 .out_num_objects=1,.out_objects=&storage.s));
         }
-        CleanupStage("opening game metadata database");R_TRY(ncmOpenContentMetaDatabase(&db,nexus::LogicalStorage(t)));
+        CleanupStage("opening game metadata database"_nx);R_TRY(ncmOpenContentMetaDatabase(&db,nexus::LogicalStorage(t)));
         return Check();
     }
 };
@@ -81,7 +84,7 @@ u64 Parent(const NcmContentMetaKey& key,std::span<const u8> raw){
     u64 app{};memcpy(&app,raw.data()+offset,8);return app;
 }
 Result Database(Session& s,Inventory& out){
-    CleanupStage("listing game metadata");s32 total{},count{};
+    CleanupStage("listing game metadata"_nx);s32 total{},count{};
     // Use a real output buffer, including for an empty database. This also
     // avoids depending on firmware handling of a null, zero-size IPC buffer.
     std::vector<NcmContentMetaKey> keys(256);
@@ -97,7 +100,7 @@ Result Database(Session& s,Inventory& out){
     for(size_t i=1;i<keys.size();++i)R_UNLESS(!nexus::SameMetaKey(keys[i-1],keys[i]),Invalid);
     size_t references{};
     for(const auto& key:keys){
-        CleanupStage("reading game metadata and shared-file references");R_TRY(s.Check());u64 size{},actual{};R_TRY(ncmContentMetaDatabaseGetSize(&s.db,&size,&key));
+        CleanupStage("reading game metadata and shared-file references"_nx);R_TRY(s.Check());u64 size{},actual{};R_TRY(ncmContentMetaDatabaseGetSize(&s.db,&size,&key));
         R_UNLESS(size>=sizeof(NcmContentMetaHeader)&&size<=32*1024*1024,Invalid);
         std::vector<u8> raw(size);R_TRY(ncmContentMetaDatabaseGet(&s.db,&key,&actual,raw.data(),raw.size()));R_UNLESS(actual==size,Invalid);
         NcmContentMetaHeader header{};memcpy(&header,raw.data(),sizeof(header));
@@ -116,7 +119,7 @@ Result Database(Session& s,Inventory& out){
     return s.Check();
 }
 Result PhysicalFiles(Session& s,Inventory& out,bool sizes=true){
-    CleanupStage("listing physical game files");
+    CleanupStage("listing physical game files"_nx);
     if(s.target==Target::Usb){
         nexus::Client client;std::vector<nexus::Entry> buckets;auto rc=client.List(s.generation,"/registered",buckets);
         if(rc==MissingUsb)return 0;R_TRY(rc);R_UNLESS(buckets.size()<=256,Invalid);
@@ -142,7 +145,7 @@ Result PhysicalFiles(Session& s,Inventory& out,bool sizes=true){
             R_TRY(ncmContentStorageListContentId(&s.storage,ids.data(),ids.size(),&read,offset));
             R_UNLESS(read>=0&&read<=static_cast<s32>(ids.size())&&static_cast<size_t>(offset)+read<=MaxFiles,Invalid);
             if(!read)break; // GetContentCount can also count unrelated files.
-            CleanupStage("reading physical content sizes");
+            CleanupStage("reading physical content sizes"_nx);
             for(s32 i=0;i<read;++i){s64 size{};if(sizes)R_TRY(ncmContentStorageGetSizeFromContentId(&s.storage,&size,&ids[i]));
                 R_UNLESS(size>=0&&Identity(ids[i])!=Id{}&&out.files.emplace(Identity(ids[i]),File{ids[i],static_cast<u64>(size),{}}).second,Invalid);}
             offset+=read;
@@ -174,18 +177,18 @@ void MergeUsbOwnership(const UsbImportScan& scan,Inventory& out){
 }
 Result ReadInventory(ui::ProgressBox* p,Target target,Inventory& out,bool placeholders=true){
     out={};out.target=target;Session s(p);R_TRY(s.Open(target,placeholders));out.generation=s.generation;
-    p->SetProgressNote("Reading game records and file sizes. Nothing is being deleted.");
-    p->SetActionName("Checking installed game records");R_TRY(Database(s,out));
+    p->SetProgressNote("Reading game records and file sizes. Nothing is being deleted."_nx);
+    p->SetActionName("Checking installed game records"_nx);R_TRY(Database(s,out));
     for(s32 offset=0;;offset+=128){
         R_UNLESS(offset<65536,Invalid);R_TRY(s.Check());std::array<NsApplicationRecord,128> page{};s32 count{};
         R_TRY(nsListApplicationRecord(page.data(),page.size(),offset,&count));R_UNLESS(count>=0&&count<=128,Invalid);
         for(s32 i=0;i<count;++i)out.home.insert(page[i].application_id);if(count<128)break;
     }
-    p->SetActionName("Reading physical game files");R_TRY(PhysicalFiles(s,out));
+    p->SetActionName("Reading physical game files"_nx);R_TRY(PhysicalFiles(s,out));
     // Read on-drive CNMTs as well as this system's NCM database. An absent HOME
     // record is not evidence that another emuMMC's USB game is disposable.
     if(target==Target::Usb){
-        CleanupStage("reading USB game ownership metadata");UsbImportScan scan;R_TRY(ScanUsbImports(p,scan,s.generation,nullptr,false,true));R_UNLESS(scan.complete,Invalid);
+        CleanupStage("reading USB game ownership metadata"_nx);UsbImportScan scan;R_TRY(ScanUsbImports(p,scan,s.generation,nullptr,false,true));R_UNLESS(scan.complete,Invalid);
         MergeUsbOwnership(scan,out);
     }
     // Ask the local control-data cache for readable names. Failure to resolve
@@ -205,7 +208,7 @@ Result ReadInventory(ui::ProgressBox* p,Target target,Inventory& out,bool placeh
     // Installed-game removal does not touch placeholders. A broken or paused
     // unrelated download must not block deleting the selected installed copy.
     if(placeholders){
-    CleanupStage("reading unfinished installs");std::array<NcmPlaceHolderId,4096> ph{};s32 count{};
+    CleanupStage("reading unfinished installs"_nx);std::array<NcmPlaceHolderId,4096> ph{};s32 count{};
     R_TRY(ncmContentStorageListPlaceHolder(&s.storage,ph.data(),ph.size(),&count));R_UNLESS(count>=0&&count<static_cast<s32>(ph.size()),Invalid);
     for(s32 i=0;i<count;++i){R_TRY(s.Check());s64 size{};R_TRY(ncmContentStorageGetSizeFromPlaceHolderId(&s.storage,&size,&ph[i]));
         Id id;memcpy(id.data(),&ph[i],16);R_UNLESS(size>=0&&out.placeholders.emplace(id,size).second,Invalid);}
@@ -259,7 +262,7 @@ Result ReadRights(ui::ProgressBox* p,const Inventory& i,std::map<Id,Rights>& rig
     rights.clear();Session session(p);R_TRY(session.Open(i.target));R_UNLESS(session.generation==i.generation,nexus::Unavailable);
     R_TRY(splCryptoInitialize());ON_SCOPE_EXIT(splCryptoExit());
     keys::Keys keys{};ON_SCOPE_EXIT(keys={});R_TRY(keys::parse_keys(keys,false));
-    p->NewTransfer("Checking content permissions");
+    p->NewTransfer("Checking content permissions"_nx);
     for(const auto& [id,file]:i.files){
         R_TRY(FileMatches(session,file));nca::Header header{};R_UNLESS(file.size>=sizeof(header),Invalid);
         R_TRY(ReadContent(i.target,session.storage,file.id,i.generation,0,&header,sizeof(header)));
@@ -338,12 +341,12 @@ Result ScanGameLocations(ui::ProgressBox* p,std::vector<Game>& games){
         if(R_FAILED(rc)){nexus::Log(cleanup_stage,rc,static_cast<u64>(target));nexus::Log("game-location-scan",rc,static_cast<u64>(target));}
     }
     for(auto& game:games){
-        std::string label;const char* names[]={"SD","Internal","USB"};const auto& present=locations[game.id];
+        std::string label;const char* names[]={"SD","Internal"_nx,"USB"};const auto& present=locations[game.id];
         for(size_t i=0;i<3;++i)if(present[i]){if(!label.empty())label+=" + ";label+=names[i];}
         if(label.empty()){
             const Result failed=errors[0]?errors[0]:errors[1]?errors[1]:errors[2];
-            if(failed){char code[48];snprintf(code,sizeof(code),"Location check failed: 0x%08X",unsigned(failed));label=code;}
-            else label="No files on connected storage";
+            if(failed){char code[48];snprintf(code,sizeof(code),"Location check failed: 0x%08X"_nx,unsigned(failed));label=code;}
+            else label="No files on connected storage"_nx;
         }
         game.location_hint=std::move(label);
         const auto& info=details[game.id];game.installed_bytes=info.installed_bytes;game.size_known=checked;
@@ -363,21 +366,21 @@ struct TicketRemovalState {
 };
 namespace {
 Result TicketInventory(ui::ProgressBox* p,TicketRemovalState& out,std::string& detail){
-    out={};detail="Could not account for all game content. Keep the SD card and USB drive connected, close installers and repair unreadable content before removing tickets.";
+    out={};detail="Could not account for all game content. Keep the SD card and USB drive connected, close installers and repair unreadable content before removing tickets."_nx;
     R_UNLESS(nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
     R_TRY(ReadTickets(p,out.tickets));R_TRY(ReadUsbRoutingContent(out.mapped));
     Result provider_result{};const auto provider=nexus::Detect(provider_result);
     if(provider==nexus::Provider::Unknown)return provider_result;
     if(provider!=nexus::Provider::Absent){nexus::Client client;nexus::Status status{};R_TRY(client.Query(status));out.usb=status.Available();out.generations[2]=out.usb?status.generation:0;}
-    if(!out.usb&&!out.mapped.empty()){detail="Reconnect the USB drive used by your games before checking unused tickets. Its saved game mappings are still present, so its tickets will be kept.";return nexus::Unavailable;}
+    if(!out.usb&&!out.mapped.empty()){detail="Reconnect the USB drive used by your games before checking unused tickets. Its saved game mappings are still present, so its tickets will be kept."_nx;return nexus::Unavailable;}
     for(auto target:{Target::Sd,Target::Internal,Target::Usb}){
         if(target==Target::Usb&&!out.usb)continue;
         Inventory i;R_TRY(ReadInventory(p,target,i));const auto index=static_cast<size_t>(target);
         R_UNLESS(!i.usb_unknown,Invalid);
-        if(!i.placeholders.empty()){detail="Unfinished installs are present. Finish them, or review and remove the unwanted unfinished installs in Cleanup before checking unused tickets.";return nexus::Unavailable;}
+        if(!i.placeholders.empty()){detail="Unfinished installs are present. Finish them, or review and remove the unwanted unfinished installs in Cleanup before checking unused tickets."_nx;return nexus::Unavailable;}
         if(target==Target::Usb){
             R_UNLESS(i.generation==out.generations[2],nexus::Unavailable);
-            for(const auto& id:out.mapped)if(!i.files.contains(id)){detail="Some mapped USB game files are missing from this drive. Repair the USB library or reconnect the correct drive before removing tickets.";return nexus::Unavailable;}
+            for(const auto& id:out.mapped)if(!i.files.contains(id)){detail="Some mapped USB game files are missing from this drive. Repair the USB library or reconnect the correct drive before removing tickets."_nx;return nexus::Unavailable;}
         }
         out.stamps[index]=i.stamp;out.generations[index]=i.generation;
         std::map<Id,Rights> rights;R_TRY(ReadRights(p,i,rights));
@@ -401,7 +404,7 @@ bool UnusedTicket(const TicketRemovalState& state,const Rights& id){
 }
 std::string TicketName(const Rights& id){
     u64 title{};for(size_t j=0;j<8;++j)title=(title<<8)|id[j];
-    char fallback[48];snprintf(fallback,sizeof(fallback),"Unused ticket %016llX",static_cast<unsigned long long>(title));
+    char fallback[48];snprintf(fallback,sizeof(fallback),"Unused ticket %016llX"_nx,static_cast<unsigned long long>(title));
     if(R_FAILED(ns::Initialize()))return fallback;ON_SCOPE_EXIT(ns::Exit());
     auto control=std::make_unique<NsApplicationControlData>();u64 actual{};
     if(R_FAILED(nsGetApplicationControlData(NsApplicationControlSource_Storage,title,control.get(),sizeof(*control),&actual))||actual<sizeof(control->nacp)||control->nacp.titles_data_format!=0)return fallback;
@@ -409,17 +412,17 @@ std::string TicketName(const Rights& id){
     if(R_FAILED(nacpGetLanguageEntry(&control->nacp,&entry))||!entry)return fallback;
     const auto length=strnlen(entry->name,sizeof(entry->name));std::string name(entry->name,length);
     if(!length||length==sizeof(entry->name)||!nexus::usb_import::Utf8(name)||std::any_of(name.begin(),name.end(),[](unsigned char c){return c<32||c==127;}))return fallback;
-    return name+" - unused ticket";
+    return name+" - unused ticket"_nx;
 }
 Result PreviewTicketRemoval(ui::ProgressBox* p,const CleanupItem& item,GameRemovalPlan& plan){
     plan={};auto state=std::make_shared<TicketRemovalState>();R_TRY(TicketInventory(p,*state,plan.detail));
     const auto id=Identity(item.content);R_UNLESS(UnusedTicket(*state,id),Invalid);
     plan.item=item;plan.files=1;plan.ticket_state=std::move(state);
-    plan.detail="No game file on the checked storage uses this ticket. This removes only this system's permission, not games or saves. It may belong to an uninstalled purchase; keep it if you plan to reinstall or cannot restore it from your original source.";
+    plan.detail="No game file on the checked storage uses this ticket. This removes only this system's permission, not games or saves. It may belong to an uninstalled purchase; keep it if you plan to reinstall or cannot restore it from your original source."_nx;
     return 0;
 }
 Result ApplyTicketRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemovalReport& report){
-    report={};report.detail="Ticket removal stopped. No ticket was removed; scan again.";R_UNLESS(plan.ticket_state,Invalid);
+    report={};report.detail="Ticket removal stopped. No ticket was removed; scan again."_nx;R_UNLESS(plan.ticket_state,Invalid);
     GameRemovalPlan fresh;R_TRY(PreviewTicketRemoval(p,plan.item,fresh));R_UNLESS(*fresh.ticket_state==*plan.ticket_state,Invalid);
     R_TRY(p->ShouldExitResult());R_TRY(es::Initialize());ON_SCOPE_EXIT(es::Exit());
     FsRightsId rights{};memcpy(&rights,&plan.item.content,16);
@@ -428,12 +431,12 @@ Result ApplyTicketRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRem
     R_UNLESS(fprintf(log,"REVIEWED_TICKET %s\n",HexId(&rights).c_str())>=0&&fflush(log)==0&&fsync(fileno(log))==0,MAKERESULT(Module_Libnx,LibnxError_IoError));
     R_UNLESS(nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
     report.started=true;const auto rc=es::DeleteTicket(rights);
-    if(R_FAILED(rc)){report.detail="The system could not remove this ticket. No game files or saves were changed. Scan again before retrying.";return rc;}
-    report.removed=1;report.detail="Ticket removal was requested, but the final check did not finish. Scan tickets again. No game files or saves were changed.";
+    if(R_FAILED(rc)){report.detail="The system could not remove this ticket. No game files or saves were changed. Scan again before retrying."_nx;return rc;}
+    report.removed=1;report.detail="Ticket removal was requested, but the final check did not finish. Scan tickets again. No game files or saves were changed."_nx;
     TicketList remaining;R_TRY(ReadTickets(p,remaining));R_UNLESS(!remaining.Has(Identity(plan.item.content)),Invalid);
-    report.complete=true;report.detail="Removed the unused ticket. Game files and saved progress were kept.";
+    report.complete=true;report.detail="Removed the unused ticket. Game files and saved progress were kept."_nx;
     const bool logged=fprintf(log,"COMPLETE\n")>=0&&fflush(log)==0&&fsync(fileno(log))==0;
-    if(!logged)report.detail+=" The report could not be saved.";
+    if(!logged)report.detail+=" The report could not be saved."_nx;
     return 0;
 }
 }
@@ -442,9 +445,9 @@ Result ScanUnusedTickets(ui::ProgressBox* p,CleanupScan& scan){
     auto all=state.tickets.common;all.insert(state.tickets.personal.begin(),state.tickets.personal.end());
     for(const auto& id:all)if(UnusedTicket(state,id)){
         R_TRY(p->ShouldExitResult());
-        scan.items.push_back({CleanupKind::Ticket,Target::Internal,0,0,0,Content(id),TicketName(id),"No installed content on the checked storage uses this ticket. Review before removing; it may belong to an uninstalled purchase. Rights ID: "+HexId(id.data())});
+        scan.items.push_back({CleanupKind::Ticket,Target::Internal,0,0,0,Content(id),TicketName(id),"No installed content on the checked storage uses this ticket. Review before removing; it may belong to an uninstalled purchase. Rights ID: "_nx+HexId(id.data())});
     }
-    scan.detail=std::to_string(scan.items.size())+" unused tickets to review. Tickets used by installed files are kept. Nothing is deleted automatically. Connect any other USB library drives before removing their tickets.";
+    scan.detail=std::to_string(scan.items.size())+" unused tickets to review. Tickets used by installed files are kept. Nothing is deleted automatically. Connect any other USB library drives before removing their tickets."_nx;
     return 0;
 }
 Result ScanCleanup(ui::ProgressBox* p,Target target,CleanupScan& scan){
@@ -457,18 +460,18 @@ Result ScanCleanup(ui::ProgressBox* p,Target target,CleanupScan& scan){
     for(auto app:families){const auto selected=core::Select(app,i.references,physical);u64 size{};for(const auto& id:selected.remove)size+=i.files.at(id).size;
         if(selected.remove.empty()&&std::none_of(i.records.begin(),i.records.end(),[&](const auto& r){return r.application==app;}))continue;
         scan.items.push_back({CleanupKind::Game,target,app,i.generation,size,{},AppName(i,app),
-            "Not on HOME in this system. This does not mean the game is broken or unwanted; it may belong to another SD card or emuMMC. Review before deleting.",true});}
+            "Not on HOME in this system. This does not mean the game is broken or unwanted; it may belong to another SD card or emuMMC. Review before deleting."_nx,true});}
     if(!i.usb_unknown)for(const auto& id:core::Unreferenced(i.references,physical)){
-        const auto& f=i.files.at(id);scan.items.push_back({CleanupKind::Content,target,0,i.generation,f.size,f.id,"Unreferenced file "+HexId(&f.id),"No game metadata on this storage references this NCA. Select only if you no longer need it."});}
-    for(const auto& [id,size]:i.placeholders)scan.items.push_back({CleanupKind::Placeholder,target,0,i.generation,size,Content(id),"Unfinished install "+HexId(id.data()),"Could be a paused download. Close all installers and delete only if the install is no longer wanted."});
-    scan.detail=std::to_string(scan.items.size())+" items to review. Nothing selected or deleted automatically. Saves, tickets, mods, homebrew folders and system files are kept.";
-    scan.detail+=" Use Cleanup > Unused tickets to check the system ticket database.";
-    if(i.usb_unknown)scan.detail+=" Some USB metadata could not be identified. Game/content deletion is blocked until it can be read; unfinished installs can still be reviewed.";
+        const auto& f=i.files.at(id);scan.items.push_back({CleanupKind::Content,target,0,i.generation,f.size,f.id,"Unreferenced file "_nx+HexId(&f.id),"No game metadata on this storage references this NCA. Select only if you no longer need it."_nx});}
+    for(const auto& [id,size]:i.placeholders)scan.items.push_back({CleanupKind::Placeholder,target,0,i.generation,size,Content(id),"Unfinished install "_nx+HexId(id.data()),"Could be a paused download. Close all installers and delete only if the install is no longer wanted."_nx});
+    scan.detail=std::to_string(scan.items.size())+" items to review. Nothing selected or deleted automatically. Saves, tickets, mods, homebrew folders and system files are kept."_nx;
+    scan.detail+=" Use Cleanup > Unused tickets to check the system ticket database."_nx;
+    if(i.usb_unknown)scan.detail+=" Some USB metadata could not be identified. Game/content deletion is blocked until it can be read; unfinished installs can still be reviewed."_nx;
     return 0;
 }
 static Result PrepareGameRemoval(ui::ProgressBox* p,const CleanupItem& item,GameRemovalPlan& plan){
     if(item.kind==CleanupKind::Ticket)return PreviewTicketRemoval(p,item,plan);
-    plan={};CleanupStage("checking the selected game and storage");R_UNLESS(nexus::ValidTarget(item.target),Invalid);
+    plan={};CleanupStage("checking the selected game and storage"_nx);R_UNLESS(nexus::ValidTarget(item.target),Invalid);
     if(item.kind==CleanupKind::Game){
         R_UNLESS(core::UserApplication(item.application)&&item.application!=0x05004e584d470000ULL,Invalid);
         u64 running{};R_TRY(svcGetInfo(&running,InfoType_ProgramId,CUR_PROCESS_HANDLE,0));
@@ -478,15 +481,15 @@ static Result PrepareGameRemoval(ui::ProgressBox* p,const CleanupItem& item,Game
     auto state=std::make_shared<RemovalState>();R_TRY(ReadInventory(p,item.target,state->before,item.kind!=CleanupKind::Game));const auto& i=state->before;
     if(item.generation)R_UNLESS(item.generation==i.generation,nexus::Unavailable);
     if(item.kind==CleanupKind::Game&&item.cleanup_only&&i.home.contains(item.application)){
-        plan.detail="This game is now on HOME. It is no longer eligible for cleanup, so no files were removed. Use Installed games if you intentionally want to uninstall it.";
+        plan.detail="This game is now on HOME. It is no longer eligible for cleanup, so no files were removed. Use Installed games if you intentionally want to uninstall it."_nx;
         return Invalid;
     }
     std::set<Id> ids;
     if(item.kind==CleanupKind::Placeholder){const auto found=i.placeholders.find(Identity(item.content));R_UNLESS(found!=i.placeholders.end()&&found->second==item.bytes,Invalid);plan.bytes=found->second;plan.files=1;}
     else{
-        CleanupStage("checking ownership of USB game files");
+        CleanupStage("checking ownership of USB game files"_nx);
         if(i.usb_unknown){
-            plan.detail="No files were removed. "+std::to_string(i.unresolved_usb.size())+" USB content file(s) could not be matched to game ownership, including this system's installed-game database. Repair USB library or reinstall the affected content from your original backup, then retry. Details: switch/nexusmanager/nexus.log";
+            plan.detail="No files were removed. "_nx+std::to_string(i.unresolved_usb.size())+" USB content file(s) could not be matched to game ownership, including this system's installed-game database. Repair USB library or reinstall the affected content from your original backup, then retry. Details: switch/nexusmanager/nexus.log"_nx;
             return Invalid;
         }
         if(item.kind==CleanupKind::Game){auto selection=core::Select(item.application,i.references,PhysicalIds(i));ids=std::move(selection.remove);state->shared=selection.shared.size();}
@@ -495,16 +498,16 @@ static Result PrepareGameRemoval(ui::ProgressBox* p,const CleanupItem& item,Game
         plan.files=state->files.size();
         if(item.kind==CleanupKind::Game){
             // Read HOME records with NS initialized for this operation.
-            CleanupStage("reading this game's HOME records");R_TRY(ns::Initialize());ON_SCOPE_EXIT(ns::Exit());R_TRY(ns::GetApplicationRecords(item.application,state->home_before));state->home_after=state->home_before;
+            CleanupStage("reading this game's HOME records"_nx);R_TRY(ns::Initialize());ON_SCOPE_EXIT(ns::Exit());R_TRY(ns::GetApplicationRecords(item.application,state->home_before));state->home_after=state->home_before;
             R_TRY(ncmInitialize());ON_SCOPE_EXIT(ncmExit());
-            CleanupStage("protecting copies on other storage");for(const auto& record:i.records)if(record.application==item.application){bool keep{};R_TRY(KeepSharedRecord(p,item.target,record,keep));
+            CleanupStage("protecting copies on other storage"_nx);for(const auto& record:i.records)if(record.application==item.application){bool keep{};R_TRY(KeepSharedRecord(p,item.target,record,keep));
                 if(!keep){state->remove_records.push_back(record);std::erase_if(state->home_after,[&](const auto& r){return r.storage_id==nexus::LogicalStorage(item.target)&&nexus::SameMetaKey(r.key,record.key);});}}
         }
-        CleanupStage("finding this game's files on the chosen storage");R_UNLESS(plan.files||!state->remove_records.empty(),Invalid);
+        CleanupStage("finding this game's files on the chosen storage"_nx);R_UNLESS(plan.files||!state->remove_records.empty(),Invalid);
     }
     plan.shared=state->shared;plan.records=state->remove_records.size();plan.item=item;plan.item.generation=i.generation;plan.state=std::move(state);
-    plan.detail="Removes only the reviewed game content from "+std::string(nexus::TargetName(item.target))+". Saved progress is kept.";
-    if(item.kind==CleanupKind::Game)plan.detail+=" Includes its base game, updates and DLC on this storage. Shared files and copies on other storage are kept.";
+    plan.detail="Removes only the reviewed game content from "_nx+std::string(nexus::TargetName(item.target))+". Saved progress is kept."_nx;
+    if(item.kind==CleanupKind::Game)plan.detail+=" Includes its base game, updates and DLC on this storage. Shared files and copies on other storage are kept."_nx;
     return 0;
 }
 Result PreviewGameRemoval(ui::ProgressBox* p,const CleanupItem& item,GameRemovalPlan& plan){
@@ -512,7 +515,7 @@ Result PreviewGameRemoval(ui::ProgressBox* p,const CleanupItem& item,GameRemoval
     if(R_FAILED(rc)){
         if(!plan.detail.empty()){
             nexus::Log(cleanup_stage,rc);
-            plan.detail=nexus::usbimport::FailureDetail(item.kind==CleanupKind::Ticket?"checking unused-ticket eligibility":cleanup_stage,rc,plan.detail);
+            plan.detail=nexus::usbimport::FailureDetail(item.kind==CleanupKind::Ticket?"checking unused-ticket eligibility"_nx:cleanup_stage,rc,plan.detail);
         }
         else plan.detail=CleanupFailure(rc);
         plan.state.reset();plan.ticket_state.reset();
@@ -520,8 +523,10 @@ Result PreviewGameRemoval(ui::ProgressBox* p,const CleanupItem& item,GameRemoval
     return rc;
 }
 Result ApplyGameRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemovalReport& report){
+    const auto operation=[&]()->Result{
+    nexus::diagnostics::Operation diagnostic_operation("delete-game");
     if(plan.item.kind==CleanupKind::Ticket)return ApplyTicketRemoval(p,plan,report);
-    report={};report.detail="Deletion stopped before changing files. Scan again and review the selection.";
+    report={};report.detail="Deletion stopped before changing files. Scan again and review the selection."_nx;
     R_UNLESS(plan.state,Invalid);const auto& before=*plan.state;
     // Rebuild the entire proof, not just a size check on the selected file.
     GameRemovalPlan fresh;const auto preview_result=PreviewGameRemoval(p,plan.item,fresh);
@@ -538,8 +543,8 @@ Result ApplyGameRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemov
     R_TRY(logline("REVIEWED",std::string(nexus::TargetName(plan.item.target))+" "+std::to_string(plan.item.application)+" files="+std::to_string(plan.files)));
     for(const auto& file:now.files)R_TRY(logline("PLAN",HexId(&file.id)+" bytes="+std::to_string(file.size)));
     const auto perform=[&]()->Result{
-        R_TRY(session.Check());p->SetProgressNote("Removing reviewed files. Saved progress is kept.");
-        report.started=true;report.detail="Deletion stopped part way through. Removed files cannot be restored. Run Cleanup or Delete game again to review what remains.";
+        R_TRY(session.Check());p->SetProgressNote("Removing reviewed files. Saved progress is kept."_nx);
+        report.started=true;report.detail="Deletion stopped part way through. Removed files cannot be restored. Run Cleanup or Delete game again to review what remains."_nx;
         if(plan.item.kind==CleanupKind::Placeholder){Placeholder ph{};ph.target=plan.item.target;ph.generation=plan.item.generation;ph.size=plan.bytes;memcpy(&ph.id,&plan.item.content,16);R_TRY(RemovePlaceholder(ph));report.removed=1;report.bytes=plan.bytes;R_TRY(logline("REMOVED_PLACEHOLDER",HexId(&ph.id)));}
         else for(const auto& file:now.files){
             R_TRY(FileMatches(session,file));R_TRY(logline("DELETE",HexId(&file.id)));
@@ -547,7 +552,7 @@ Result ApplyGameRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemov
             else R_TRY(ncmContentStorageDelete(&session.storage,&file.id));
             R_TRY(RemovedFileAbsent(session,file));
             ++report.removed;report.bytes+=file.size;R_TRY(logline("REMOVED",HexId(&file.id)));
-            p->SetOverallTransfer(report.removed,std::max<size_t>(1,plan.files),"Removing reviewed game files",true);
+            p->SetOverallTransfer(report.removed,std::max<size_t>(1,plan.files),"Removing reviewed game files"_nx,true);
         }
         // Keep the identifying metadata until routing and HOME finish. A
         // stopped operation can be retried even after all NCAs were removed.
@@ -575,10 +580,15 @@ Result ApplyGameRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemov
         R_TRY(logline("COMPLETE",std::to_string(report.removed)+" files"));return 0;
     };
     const auto rc=perform();report.complete=R_SUCCEEDED(rc);
-    if(report.complete)report.detail="Removed "+std::to_string(report.removed)+" file(s). Saved progress was kept. "+std::to_string(plan.shared)+" shared file(s) kept.";
-    else{(void)logline("STOPPED",std::to_string(rc));report.detail+=" Removed so far: "+std::to_string(report.removed)+" file(s).";}
-    if(report.restart)report.detail+=" Fully restart the Switch before launching or reinstalling USB games.";
+    if(report.complete)report.detail="Removed "_nx+std::to_string(report.removed)+" file(s). Saved progress was kept. "_nx+std::to_string(plan.shared)+" shared file(s) kept."_nx;
+    else{(void)logline("STOPPED",std::to_string(rc));report.detail+=" Removed so far: "_nx+std::to_string(report.removed)+" file(s).";}
+    if(report.restart)report.detail+=" Fully restart the Switch before launching or reinstalling USB games."_nx;
     report.detail+=" Report: switch/nexusmanager/cleanup-last.log";return rc;
+
+    };
+    const auto result=operation();
+    if(!p || !p->ShouldExit())nexus::reports::QueueFailure("delete",result);
+    return result;
 }
 
 namespace {
@@ -617,8 +627,8 @@ Result PreviewCleanupBatch(ui::ProgressBox* p,const std::vector<CleanupItem>& it
         R_UNLESS((item.kind==CleanupKind::Ticket)==batch.tickets&&item.target==items.front().target,Invalid);
         const auto key=std::make_tuple(int(item.kind),int(item.target),item.application,Identity(item.content));
         if(!seen.insert(key).second)continue;
-        p->SetOverallTransfer(index,items.size(),"Reviewing cleanup list",false);
-        p->SetTitle("Review "+std::to_string(index+1)+" / "+std::to_string(items.size()));
+        p->SetOverallTransfer(index,items.size(),"Reviewing cleanup list"_nx,false);
+        p->SetTitle("Review "_nx+std::to_string(index+1)+" / "+std::to_string(items.size()));
         GameRemovalPlan plan;CleanupBatchEntry entry;entry.item=item;
         entry.result=PreviewGameRemoval(p,item,plan);R_TRY(p->ShouldExitResult());
         entry.ready=R_SUCCEEDED(entry.result);entry.detail=plan.detail;
@@ -632,7 +642,7 @@ Result PreviewCleanupBatch(ui::ProgressBox* p,const std::vector<CleanupItem>& it
     batch.complete=true;return 0;
 }
 Result ApplyCleanupBatch(ui::ProgressBox* p,const CleanupBatchPlan& batch,CleanupBatchReport& report){
-    report={};report.detail="Bulk cleanup stopped before removing files.";
+    report={};report.detail="Bulk cleanup stopped before removing files."_nx;
     R_UNLESS(batch.complete&&batch.ready,Invalid);
     R_TRY(fs::FsNativeSd().CreateDirectoryRecursively("/switch/nexusmanager"));
     FILE* log=fopen("sdmc:/switch/nexusmanager/cleanup-all-last.log","wb");R_UNLESS(log,MAKERESULT(Module_Libnx,LibnxError_IoError));ON_SCOPE_EXIT(fclose(log));
@@ -643,8 +653,8 @@ Result ApplyCleanupBatch(ui::ProgressBox* p,const CleanupBatchPlan& batch,Cleanu
         for(size_t index=0;index<batch.entries.size();++index){
             R_TRY(p->ShouldExitResult());const auto& entry=batch.entries[index];
             ui::ProgressScope item_progress(p,nexus::WorkPart(index,batch.entries.size()),nexus::WorkPart(index+1,batch.entries.size()));
-            p->NewTransfer("Deleting selected cleanup items");
-            p->SetTitle("Cleanup "+std::to_string(index+1)+" / "+std::to_string(batch.entries.size()));
+            p->NewTransfer("Deleting selected cleanup items"_nx);
+            p->SetTitle("Cleanup "_nx+std::to_string(index+1)+" / "+std::to_string(batch.entries.size()));
             if(!entry.ready){++report.skipped;R_TRY(line("SKIPPED_PREVIEW",entry,entry.result));continue;}
             GameRemovalPlan fresh;const auto checked=PreviewGameRemoval(p,entry.item,fresh);R_TRY(p->ShouldExitResult());
             if(R_FAILED(checked)||RemovalFingerprint(fresh)!=entry.selection){++report.skipped;R_TRY(line("SKIPPED_CHANGED",entry,checked?checked:Invalid));continue;}
@@ -656,9 +666,9 @@ Result ApplyCleanupBatch(ui::ProgressBox* p,const CleanupBatchPlan& batch,Cleanu
         return 0;
     };
     const auto rc=run();report.complete=R_SUCCEEDED(rc);
-    report.detail="Removed "+std::to_string(report.removed)+" cleanup item(s). Skipped "+std::to_string(report.skipped)+" that could not be verified or changed since review. Saved progress was kept.";
-    if(R_FAILED(rc))report.detail+=" Cleanup stopped. Review what remains before retrying.";
-    if(report.restart)report.detail+=" Fully restart the Switch before launching or reinstalling USB games.";
+    report.detail="Removed "_nx+std::to_string(report.removed)+" cleanup item(s). Skipped "_nx+std::to_string(report.skipped)+" that could not be verified or changed since review. Saved progress was kept."_nx;
+    if(R_FAILED(rc))report.detail+=" Cleanup stopped. Review what remains before retrying."_nx;
+    if(report.restart)report.detail+=" Fully restart the Switch before launching or reinstalling USB games."_nx;
     report.detail+=" Report: switch/nexusmanager/cleanup-all-last.log";
     return rc;
 }

@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "ui/menus/game_meta_menu.hpp"
 #include "ui/menus/game_nca_menu.hpp"
 
@@ -32,10 +33,10 @@ namespace {
 #define SYSVER_RELSTEP(x) (((x) >> 00) & 0xFFFF)
 
 constexpr const char* TICKET_STR[] = {
-    [TicketType_None] = "None",
-    [TicketType_Common] = "Common",
-    [TicketType_Personalised] = "Personalised",
-    [TicketType_Missing] = "Missing",
+    [TicketType_None] = "None"_nx,
+    [TicketType_Common] = "Common"_nx,
+    [TicketType_Personalised] = "Personalised"_nx,
+    [TicketType_Missing] = "Missing"_nx,
 };
 
 constexpr u64 MINI_NACP_OFFSET = offsetof(NacpStruct, display_version);

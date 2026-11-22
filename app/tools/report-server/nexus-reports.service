@@ -1,0 +1,25 @@
+[Unit]
+Description=Nexus diagnostic report receiver
+After=network.target
+
+[Service]
+Type=simple
+User=nexus-reports
+Group=nexus-reports
+ExecStart=/usr/bin/python3 /opt/nexus-report-server/receiver.py
+StateDirectory=nexus-reports
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nexus-reports
+MemoryMax=96M
+TasksMax=24
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
