@@ -1,3 +1,4 @@
+#include "nexus/nx_Client.hpp"
 #include "nexus/localize.hpp"
 #include "yati/nx/nca.hpp"
 #include "yati/nx/crypto.hpp"
@@ -187,7 +188,9 @@ Result VerifyFixedKey(const Header& header) {
 
 Result ParseCnmt(const fs::FsPath& path, u64 program_id, ncm::PackagedContentMeta& header, std::vector<u8>& extended_header, std::vector<NcmPackagedContentInfo>& infos, std::vector<u8>* metadata_tail) {
     fs::FsNativeId fs{program_id,FsFileSystemType_ContentMeta,path,FsContentAttributes_All};
-    R_TRY(fs.GetFsOpenResult());
+    const auto opened=fs.GetFsOpenResult();
+    nexus::Log("install-open-meta-filesystem",opened);
+    R_TRY(opened);
     fs::Dir dir;R_TRY(fs.OpenDirectory("/",FsDirOpenMode_ReadFiles,&dir));
     s64 entries{};FsDirectoryEntry entry{};
     R_TRY(dir.Read(&entries,1,&entry));R_UNLESS(entries==1,Result_YatiNcmDbCorruptHeader);
@@ -220,7 +223,9 @@ Result ParseCnmt(const fs::FsPath& path, u64 program_id, ncm::PackagedContentMet
 
 Result ParseControl(const fs::FsPath& path, u64 program_id, void* nacp_out, s64 nacp_size, std::vector<u8>* icon_out, s64 nacp_off) {
     fs::FsNativeId fs{program_id, FsFileSystemType_ContentControl, path, FsContentAttributes_All};
-    R_TRY(fs.GetFsOpenResult());
+    const auto opened=fs.GetFsOpenResult();
+    nexus::Log("install-open-control-filesystem",opened);
+    R_TRY(opened);
 
     // read nacp.
     if (nacp_out) {

@@ -34,6 +34,8 @@ int main(){
  registration::Capabilities current{registration::CapabilityMagic,1,4096,262144,7,0};
  assert(registration::Compatible(current));
  assert(registration::ExplicitInstallTargetSupported(current));
+ current.features=15;assert(registration::Compatible(current));
+ for(auto result:{registration::SourceIncomplete,registration::SourceNotFound,registration::SourceRecordUnsupported,0x615u})assert(presentation::ContentReason(result));
  current.reserved=1;assert(!registration::Compatible(current));
  puts("PASS: verified collision reuse; no overwrite/replay; I/O, hash, cleanup and compatibility failures stay closed.");
 }

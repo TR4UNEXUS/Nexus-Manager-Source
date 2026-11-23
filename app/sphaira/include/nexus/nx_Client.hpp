@@ -40,6 +40,7 @@ public:
     void Close();
     size_t TransferLimit() const { return transfer_size; }
     Result Query(Status &status);
+    Result ReportSnapshot(std::string& snapshot);
     Result Check(u64 generation);
     Result Stat(u64 generation, const std::string &path, Info &info);
     Result Read(u64 generation, const std::string &path, u64 offset, void *buf, size_t size, u64 &actual);

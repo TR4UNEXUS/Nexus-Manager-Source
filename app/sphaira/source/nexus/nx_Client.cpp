@@ -126,6 +126,16 @@ Result Client::VirtualSdStatus(NexusVsdStatus &status) {
     if(R_FAILED(rc))return rc;
     return status.magic==NEXUS_VSD_MAGIC && status.version==NEXUS_VSD_VERSION ? 0 : Unavailable;
 }
+Result Client::ReportSnapshot(std::string& snapshot) {
+    snapshot.clear();Status current{};const auto queried=Query(current);if(R_FAILED(queried))return queried;
+    std::array<char,8192> data{};
+    const auto rc=serviceDispatch(&service,65040,.buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{data.data(),data.size()}});
+    if(R_FAILED(rc))return rc;
+    const auto end=std::find(data.begin(),data.end(),char{});if(end==data.end())return Invalid;
+    const std::string_view text(data.data(),static_cast<size_t>(end-data.begin()));
+    if(!text.starts_with("usb_live_snapshot_version=1\n"))return Invalid;
+    snapshot.assign(text);return 0;
+}
 Result Client::ArmVirtualSd(u64 generation,const std::string &physical_nro) {
     nexus_vsd::Profile profile{};
     if(!nexus_vsd::Parse(physical_nro,profile))return Invalid;
@@ -322,6 +332,9 @@ Result Destination::Open(NcmContentStorage &storage) {
             rc = serviceDispatchIn(ncmGetServiceSession(),65031,generation,
                 .out_num_objects=1,.out_objects=&storage.s);
             Log("usb-pinned-open-T1",rc,generation);
+            // Legacy firmware uses SD-not-present for a revoked USB route.
+            // Keep that raw result in the log, but explain the USB destination.
+            if(rc==MAKERESULT(2,2001))rc=MAKERESULT(140,208);
         }
         if(R_SUCCEEDED(rc)) rc = Probe(storage);
         if(R_SUCCEEDED(rc)) Log("usb-transfer-bytes",0,client.TransferLimit());

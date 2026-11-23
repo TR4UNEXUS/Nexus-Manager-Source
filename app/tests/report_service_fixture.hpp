@@ -39,9 +39,11 @@ void Log(const char* phase,Result rc,u64 value=0){
  char line[640]{};snprintf(line,sizeof(line),"NM2 2026-11-23T12:00:00Z version=0.2.28 session=0000000000000001 uptime_ms=100 operation=1 task=install event=%s rc=0x%08X value=%llu\n",phase,rc,(unsigned long long)value);
  auto& bytes=disk["/switch/nexusmanager/nexus.log"];bytes.insert(bytes.end(),line,line+strlen(line));
 }
-struct Status{unsigned mounted{1},ready{1},state{},result{};};struct Client{Result Query(Status&){return 0;}};
+inline Result snapshot_result{};
+struct Status{unsigned mounted{1},ready{1},state{},result{};};struct Client{Result Query(Status&){return 0;}Result ReportSnapshot(std::string& out){out="usb_live_snapshot_version=1\nusb_live_snapshot_current=1\nusb_completion_failure_wait_ns=123\npassword=private\n";return snapshot_result;}};
 namespace lifecycle{bool foreground=true;bool CanPoll(){return foreground;}}
-namespace routing_backup{struct Status{unsigned flags{1},last_result{};};}
+inline u64 armGetSystemTick(){return 123;}inline u64 armTicksToNs(u64 x){return x;}
+namespace routing_backup{struct Diagnostic{};struct Status{unsigned flags{1},last_result{};};}
 namespace support{
 using Bytes=std::vector<u8>;constexpr Result Missing=4;
 struct Storage {
@@ -63,4 +65,4 @@ Result SendDiagnosticReport(const std::string& bytes,std::string& receipt,const 
 }
 }
 }
-namespace sphaira::nexusapp{Result QueryConsoleRoutingBackup(nexus::routing_backup::Status&){return 0;}}
+namespace sphaira::nexusapp{Result QueryConsoleRoutingBackupDiagnostic(nexus::routing_backup::Diagnostic&){return 0;}Result QueryConsoleRoutingBackup(nexus::routing_backup::Status&){return 0;}}

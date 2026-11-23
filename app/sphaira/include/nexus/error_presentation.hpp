@@ -10,6 +10,14 @@ namespace nexus::presentation {
 constexpr const char* ContentReason(std::uint32_t result) {
     if(result==registration::FirmwareUpdateRequired)
         return "The running Nexus USB firmware is too old or does not match this Manager. Update the whole Nexus HATS pack, then fully power off and start it through Hekate > Launch. Updating Manager alone cannot fix this. Your game files have not been declared damaged."_nx;
+    if(result==registration::SourceIncomplete)
+        return "Some files for the selected game, update or DLC are missing from this storage. Check / repair that library before moving it. The source files were kept."_nx;
+    if(result==registration::SourceNotFound)
+        return "No complete game records were found on the selected source. Refresh Installed games and check its storage location before retrying."_nx;
+    if(result==registration::SourceRecordUnsupported)
+        return "This game has a content record Manager cannot move safely yet. The original files were kept; send a problem report for review."_nx;
+    if(result==0x615)
+        return "A system service has no free connection slots. Close other apps and restart before retrying. The report records which step failed."_nx;
     if(result==registration::MetadataConflict)
         return "The destination has different information for the same game version. The source has been kept. Check / repair the destination library before retrying; Manager will not overwrite conflicting records."_nx;
     if((result&0x1ffu)==140 && (((result>>9)&0x1fffu)==0 || ((result>>9)&0x1fffu)==208 || ((result>>9)&0x1fffu)==401))

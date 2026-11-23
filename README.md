@@ -2,23 +2,15 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.30 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.30).
+This repository contains the 0.2.31 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.31).
 
-## What's new since 0.2.28
+## Changes in 0.2.31
 
-- Clear firmware-update guidance when the active USB service does not support the required protocol.
-- Move recovery when identical destination content is already registered. Content must match before reuse; a failed check keeps the source.
-- Clearer storage, connection, locked-file and conflicting-content errors.
-- More accurate failure-stage reporting, with install setup and sleep/wake diagnostics.
-- Bulk deletion of selected games while keeping saved progress.
-- Tickets + link existing files for complete content already on a drive, using a suitable original package.
-- Clearer guidance for formatted drives. A map backup cannot restore erased game content.
+- Clearer backup and incomplete-source messages, without treating a failed check as proof that content or tickets are missing.
+- Live USB failure snapshots and separate short-output/decompression/filesystem-open diagnostics, with filtered numeric events only.
+- Existing map repair, moves, deletion, network installs and in-app updates remain available. Firmware recovery improvements require Nexus RF3.
 
-Guided USB repair, console backups of the USB map, language selection, port and mod management, File manager, FTP/USB cable transfers and SMB/NFS installs remain available. Repairs cannot replace missing game files or tickets, and integrity checks stay enabled.
-
-Problem reports remain optional and exclude raw logs, credentials, tickets, saves and game files. The public build leaves private server uploads disabled; deployment configuration stays outside this repository. Users can disable reporting or discard queued reports.
-
-The application build and automated checks passed. Version 0.2.30 still needs console testing. Please report reproducible problems and a diagnostic report where available, without including private files.
+The NRO/NSP and host checks passed; console testing is still needed. Help testing, building and improving Nexus is welcome. Private upload endpoints and credentials are not included in this source.
 
 ## Getting started
 

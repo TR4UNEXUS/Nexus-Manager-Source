@@ -6,6 +6,10 @@ inline constexpr std::uint32_t Magic=0x3442584e;
 inline constexpr std::size_t HeaderSize=176;
 struct Status {std::uint32_t magic{},version{},flags{},last_result{};std::uint64_t sequence{},bytes{};};
 static_assert(sizeof(Status)==32);
+struct Diagnostic {std::uint32_t magic{},version{},stage{},result{},index{},reserved{};std::uint64_t expected{},actual{},attempts{};};
+static_assert(sizeof(Diagnostic)==48);
+inline bool Valid(const Diagnostic&d){return d.magic==0x3344584e&&d.version==1&&d.stage<=15&&!d.reserved&&(d.index==0xffffffff||d.index<3);}
+
 inline bool Valid(const Status&s){return s.magic==Magic&&s.version==1&&!(s.flags&~1u)&&(!(s.flags&1)||(s.sequence&&s.bytes>=HeaderSize&&s.bytes<=HeaderSize+3*repair::MaxFile));}
 template<class Hash> bool Decode(const recovery::Bytes&b,std::uint64_t expected,repair::Snapshot&out,Hash hash){
     if(b.size()<HeaderSize||repair::Get32(b,0)!=Magic||repair::Get32(b,4)!=1||repair::Get32(b,8)!=HeaderSize||repair::Get32(b,12)!=7||repair::Get64(b,16)!=expected||!expected)return false;

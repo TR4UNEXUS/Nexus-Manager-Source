@@ -13,7 +13,7 @@ void BackupConsoleRoutingAfterChange(){}
 Result PendingMoves(std::vector<MoveCheckpoint>& out){R_TRY(event());out=saved;return 0;}
 Result CompleteMoveCheckpoint(const MoveCheckpoint&){R_TRY(event());saved.clear();++complete_receipts;return 0;}
 }'''
-generated=(A/'tests/move_resume_fixture.hpp').read_text()+checkpoint+stub+'\nnamespace sphaira::nexusapp {namespace {\n'+'\n'.join(parts)+'\n}\n'+resume+'\n}\n'+(A/'tests/move_resume_cases.cpp').read_text()
+generated=(A/'tests/move_resume_fixture.hpp').read_text()+'\n#include "nexus/registration_protocol.hpp"\n'+checkpoint+stub+'\nnamespace sphaira::nexusapp {namespace {\n'+'\n'.join(parts)+'\n}\n'+resume+'\n}\n'+(A/'tests/move_resume_cases.cpp').read_text()
 with tempfile.TemporaryDirectory(prefix='nexus-move-resume-') as t:
  p=Path(t);(p/'test.cpp').write_text(generated)
  for opt in ('-O0','-O2'):

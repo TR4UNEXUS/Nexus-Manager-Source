@@ -6,6 +6,8 @@ namespace sphaira::ui {class ProgressBox;}
 namespace sphaira::nexusapp {
 Result QueryConsoleRoutingBackup(nexus::routing_backup::Status&);
 Result CheckpointConsoleRoutingBackup();
+Result QueryConsoleRoutingBackupDiagnostic(nexus::routing_backup::Diagnostic&);
+std::string ConsoleRoutingBackupReason(Result expected_result=0);
 Result ConfirmConsoleRoutingBackup(u64& sequence);
 Result ReadConsoleRoutingBackup(ui::ProgressBox*,nexus::repair::Snapshot&,nexus::routing_backup::Status&);
 Result MissingRoutingWithConsoleBackup(bool& available);

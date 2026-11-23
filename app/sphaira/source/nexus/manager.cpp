@@ -239,7 +239,8 @@ Result AppMetas(u64 app, Storage& storage, std::vector<Meta>& metas) {
         bool has_meta{};
         R_TRY(ncmContentMetaDatabaseHas(&storage.db,&has_meta,&r.key));
         if(!has_meta)continue;
-        R_UNLESS(r.key.type >= NcmContentMetaType_Application && r.key.type <= NcmContentMetaType_DataPatch,Invalid);
+        nexus::Log("source-record-type",0,r.key.type);
+        R_UNLESS(r.key.type >= NcmContentMetaType_Application && r.key.type <= NcmContentMetaType_DataPatch,nexus::registration::SourceRecordUnsupported);
         Meta m;
         R_TRY(LoadMeta(storage.db,r.key,m));
         // A move includes every base/update/DLC record in this source storage.
@@ -250,10 +251,11 @@ Result AppMetas(u64 app, Storage& storage, std::vector<Meta>& metas) {
             if(has)++present;
         }
         if(!present)continue;
-        R_UNLESS(present==m.infos.size(),Invalid);
+        nexus::Log("source-record-present",0,present);nexus::Log("source-record-expected",0,m.infos.size());
+        R_UNLESS(present==m.infos.size(),nexus::registration::SourceIncomplete);
         metas.push_back(std::move(m));
     }
-    R_UNLESS(!metas.empty(),Invalid);
+    R_UNLESS(!metas.empty(),nexus::registration::SourceNotFound);
     R_SUCCEED();
 }
 Result HashContent(ui::ProgressBox* p, Target t, Storage& s, const NcmContentInfo& i, std::array<u8,32>& hash, CopyReport* report=nullptr,TransferProgress* progress=nullptr) {

@@ -27,8 +27,11 @@ std::string ReadText(support::Storage& s,const char* name,size_t max){support::B
 Result Capture(const char* kind,Result result,const std::string& description,std::string& preview){
     R_UNLESS(Configured()&&Kind(kind),Unavailable);R_UNLESS(Description(description),Invalid);support::Storage s;R_TRY(s.Open());R_TRY(support::Folders(s,"problem-reports"));
     std::vector<std::string> names;R_TRY(s.List(Root,names));R_UNLESS(size_t(std::count_if(names.begin(),names.end(),[](const auto& n){return QueueName(n);}))<MaxQueued,Unavailable);
+    std::string firmware;
+    {Client diagnostics;const auto rc=diagnostics.ReportSnapshot(firmware);Log("report-live-snapshot",rc,armTicksToNs(armGetSystemTick()));
+     if(R_FAILED(rc)){firmware=ReadText(s,"/atmosphere/logs/usb_storage_status.txt",128*1024);firmware+="\nusb_live_snapshot_current=0\n";}}
+    routing_backup::Diagnostic details{};static_cast<void>(sphaira::nexusapp::QueryConsoleRoutingBackupDiagnostic(details));
     const auto manager=ReadText(s,"/switch/nexusmanager/nexus.log",1100*1024);
-    const auto firmware=ReadText(s,"/atmosphere/logs/usb_storage_status.txt",128*1024);
     Client client;nexus::Status state{};const auto usb=client.Query(state);routing_backup::Status backup{};const auto saved=sphaira::nexusapp::QueryConsoleRoutingBackup(backup);
     char status[256]{};snprintf(status,sizeof(status),"usb_query=0x%08X mounted=%u ready=%u state=%u usb_result=0x%08X backup_query=0x%08X backup_flags=%u backup_result=0x%08X",usb,state.mounted,state.ready,state.state,state.result,saved,backup.flags,backup.last_result);
     const auto payload=Payload(updates::Version,kind,result,description,manager,firmware,status);R_UNLESS(!payload.empty()&&payload.size()<=MaxReport,Invalid);

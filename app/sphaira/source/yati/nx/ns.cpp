@@ -1,3 +1,4 @@
+#include "nexus/nx_Client.hpp"
 #include "yati/nx/ns.hpp"
 #include "yati/nx/service_guard.h"
 #include "defines.hpp"
@@ -16,7 +17,9 @@ Result _nsExInitialize() {
     g_ns_acquired = true;
 
     if (hosversionAtLeast(3,0,0)) {
-        R_TRY(nsGetApplicationManagerInterface(&g_nsAppSrv));
+        const auto opened=nsGetApplicationManagerInterface(&g_nsAppSrv);
+        nexus::Log("install-open-application-interface",opened);
+        R_TRY(opened);
         g_ns_child_owned = true;
     } else {
         g_nsAppSrv = *nsGetServiceSession_ApplicationManagerInterface();

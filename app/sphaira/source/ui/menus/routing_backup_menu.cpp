@@ -28,14 +28,21 @@ void DisplayConsoleRoutingBackup(){
     menu->Add<ui::SidebarEntryCallback>("Check backup status"_nx,[]{
         auto status=std::make_shared<nexus::routing_backup::Status>();
         App::Push<ui::ProgressBox>(0,"Check library backup"_nx,"Reading the console save"_nx,[status](ui::ProgressBox*){return QueryConsoleRoutingBackup(*status);},[status](Result rc){
-            if(R_FAILED(rc)){Message("Could not read the console backup. This feature needs the matching Nexus N4 firmware. Existing game files and saves were kept."_nx,rc);return;}
+            if(R_FAILED(rc)){Message("Could not read the console backup. Check that matching Nexus firmware is running, then try again. Existing game files and saves were kept."_nx,rc);return;}
             std::string text=status->flags&1?"A checked USB library backup is saved on this system.\n\nIt can restore missing routing files if the atmosphere folder is deleted. Reinstall the Nexus firmware first, then choose Restore missing USB links."_nx:"No console backup is available yet. The firmware saves valid existing mappings automatically after startup. You can also choose Save current USB links."_nx;
-            if(status->last_result)text+="\n\nThe most recent save attempt could not finish. The previous backup was kept. Use Repair USB games to check the current library, then save again."_nx;
+            if(status->last_result){
+                text+="\n\n"+std::string(status->flags&1?"The previous checked backup is still available."_nx:"Your current USB links do not have a confirmed console backup yet."_nx);
+                const auto reason=ConsoleRoutingBackupReason();if(!reason.empty())text+="\n\n"+reason;
+            }
             Message(text);
         },ui::ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
     },"See whether this sysMMC or emuMMC has a valid recovery copy."_nx);
     menu->Add<ui::SidebarEntryCallback>("Save current USB links"_nx,[]{
-        App::Push<ui::ProgressBox>(0,"Save USB library backup"_nx,"Checking current mappings"_nx,[](ui::ProgressBox*){u64 sequence{};return ConfirmConsoleRoutingBackup(sequence);},[](Result rc){Message(R_SUCCEEDED(rc)?"USB library backup was saved and read back from this system's dedicated Nexus save. It matches the current SD routing files."_nx:"The current mappings could not be backed up and verified. Any previous valid backup was kept. Run Repair USB games, then try again."_nx,rc);});
+        App::Push<ui::ProgressBox>(0,"Save USB library backup"_nx,"Checking current mappings"_nx,[](ui::ProgressBox*){u64 sequence{};return ConfirmConsoleRoutingBackup(sequence);},[](Result rc){
+            std::string text=R_SUCCEEDED(rc)?"USB library backup was saved and read back from this system's dedicated Nexus save. It matches the current SD routing files."_nx:"The current mappings could not be backed up and verified. Any previous valid backup was kept. Run Repair USB games, then try again."_nx;
+            if(R_FAILED(rc)){const auto reason=ConsoleRoutingBackupReason(rc);if(!reason.empty())text+="\n\n"+reason;}
+            Message(text,rc);
+        });
     },"Refresh the automatic backup now. Game files, keys, tickets and saves are not copied."_nx);
     menu->Add<ui::SidebarEntryCallback>("Restore missing USB links"_nx,[]{Restore();},"Check the saved links against this system and the connected drive before restoring."_nx);
     menu->Add<ui::SidebarEntryCallback>("What is backed up?"_nx,[]{Message("The backup contains the three USB routing indexes.\n\nIt is stored in a dedicated Nexus system save and keeps two checked revisions. Game files, keys, tickets and saved progress are not included. Each sysMMC or emuMMC has its own backup.\n\nDeleting the atmosphere folder does not delete this save. Deleting or recreating the whole emuMMC can still remove it.\n\nRestore only fills a missing set of routing files. Existing mappings are kept; use Repair USB games to fix those."_nx);});

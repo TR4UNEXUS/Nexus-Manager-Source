@@ -10,7 +10,7 @@ sh tools/setup-libnx.sh
 sh build-nexus-wsl.sh
 ```
 
-`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.30 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
+`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.31 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
 
 The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro`. No console key is embedded in the default build. Keep raw USB mounting disabled: Nexus firmware owns the drive.
 
@@ -51,7 +51,7 @@ The bundled signed catalogue is included in RomFS. The public verification key i
 
 The default source build has empty report-server endpoints. It can use the public GitHub catalogue fallback and export diagnostics without a private deployment. To enable your own receiver, keep `nexus_report_endpoint.hpp` outside the checkout and set `NEXUS_REPORT_CONFIG_DIR` to that external directory. Define the HTTPS upload and catalogue URLs there; never put administrator credentials in the header or app. A URL compiled into an app is public, not an authentication secret. See [receiver setup and privacy](app/tools/report-server/README.md).
 
-Additional checks for 0.2.30, run from `app/`:
+Additional checks for 0.2.31, run from `app/`:
 
 ```sh
 python3 tools/verify-vendored-libnx.py
@@ -68,7 +68,7 @@ python3 tools/report-server/test_receiver.py
 
 Tests cover catalogue signatures and rollback rejection, report consent and receipt handling, failed storage/network operations, recovery and translation packaging. They do not replace console testing.
 
-## Report and transfer fixes in 0.2.30
+## Report and transfer fixes in 0.2.31
 
 Additional focused checks, run from `app/`:
 

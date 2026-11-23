@@ -8,6 +8,9 @@ int main(){
  for(const auto& [name,bytes]:disk)if(name.ends_with(".json")){
   const std::string body(bytes.begin(),bytes.end());
   assert(body.find("report-failure-install rc=0x00000001")!=std::string::npos);
+  assert(body.find("usb_live_snapshot_current=1")!=std::string::npos);
+  assert(body.find("usb_completion_failure_wait_ns=123")!=std::string::npos);
+  assert(body.find("password=private")==std::string::npos);
  }
  Poll(false);assert(!starts&&!sends);nexus::lifecycle::foreground=false;Poll(true);assert(!starts);nexus::lifecycle::foreground=true;
  send_rc=Fault;Poll(true);assert(starts==1&&sends==1&&Queued()==1);Poll(false);assert(!started);Poll(true);assert(starts==1); // retry delay
@@ -28,5 +31,8 @@ int main(){
  bad=valid;bad.insert(1,"\"schema\":1,");assert(!QueuedPayload(bad,manual));
  bad=valid;bad.replace(bad.find("schema\":1")+8,1,"true");assert(!QueuedPayload(bad,manual));
  const auto id=Digest(bad);disk[std::string(Root)+"/"+id+".json"]={bad.begin(),bad.end()};assert(!UploadOne()&&!sends&&Queued()==1);
- std::cout<<"PASS: production report queue, consent, idle/retry gating, receipt persistence, deduplication, limits and private-field rejection.\n";
+ Reset();nexus::snapshot_result=Fault;assert(!SetPreference(true));QueueFailure("install",1);assert(Queued()==1);
+ for(const auto&[name,bytes]:disk)if(name.ends_with(".json")){const std::string body(bytes.begin(),bytes.end());assert(body.find("usb_live_snapshot_current=0")!=std::string::npos);assert(body.find("usb_live_snapshot_current=1")==std::string::npos);}
+ nexus::snapshot_result=0;
+ std::cout<<"PASS: production report queue, consent, idle/retry gating, receipt persistence, deduplication, limits, live snapshot/fallback and private-field rejection.\n";
 }

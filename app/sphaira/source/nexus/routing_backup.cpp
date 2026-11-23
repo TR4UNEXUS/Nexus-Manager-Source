@@ -18,6 +18,33 @@ Result QueryConsoleRoutingBackup(nexus::routing_backup::Status&status){
     R_TRY(serviceDispatch(ncmGetServiceSession(),65034,.buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{&status,sizeof(status)}}));
     R_UNLESS(nexus::routing_backup::Valid(status),nexus::Invalid);return 0;
 }
+Result QueryConsoleRoutingBackupDiagnostic(nexus::routing_backup::Diagnostic&d){
+    d={};R_TRY(ncmInitialize());ON_SCOPE_EXIT(ncmExit());
+    nexus::registration::Capabilities caps{};
+    R_TRY(serviceDispatch(ncmGetServiceSession(),65033,.buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{&caps,sizeof(caps)}}));
+    R_UNLESS(nexus::registration::Compatible(caps)&&(caps.features&8),nexus::Unavailable);
+    R_TRY(serviceDispatch(ncmGetServiceSession(),65037,.buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{&d,sizeof(d)}}));
+    R_UNLESS(nexus::routing_backup::Valid(d),nexus::Invalid);
+    nexus::Log("backup-failure-stage",d.result,d.stage);
+    nexus::Log("backup-map-index",0,d.index);nexus::Log("backup-expected-bytes",0,d.expected);
+    nexus::Log("backup-actual-bytes",0,d.actual);nexus::Log("backup-attempts",0,d.attempts);
+    return 0;
+}
+std::string ConsoleRoutingBackupReason(Result expected_result){
+    nexus::routing_backup::Diagnostic d{};
+    if(R_FAILED(QueryConsoleRoutingBackupDiagnostic(d))||!d.result||(expected_result&&expected_result!=d.result))return {};
+    switch(d.stage){
+    case 1:case 13:
+        return d.result==0x003fe805 ? "A USB repair or import is unfinished. Finish recovery before saving the library backup."_nx :
+            "The app could not check for an unfinished USB repair. Keep the SD card connected and try again."_nx;
+    case 2:case 14:return "A routing file could not be read. Use Repair USB games to check the current mappings."_nx;
+    case 3:case 4:case 15:return "A routing file is incomplete or could not be verified. Existing backups were kept."_nx;
+    case 5:return "The console backup save could not be opened or its ownership could not be confirmed. It was not erased."_nx;
+    case 6:case 7:return "The saved backup archive needs attention. Any recoverable or rejected copy was kept."_nx;
+    case 10:return "The USB library changed while saving. Wait for transfers to finish, then save again."_nx;
+    default:return "The console backup could not finish writing or verification. Any previous valid backup was kept."_nx;
+    }
+}
 Result CheckpointConsoleRoutingBackup(){
     R_TRY(ncmInitialize());ON_SCOPE_EXIT(ncmExit());R_TRY(Supported());
     const auto rc=serviceDispatch(ncmGetServiceSession(),65035);nexus::Log("console-routing-backup-N4",rc);return rc;

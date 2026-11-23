@@ -892,6 +892,8 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                         ZSTD_outBuffer output = { inflate_buf.data() + inflate_offset, chunk_size, 0 };
                         const auto res = ZSTD_decompressStream(dctx, std::addressof(output), std::addressof(input));
                         if (ZSTD_isError(res)) {
+                            nexus::Log("install-ncz-decompress",Result_YatiInvalidNczZstdError,res);
+                            nexus::Log("install-ncz-output-bytes",0,t->decompress_offset);
                             log_write("[NCZ] ZSTD_decompressStream() pos: %zu size: %zu res: %zd msg: %s\n", input.pos, input.size, res, ZSTD_getErrorName(res));
                         }
                         R_UNLESS(!ZSTD_isError(res), Result_YatiInvalidNczZstdError);
@@ -1291,11 +1293,16 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     if (R_FAILED(t_data.GetResults())) {
         log_write("some reads failed, waking threads: %s\n", nca.name.c_str());
         log_write("returning due to fail: %s\n", nca.name.c_str());
+        nexus::Log("install-worker-data",t_data.GetResults(),t_data.GetWriteOffset());
+        nexus::Log("install-worker-expected-bytes",0,t_data.GetWriteSize());
         return t_data.GetResults();
     }
     R_TRY(t_data.GetResults());
     // A successful worker result alone must not promote a truncated write.
-    R_UNLESS(t_data.GetWriteSize()>0 && t_data.GetWriteOffset()==t_data.GetWriteSize(),Result_YatiInvalidNcaSha256);
+    if(!t_data.GetWriteSize()||t_data.GetWriteOffset()!=t_data.GetWriteSize()){
+        nexus::Log("install-short-output",Result_YatiInvalidNcaSha256,t_data.GetWriteOffset());
+        nexus::Log("install-expected-output",0,t_data.GetWriteSize());return Result_YatiInvalidNcaSha256;
+    }
 
     pbox->ContentBytes(t_data.GetWriteOffset(),t_data.GetWriteSize());
     pbox->ContentPhase("Checking streamed hash"_nx);
@@ -1307,6 +1314,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
         const void* expected=nca.has_expected_hash ? static_cast<const void*>(nca.expected_hash) : &nca.content_id;
         if(!t_data.source_hash.Matches(expected,nca.has_expected_hash?32:16,&nca.converted_hash,nullptr,nca.source_digest)) {
             if(diagnostic)diagnostic->Set(nexus::install::Failure::Hash,nca.name,diagnostic_title);
+            nexus::Log("install-source-hash-mismatch",Result_YatiInvalidNcaSha256,t_data.GetWriteOffset());
             return Result_YatiInvalidNcaSha256;
         }
         log_write("NCA source verified%s: %s\n",nca.converted_hash?" (distribution conversion)":"",nca.name.c_str());
@@ -2551,6 +2559,7 @@ Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path
     const auto open_result=source->GetOpenResult();
     if(R_FAILED(open_result) && override.diagnostic && nexus::package::SplitPart(path.s))
         override.diagnostic->text="Split XCI could not be opened. Keep every numbered part in the same folder, choose the first part (.xc0 or .xci.00), and check that no parts are missing or empty. The original files were not changed."_nx;
+    nexus::Log("install-file-open",open_result,nexus::package::SplitPart(path.s)?1:0);
     R_TRY(open_result);
     s64 source_size{-1};
     if (R_FAILED(source->GetSize(&source_size))) {
@@ -2601,6 +2610,7 @@ Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, c
     container::Collections collections;
     const auto parse_rc=container->GetCollections(collections);
     if(R_FAILED(parse_rc) && override.diagnostic)override.diagnostic->Set(nexus::install::Failure::Package);
+    nexus::Log("install-parse-container",parse_rc);
     R_TRY(parse_rc);
     return InstallFromCollections(pbox, container->GetSource(), collections, override);
     };
