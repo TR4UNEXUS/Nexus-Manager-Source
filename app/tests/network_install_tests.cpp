@@ -125,6 +125,10 @@ int main(){
         assert(detail.text.find("some content may already be installed")!=std::string::npos);
         p.cancel=0;
     }
+    // Explicit link-only reaches the same NAS adapter, never physical SD.
+    Reset();assert(!InstallNetworkPackage(&p,"nexusnet1:/","/game.nsp",size(),nexus::Target::Usb,42,detail,&outcome,true));
+    assert(yati::observed_config.reuse_existing_usb_only&&!yati::observed_config.receipt);
+    Reset();assert(InstallNetworkPackage(&p,"nexusnet1:/","/game.nsp",size(),nexus::Target::Sd,0,detail,&outcome,true));assert(!state.installs);
     // Refuse unsafe/unreviewed selections before invoking the installer.
     for(int fault=0;fault<12;++fault){Reset();auto mount=std::string("nexusnet1:/"),path=std::string("/game.nsp");auto target=nexus::Target::Sd;u64 gen{};auto expected=size();
         switch(fault){case 0:mount="sdmc:/";break;case 1:path="/../game.nsp";break;case 2:path="/game.zip";break;case 3:expected++;break;case 4:target=nexus::Target::Usb;break;case 5:target=nexus::Target::Internal;break;case 6:state.applet=true;break;case 7:state.physical_error=802;break;case 8:state.pending_error=803;break;case 9:state.readonly=false;break;case 10:state.nostat=true;break;case 11:state.foreground=false;break;}

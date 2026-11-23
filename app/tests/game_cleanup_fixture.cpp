@@ -223,5 +223,20 @@ int main(){using namespace sphaira::nexusapp;sphaira::ui::ProgressBox p;
     Reset();assert(!PreviewCleanupBatch(&p,{loose},batch));p.cancel=true;assert(ApplyCleanupBatch(&p,batch,batch_report)==Cancelled&&!deletes);p.cancel=false;
     Reset();auto nonexistent=loose;nonexistent.content=Content(I(99));assert(!PreviewCleanupBatch(&p,{nonexistent,loose},batch)&&batch.ready==1&&batch.skipped==1);
     assert(!ApplyCleanupBatch(&p,batch,batch_report)&&batch_report.skipped==1&&batch_report.removed==1);
+    // Games selected together can release their shared content in the same
+    // batch. Unselected ownership changes must still reject the old plan.
+    Reset(Target::Usb);GameRemovalPlan before_family,after_family;
+    assert(!PreviewGameRemoval(&p,Item(),before_family)&&before_family.shared==1);
+    const std::set<u64> approved{app,other};const auto family_hash=RemovalFingerprint(before_family,approved);
+    std::erase_if(live.references,[](const auto& ref){return ref.application==other;});
+    assert(!PreviewGameRemoval(&p,Item(),after_family)&&after_family.shared==0);
+    assert(family_hash==RemovalFingerprint(after_family,approved));
+    assert(!ApplyGameRemoval(&p,after_family,report)&&report.removed==4&&!live.files.contains(I(4)));
+    for(auto target:{Target::Sd,Target::Internal,Target::Usb}){
+        Reset(target);assert(!PreviewCleanupBatch(&p,{Item(),Item()},batch)&&batch.ready==1);
+        assert(!ApplyCleanupBatch(&p,batch,batch_report)&&batch_report.removed_games==std::vector<u64>{app});
+    }
+    Reset(Target::Usb);assert(!PreviewCleanupBatch(&p,{Item()},batch));++live.generation;
+    assert(!ApplyCleanupBatch(&p,batch,batch_report)&&batch_report.skipped==1&&!deletes);
     std::cout<<"Production removal tests: SD/internal/USB, shared content/copies, stale inventory/media, cancellation/I/O, partial retry, routing/HOME failure and orphan review passed\n";
 }

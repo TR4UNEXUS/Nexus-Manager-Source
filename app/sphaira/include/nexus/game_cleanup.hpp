@@ -48,6 +48,7 @@ struct CleanupBatchPlan {
 struct CleanupBatchReport {
     size_t removed{},skipped{},failed{},files{};u64 bytes{};
     bool restart{},complete{};
+    std::vector<u64> removed_games;
     std::string detail;
 };
 Result PreviewCleanupBatch(ui::ProgressBox*,const std::vector<CleanupItem>&,CleanupBatchPlan&);

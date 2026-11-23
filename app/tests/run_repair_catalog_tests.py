@@ -44,6 +44,9 @@ int main(int argc,char**argv){assert(argc==2);std::ifstream f(argv[1],std::ios::
  const std::string line="NM2 2026-11-22T01:00:00Z version=0.2.28 session=0123456789abcdef uptime_ms=1 operation=1 task=install-game event=failed rc=0x00000001 value=42\n";
  const auto clean=ManagerLines("password=private\n"+line+"smb://user:private@server/path\n"+line+"NM2 malformed\n");assert(clean==line+line);
  assert(FirmwareLines("build_id=NEXUS-1.12.2-LR1\nusb_live_write_failures=7\nusb_password=private\npath=/secret\nusb_last_result=0x12345678901234567890\n")=="build_id=NEXUS-1.12.2-LR1\nusb_live_write_failures=7\n");
+ const auto wake=FirmwareLines("usb_sleep_crypto_refreshes=3\nusb_sleep_last_result=0x0003228C\nusb_sleep_path=/private\nusb_sleep_password=secret\n");
+ assert(wake=="usb_wake_sleep_crypto_refreshes=3\nusb_wake_sleep_last_result=0x0003228C\n");
+ assert(FirmwareLines(wake)==wake);
  const std::string status="usb_query=0x00000000 mounted=1 ready=1 state=0 usb_result=0x00000000 backup_query=0x00000000 backup_flags=1 backup_result=0x00000000";
  assert(StatusFields(status)&&!StatusFields(status+" private=abc"));
  assert(!Description("password: private")&&!Description("API_KEY=secret")&&!Description(std::string("a\0b",3))&&Description("Game did not start"));

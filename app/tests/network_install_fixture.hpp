@@ -58,7 +58,7 @@ namespace source {struct Base{virtual ~Base()=default;virtual Result Read(void*,
 struct InstallOutcome{size_t installed_records{},skipped_records{};};
 struct Config{bool ticket_only{},skip_base{},skip_patch{},skip_addon{},skip_data_patch{},skip_ticket{};};
 struct ConfigOverride{
-    bool quick_usb_final_verify{};
+    bool quick_usb_final_verify{},reuse_existing_usb_only{};
     std::optional<nexus::Target> nexus_target;u64 nexus_destination_generation{};nexus::install::Diagnostic* diagnostic{};void* receipt{};
     std::optional<bool> skip_nca_hash_verify,convert_to_standard_crypto,lower_master_key,lower_system_version,ignore_distribution_bit;
     std::optional<bool> ticket_only,skip_base,skip_patch,skip_addon,skip_data_patch,skip_ticket;InstallOutcome* outcome{};

@@ -8,6 +8,16 @@
 namespace nexus::presentation {
 // Presentation only. Never change the result, skip verification or retry writes.
 constexpr const char* ContentReason(std::uint32_t result) {
+    if(result==registration::FirmwareUpdateRequired)
+        return "The running Nexus USB firmware is too old or does not match this Manager. Update the whole Nexus HATS pack, then fully power off and start it through Hekate > Launch. Updating Manager alone cannot fix this. Your game files have not been declared damaged."_nx;
+    if(result==registration::MetadataConflict)
+        return "The destination has different information for the same game version. The source has been kept. Check / repair the destination library before retrying; Manager will not overwrite conflicting records."_nx;
+    if((result&0x1ffu)==140 && (((result>>9)&0x1fffu)==0 || ((result>>9)&0x1fffu)==208 || ((result>>9)&0x1fffu)==401))
+        return "The USB drive stopped responding or its connection changed. Keep the original files. Reconnect the drive and restart the Switch before retrying. This result alone does not prove the game is damaged."_nx;
+    if((result&0x1ffu)==2 && ((result>>9)&0x1fffu)==30)
+        return "There is not enough free space on the destination. Free some space or choose another destination, then try again."_nx;
+    if((result&0x1ffu)==2 && ((result>>9)&0x1fffu)==7)
+        return "A file is still in use. Close the game and other transfer apps, then restart the Switch before retrying. Check the details below for any work already completed."_nx;
     if(result==registration::RepairPending)
         return "An earlier USB repair is unfinished. Restart the Switch, then open Options > Check / repair USB games before making more changes."_nx;
     if(result==(10u|(221u<<9)) || result==(10u|(1u<<9)))
@@ -18,7 +28,7 @@ constexpr const char* ContentReason(std::uint32_t result) {
         return "The system could not accept this game's signed information. Check that the app and USB firmware match. This does not by itself mean the game files are damaged."_nx;
     case 1004: case 6451: case 6452:
         return "The information needed to unlock this game's content is missing or could not be used. Check the game's original installation and matching firmware; repairing the game list cannot replace it."_nx;
-    case 4520: case 4549: case 4612: case 4613: case 4643:
+    case 4075: case 4520: case 4549: case 4612: case 4613: case 4643:
         return "The game did not pass a file check. A changed file or a read problem may be responsible. Keep the drive connected and use Options > Check / repair USB games to investigate."_nx;
     case 4543:
         return "This game's format is not supported by the current reader. Check for a matching app and firmware update. Do not delete your saves or format the drive."_nx;

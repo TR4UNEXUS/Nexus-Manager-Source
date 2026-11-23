@@ -53,7 +53,15 @@ Result CheckUsbFirmware() {
     const auto rc=serviceDispatch(ncmGetServiceSession(),registration::CapabilitiesCommand,
         .buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{&caps,sizeof(caps)}});
     if(R_FAILED(rc)){Log("P3-firmware-preflight-missing",rc);return rc;}
-    if(!registration::Compatible(caps)){Log("P3-firmware-preflight-incompatible",Invalid);return Invalid;}
+    if(!registration::Compatible(caps)){
+        // Numeric capabilities explain mixed/older firmware without collecting
+        // configuration paths, credentials or game content.
+        Log("firmware-cap-magic",0,caps.magic);Log("firmware-cap-abi",0,caps.abi);
+        Log("firmware-cap-titles",0,caps.titles);Log("firmware-cap-content",0,caps.content);
+        Log("firmware-cap-features",0,caps.features);Log("firmware-cap-reserved",0,caps.reserved);
+        Log("P3-firmware-preflight-incompatible",registration::FirmwareUpdateRequired);
+        return registration::FirmwareUpdateRequired;
+    }
     return 0;
 }
 Result EnsureUsbContentRegistered(u64 generation,const NcmContentId& id,s64 expected_size) {

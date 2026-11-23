@@ -5,6 +5,10 @@ int main(){
  Reset();assert(OfferChoice()&&!OfferChoice());QueueFailure("install",1);assert(!Queued());
  assert(!SetPreference(false));QueueFailure("repair",2);assert(!Queued());
  assert(!SetPreference(true));QueueFailure("install",1);QueueFailure("install",1);QueueFailure("install",0);assert(Queued()==1);
+ for(const auto& [name,bytes]:disk)if(name.ends_with(".json")){
+  const std::string body(bytes.begin(),bytes.end());
+  assert(body.find("report-failure-install rc=0x00000001")!=std::string::npos);
+ }
  Poll(false);assert(!starts&&!sends);nexus::lifecycle::foreground=false;Poll(true);assert(!starts);nexus::lifecycle::foreground=true;
  send_rc=Fault;Poll(true);assert(starts==1&&sends==1&&Queued()==1);Poll(false);assert(!started);Poll(true);assert(starts==1); // retry delay
  cancel=false;send_rc=0;bad_receipt=true;assert(UploadOne()==nexus::Invalid&&Queued()==1);assert(!disk.contains(Receipt));

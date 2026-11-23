@@ -1,5 +1,6 @@
 #include "nexus/problem_reports.hpp"
 #include "nexus/localize.hpp"
+#include "nexus/copy_publication.hpp"
 #include "nexus/diagnostics.hpp"
 #include "nexus/routing_backup.hpp"
 #include "nexus/index_recovery.hpp"
@@ -401,10 +402,11 @@ Result ListFiles(bool usb,const std::string& path,std::vector<Item>& items,u64& 
     std::ranges::sort(items,[](const Item& a,const Item& b){return a.directory!=b.directory?a.directory>b.directory:strcasecmp(a.name.c_str(),b.name.c_str())<0;});
     R_SUCCEED();
 }
-Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& path,Target target,u64 destination_generation,nexus::install::Diagnostic* diagnostic,yati::InstallOutcome* outcome) {
-    yati::ConfigOverride cfg{}; cfg.nexus_target=target;
+Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& path,Target target,u64 destination_generation,nexus::install::Diagnostic* diagnostic,yati::InstallOutcome* outcome,bool reuse_existing_usb_only) {
+    R_UNLESS(!reuse_existing_usb_only || target==Target::Usb,Invalid);
+    yati::ConfigOverride cfg{}; cfg.nexus_target=target;cfg.reuse_existing_usb_only=reuse_existing_usb_only;
     cfg.diagnostic=diagnostic;cfg.outcome=outcome;if(outcome)*outcome={};
-    if(outcome){cfg.ticket_only=false;cfg.skip_base=false;cfg.skip_patch=false;cfg.skip_addon=false;cfg.skip_data_patch=false;cfg.skip_ticket=false;}
+    if(outcome || reuse_existing_usb_only){cfg.ticket_only=false;cfg.skip_base=false;cfg.skip_patch=false;cfg.skip_addon=false;cfg.skip_data_patch=false;cfg.skip_ticket=false;}
     if(diagnostic){diagnostic->Clear();diagnostic->completion.clear();}
     cfg.nexus_destination_generation=destination_generation;
     // Verify original bytes and retain crypto. Installed content needs the
@@ -413,9 +415,9 @@ Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& pat
     cfg.skip_nca_hash_verify=false;cfg.ignore_distribution_bit=false;
     InstallReceipt receipt;receipt.path=path;receipt.usb_source=usb;
     const auto run=[&](yati::source::Base& source,u64 size)->Result {
-        if(target==Target::Usb){receipt.source_size=size;R_TRY(SaveInstallReceipt(receipt));cfg.receipt=&receipt;}
+        if(target==Target::Usb && !reuse_existing_usb_only){receipt.source_size=size;R_TRY(SaveInstallReceipt(receipt));cfg.receipt=&receipt;}
         const auto result=yati::InstallFromSource(p,&source,path,cfg,size);
-        if(target==Target::Usb){
+        if(target==Target::Usb && !reuse_existing_usb_only){
             receipt.step=R_SUCCEEDED(result)?InstallStep::Complete:InstallStep::Failed;receipt.result=result;
             const auto saved=SaveInstallReceipt(receipt);
             if(R_FAILED(saved)){nexus::Log("P3-install-receipt-save",saved);
@@ -432,13 +434,13 @@ Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& pat
     R_TRY(fs.GetFsOpenResult());
     fs::File file;s64 size{};R_TRY(fs.OpenFile(path,FsOpenMode_Read,&file));R_TRY(file.GetSize(&size));
     R_UNLESS(size>0,Invalid);
-    if(target==Target::Usb){receipt.source_size=size;R_TRY(SaveInstallReceipt(receipt));cfg.receipt=&receipt;}
+    if(target==Target::Usb && !reuse_existing_usb_only){receipt.source_size=size;R_TRY(SaveInstallReceipt(receipt));cfg.receipt=&receipt;}
     const auto result=yati::InstallFromFile(p,&fs,path,cfg);
-    if(target==Target::Usb){receipt.step=R_SUCCEEDED(result)?InstallStep::Complete:InstallStep::Failed;receipt.result=result;
+    if(target==Target::Usb && !reuse_existing_usb_only){receipt.step=R_SUCCEEDED(result)?InstallStep::Complete:InstallStep::Failed;receipt.result=result;
         const auto saved=SaveInstallReceipt(receipt);if(R_FAILED(saved)){nexus::Log("P3-install-receipt-save",saved);if(diagnostic)diagnostic->completion+="\nRecovery checkpoint could not be saved; keep the source package.";}}
     return result;
 }
-Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::batch::Report& report) {
+Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::batch::Report& report,bool reuse_existing_usb_only) {
     namespace batch=nexus::batch;
     // Clear even if destination/source preflight fails before opening a package.
     for(auto& row:report.items)row.detail.clear();
@@ -455,6 +457,7 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
         }
     };
     const Result rc=[&]() -> Result {
+        R_UNLESS(!reuse_existing_usb_only || report.target==Target::Usb,Invalid);
         R_UNLESS(nexus::ValidTarget(report.target) && !report.items.empty() && report.items.size()<=batch::MaxPackages,Invalid);
         batch::Selection validated;
         for(const auto& row:report.items)R_UNLESS(validated.Add(row.entry),Invalid);
@@ -491,7 +494,7 @@ Result InstallBatch(ui::ProgressBox* p,bool usb,u64 source_generation,nexus::bat
                 u64 total{},done{};for(size_t j=0;j<report.items.size();++j){const auto size=std::max<u64>(report.items[j].entry.size,1);total+=size;if(j<active)done+=size;}
                 ui::ProgressScope package_scope(p,nexus::WorkPart(done,total),nexus::WorkPart(done+std::max<u64>(e.size,1),total));
                 nexus::install::Diagnostic detail;
-                const auto result=Install(p,usb,source_generation,e.path,report.target,destination_generation,&detail);
+                const auto result=Install(p,usb,source_generation,e.path,report.target,destination_generation,&detail,nullptr,reuse_existing_usb_only);
                 report.items[active].detail=R_FAILED(result)?detail.text:detail.completion;
                 return result;
             },
@@ -680,7 +683,7 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
     for(const auto& m:metas) {
         report.At("Comparing existing game information"_nx,"move-compare-metadata");
         bool existing{};R_TRY(ncmContentMetaDatabaseHas(&dst.db,&existing,&m.key));
-        if(existing){Meta stored;R_TRY(LoadMeta(dst.db,m.key,stored));R_UNLESS(stored.raw==m.raw,Invalid);}
+        if(existing){Meta stored;R_TRY(LoadMeta(dst.db,m.key,stored));R_UNLESS(stored.raw==m.raw,nexus::registration::MetadataConflict);}
         for(const auto& i:m.infos){
             const auto [entry,added]=unique.emplace(HexId(&i.content_id),i);
             R_UNLESS(added || !std::memcmp(&entry->second,&i,sizeof(i)),Invalid);
@@ -696,11 +699,13 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
     }
     if(progress)R_UNLESS(progress->Begin(total_bytes),Invalid);
     report.At("Checking free space"_nx,"move-check-space");
+    nexus::Log("move-required-bytes",0,required);
     s64 free{};R_TRY(ncmContentStorageGetFreeSpaceSize(&dst.cs,&free));
     if(target==Target::Usb){
         nexus::Client c;nexus::Space space{};R_TRY(c.GetSpace(dst.generation,space));
+        nexus::Log("move-free-bytes",0,space.free);
         R_UNLESS(required<=space.free,MAKERESULT(2,30));
-    }else{R_UNLESS(free>=0 && required<=static_cast<u64>(free),MAKERESULT(2,30));}
+    }else{nexus::Log("move-free-bytes",0,free>=0?static_cast<u64>(free):UINT64_MAX);R_UNLESS(free>=0 && required<=static_cast<u64>(free),MAKERESULT(2,30));}
     std::vector<u8> buffer(destination.TransferLimit());
     for(const auto& [id,info]:unique) {
         report.content=id;report.offset=0;ncmContentInfoSizeToU64(&info,&report.size);
@@ -764,11 +769,20 @@ static Result CopyGameInSession(ui::ProgressBox* p,u64 app,Target source,Target 
         report.At("Flushing the destination file"_nx,"move-flush");
         R_TRY(ncmContentStorageFlushPlaceHolder(&dst.cs));
         report.At("Registering the copied file"_nx,"move-register");
-        R_TRY(ncmContentStorageRegister(&dst.cs,&info.content_id,&ph));owned=false;
-        report.At("Checking the copied file size"_nx,"move-check-size");
-        R_TRY(InspectContent(dst,info,has));R_UNLESS(has,Invalid);
         std::array<u8,32> copied_hash{};sha256ContextGetHash(&copied,copied_hash.data());
-        {CopyTimer time{report.verify_us};R_TRY(VerifyCopied(p,dst,info,copied_hash,report,progress));}
+        R_TRY(nexus::FinishCopiedNca(owned,
+            [&]{return ncmContentStorageRegister(&dst.cs,&info.content_id,&ph);},
+            [&]()->Result{
+                report.At("Checking the copied file size"_nx,"move-check-size");
+                R_TRY(destination.Validate());R_TRY(InspectContent(dst,info,has));R_UNLESS(has,Invalid);
+                CopyTimer time{report.verify_us};
+                return VerifyCopied(p,dst,info,copied_hash,report,progress);
+            },
+            [&]()->Result{
+                report.At("Removing the verified temporary copy"_nx,"move-collision-placeholder-cleanup");
+                R_TRY(destination.Validate());
+                return ncmContentStorageDeletePlaceHolder(&dst.cs,&ph);
+            }));
         session.hashes[id]=copied_hash;
         report.saved_source_bytes+=size;
         report.At("Confirming destination registration"_nx,"move-ensure-registration");
@@ -992,8 +1006,8 @@ Result RemoveVerifiedSource(ui::ProgressBox* p,u64 app,Target source,Target targ
     return RemoveVerifiedSourceInSession(p,app,source,target,report);
 }
 Result TransferGame(ui::ProgressBox* p,u64 app,Target source,Target target,bool move,TransferReport& report) {
-    const auto operation=[&]()->Result{
     nexus::diagnostics::Operation diagnostic_operation("transfer-game");
+    const auto operation=[&]()->Result{
     report={};report.move=move;
     p->SetActionName(std::string(move?"Moving: "_nx:"Copying: "_nx)+nexus::TargetName(source)+" -> "+nexus::TargetName(target));
     TransferSession session;TransferProgress progress(p);
@@ -1033,8 +1047,8 @@ Result TransferGame(ui::ProgressBox* p,u64 app,Target source,Target target,bool 
     return result;
 }
 Result ResumeMove(ui::ProgressBox* p,const MoveCheckpoint& selected,TransferReport& report){
-    const auto operation=[&]()->Result{
     nexus::diagnostics::Operation diagnostic_operation("resume-move");
+    const auto operation=[&]()->Result{
     report={};report.move=true;report.phase=TransferPhase::Remove;report.recovery_saved=true;
     // Load again from disk: a UI row is not an authorization token.
     std::vector<MoveCheckpoint> pending;R_TRY(PendingMoves(pending));

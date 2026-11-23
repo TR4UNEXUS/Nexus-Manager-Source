@@ -82,7 +82,11 @@ Result SetPreference(bool enabled){
     R_TRY(s.Write(Choice,{value.begin(),value.end()}));preference=enabled?1:0;next_attempt={};return 0;
 }
 void QueueFailure(const char* kind,Result result){
-    if(!result||!Configured()||Preference()!=1||!Kind(kind))return;
+    if(!result||!Kind(kind))return;
+    // Record this request's result before reading the log. Previously a failed
+    // install could upload only unrelated errors from an earlier operation.
+    const auto event=std::string("report-failure-")+kind;Log(event.c_str(),result);
+    if(!Configured()||Preference()!=1)return;
     std::scoped_lock lock(mutex);const auto key=std::string(kind)+"-"+std::to_string(result);if(seen.size()>=16||seen.contains(key))return;
     std::string preview;const auto rc=Capture(kind,result,"",preview);if(R_SUCCEEDED(rc))seen.insert(key);Log("RC1-report-queued",rc,result);
 }

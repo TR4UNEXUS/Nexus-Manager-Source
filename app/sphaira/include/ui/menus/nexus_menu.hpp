@@ -25,6 +25,10 @@ private:
     std::string path="/";
     std::vector<nexusapp::Item> files;
     std::vector<nexusapp::Game> games;
+    std::set<u64> selected_games;
+    void ToggleGame();
+    void DeleteSelectedGames();
+    void ChooseInstallMode(nexus::Target,const std::vector<nexus::batch::Entry>&);
     std::vector<nexusapp::CleanupItem> cleanup_items;
     std::string cleanup_detail;
     nexus::Target cleanup_target{nexus::Target::Sd};
@@ -75,7 +79,7 @@ private:
     void CreateForwarder(const nexusapp::Item&,u64 gen);
     void RunProbe();
     void ChooseBatchDestination();
-    void StartBatch(nexus::Target target,const std::vector<nexus::batch::Entry>& entries);
+    void StartBatch(nexus::Target target,const std::vector<nexus::batch::Entry>& entries,bool reuse_existing_usb_only=false);
     void TogglePackage();
     void SelectAllPackages();
     void ReviewBatch();

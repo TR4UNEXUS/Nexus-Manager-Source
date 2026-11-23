@@ -109,10 +109,11 @@ public:
 }
 Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,const std::string& path,
         u64 expected_size,nexus::Target target,u64 destination_generation,nexus::install::Diagnostic& diagnostic,
-        NetworkInstallOutcome* package_outcome){
+        NetworkInstallOutcome* package_outcome,bool reuse_existing_usb_only){
     if(package_outcome)*package_outcome={};
     diagnostic.Clear();std::string stage="Network install could not start."_nx;bool attempted{};yati::InstallOutcome outcome{};
     const Result result=[&]()->Result{
+        R_UNLESS(!reuse_existing_usb_only || target==nexus::Target::Usb,nexus::Invalid);
         R_UNLESS(progress&&SessionMount(mount)&&nexus::files::Canonical(path)&&
             nexus::package::Supported(path)&&expected_size>=16&&expected_size<=nexus::files::MaxBytes&&
             (target==nexus::Target::Sd||target==nexus::Target::Usb)&&
@@ -130,6 +131,7 @@ Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,
         if(R_FAILED(source.GetOpenResult())){if(!source.problem.empty())stage=source.problem;return source.GetOpenResult();}
         progress->SetProgressNote("Reading from NAS. Keep the network and storage connected."_nx);
         yati::ConfigOverride config{};config.nexus_target=target;config.nexus_destination_generation=destination_generation;config.diagnostic=&diagnostic;
+        config.reuse_existing_usb_only=reuse_existing_usb_only;
         config.quick_usb_final_verify=target==nexus::Target::Usb;
         config.outcome=&outcome;
         // This action promises a full game/update/DLC install. Legacy saved
@@ -156,7 +158,9 @@ Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,
         if(!diagnostic.completion.empty())diagnostic.text+='\n'+diagnostic.completion;
     }else{
         if(!diagnostic.completion.empty())diagnostic.completion+='\n';
-        if(outcome.installed_records){
+        if(reuse_existing_usb_only){
+            diagnostic.completion+="\nLinked entries: "_nx+std::to_string(outcome.installed_records)+"; skipped: "_nx+std::to_string(outcome.skipped_records);
+        }else if(outcome.installed_records){
             diagnostic.completion+="Installed "_nx+std::to_string(outcome.installed_records)+" game/update/DLC entries directly from the NAS to the "_nx+(target==nexus::Target::Sd?"SD card."_nx:"USB drive."_nx);
             if(outcome.skipped_records)diagnostic.completion+=" Skipped "_nx+std::to_string(outcome.skipped_records)+" entries after installation checks; current installed versions were kept for those entries."_nx;
         }else{

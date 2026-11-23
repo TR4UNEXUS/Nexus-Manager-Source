@@ -592,15 +592,32 @@ Result ApplyGameRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemov
 }
 
 namespace {
-Digest RemovalFingerprint(const GameRemovalPlan& plan){
+Digest RemovalFingerprint(const GameRemovalPlan& plan,const std::set<u64>& batch_games){
     Sha256Context hash;sha256ContextCreate(&hash);
     const auto add=[&](const void* data,size_t size){sha256ContextUpdate(&hash,data,size);};
     const auto number=[&](u64 value){add(&value,sizeof(value));};
     number(static_cast<u64>(plan.item.kind));number(static_cast<u64>(plan.item.target));number(plan.item.application);number(plan.item.generation);number(plan.item.cleanup_only);
-    add(&plan.item.content,sizeof(plan.item.content));number(plan.files);number(plan.bytes);number(plan.shared);number(plan.records);
+    add(&plan.item.content,sizeof(plan.item.content));
+    const bool family=plan.item.kind==CleanupKind::Game && !plan.item.cleanup_only;
+    if(!family){number(plan.files);number(plan.bytes);number(plan.shared);number(plan.records);}
     if(plan.state){
-        for(const auto& file:plan.state->files){add(&file.id,16);number(file.size);}
-        for(const auto& record:plan.state->remove_records){number(record.key.id);number(record.key.version);number(record.key.type);number(record.key.install_type);add(record.digest.data(),record.digest.size());}
+        if(family){
+            // Two selected games can share an NCA. Removing the first changes
+            // what the second exclusively owns. Pin the complete family and
+            // all its physical files, rather than its old exclusive subset.
+            // The fresh plan still protects every surviving owner's files.
+            std::set<Id> ids;
+            for(const auto& ref:plan.state->before.references)if(ref.application==plan.item.application)ids.insert(ref.content.begin(),ref.content.end());
+            number(ids.size());for(const auto& id:ids){add(id.data(),id.size());const auto found=plan.state->before.files.find(id);number(found!=plan.state->before.files.end());if(found!=plan.state->before.files.end())number(found->second.size);}
+            std::set<std::pair<Id,u64>> other_owners;
+            for(const auto& ref:plan.state->before.references)if(ref.application!=plan.item.application && !batch_games.contains(ref.application))
+                for(const auto& id:ref.content)if(ids.contains(id))other_owners.insert({id,ref.application});
+            number(other_owners.size());for(const auto& [id,owner]:other_owners){add(id.data(),id.size());number(owner);}
+            for(const auto& record:plan.state->before.records)if(record.application==plan.item.application){number(record.key.id);number(record.key.version);number(record.key.type);number(record.key.install_type);add(record.digest.data(),record.digest.size());}
+        }else{
+            for(const auto& file:plan.state->files){add(&file.id,16);number(file.size);}
+            for(const auto& record:plan.state->remove_records){number(record.key.id);number(record.key.version);number(record.key.type);number(record.key.install_type);add(record.digest.data(),record.digest.size());}
+        }
         // Other titles may have been removed earlier in this same batch. This
         // title's files, metadata and surviving HOME registrations must match.
         number(plan.state->home_after.size());
@@ -621,6 +638,7 @@ Digest RemovalFingerprint(const GameRemovalPlan& plan){
 Result PreviewCleanupBatch(ui::ProgressBox* p,const std::vector<CleanupItem>& items,CleanupBatchPlan& batch){
     batch={};R_UNLESS(!items.empty()&&items.size()<=65536,Invalid);
     batch.tickets=items.front().kind==CleanupKind::Ticket;
+    std::set<u64> batch_games;for(const auto& item:items)if(item.kind==CleanupKind::Game&&!item.cleanup_only)batch_games.insert(item.application);
     std::set<std::tuple<int,int,u64,Id>> seen;
     for(size_t index=0;index<items.size();++index){
         R_TRY(p->ShouldExitResult());const auto& item=items[index];
@@ -633,7 +651,7 @@ Result PreviewCleanupBatch(ui::ProgressBox* p,const std::vector<CleanupItem>& it
         entry.result=PreviewGameRemoval(p,item,plan);R_TRY(p->ShouldExitResult());
         entry.ready=R_SUCCEEDED(entry.result);entry.detail=plan.detail;
         if(entry.ready){
-            entry.item=plan.item;entry.files=plan.files;entry.bytes=plan.bytes;entry.selection=RemovalFingerprint(plan);
+            entry.item=plan.item;entry.files=plan.files;entry.bytes=plan.bytes;entry.selection=RemovalFingerprint(plan,batch_games);
             R_UNLESS(batch.bytes<=UINT64_MAX-plan.bytes&&batch.files<=SIZE_MAX-plan.files,Invalid);
             batch.bytes+=plan.bytes;batch.files+=plan.files;++batch.ready;
         }else ++batch.skipped;
@@ -642,8 +660,9 @@ Result PreviewCleanupBatch(ui::ProgressBox* p,const std::vector<CleanupItem>& it
     batch.complete=true;return 0;
 }
 Result ApplyCleanupBatch(ui::ProgressBox* p,const CleanupBatchPlan& batch,CleanupBatchReport& report){
-    report={};report.detail="Bulk cleanup stopped before removing files."_nx;
+    report={};report.detail="Deletion stopped before removing files."_nx;
     R_UNLESS(batch.complete&&batch.ready,Invalid);
+    std::set<u64> batch_games;for(const auto& entry:batch.entries)if(entry.item.kind==CleanupKind::Game&&!entry.item.cleanup_only)batch_games.insert(entry.item.application);
     R_TRY(fs::FsNativeSd().CreateDirectoryRecursively("/switch/nexusmanager"));
     FILE* log=fopen("sdmc:/switch/nexusmanager/cleanup-all-last.log","wb");R_UNLESS(log,MAKERESULT(Module_Libnx,LibnxError_IoError));ON_SCOPE_EXIT(fclose(log));
     const auto line=[&](const char* status,const CleanupBatchEntry& entry,Result rc)->Result{
@@ -653,21 +672,21 @@ Result ApplyCleanupBatch(ui::ProgressBox* p,const CleanupBatchPlan& batch,Cleanu
         for(size_t index=0;index<batch.entries.size();++index){
             R_TRY(p->ShouldExitResult());const auto& entry=batch.entries[index];
             ui::ProgressScope item_progress(p,nexus::WorkPart(index,batch.entries.size()),nexus::WorkPart(index+1,batch.entries.size()));
-            p->NewTransfer("Deleting selected cleanup items"_nx);
-            p->SetTitle("Cleanup "_nx+std::to_string(index+1)+" / "+std::to_string(batch.entries.size()));
+            p->NewTransfer("Deleting selected items"_nx);
+            p->SetTitle(entry.item.name+" ("+std::to_string(index+1)+" / "+std::to_string(batch.entries.size())+")");
             if(!entry.ready){++report.skipped;R_TRY(line("SKIPPED_PREVIEW",entry,entry.result));continue;}
             GameRemovalPlan fresh;const auto checked=PreviewGameRemoval(p,entry.item,fresh);R_TRY(p->ShouldExitResult());
-            if(R_FAILED(checked)||RemovalFingerprint(fresh)!=entry.selection){++report.skipped;R_TRY(line("SKIPPED_CHANGED",entry,checked?checked:Invalid));continue;}
+            if(R_FAILED(checked)||RemovalFingerprint(fresh,batch_games)!=entry.selection){++report.skipped;R_TRY(line("SKIPPED_CHANGED",entry,checked?checked:Invalid));continue;}
             R_TRY(line("APPROVED",entry,0));GameRemovalReport one;
             const auto rc=ApplyGameRemoval(p,fresh,one);report.restart|=one.restart;report.files+=one.removed;report.bytes+=one.bytes;
             if(R_FAILED(rc)){++report.failed;R_TRY(line("STOPPED",entry,rc));return rc;}
-            ++report.removed;R_TRY(line("REMOVED",entry,0));
+            ++report.removed;if(entry.item.kind==CleanupKind::Game)report.removed_games.push_back(entry.item.application);R_TRY(line("REMOVED",entry,0));
         }
         return 0;
     };
     const auto rc=run();report.complete=R_SUCCEEDED(rc);
-    report.detail="Removed "_nx+std::to_string(report.removed)+" cleanup item(s). Skipped "_nx+std::to_string(report.skipped)+" that could not be verified or changed since review. Saved progress was kept."_nx;
-    if(R_FAILED(rc))report.detail+=" Cleanup stopped. Review what remains before retrying."_nx;
+    report.detail="Removed "_nx+std::to_string(report.removed)+" selected item(s). Skipped "_nx+std::to_string(report.skipped)+" that could not be verified or changed since review. Saved progress was kept."_nx;
+    if(R_FAILED(rc))report.detail+=" Deletion stopped. Review what remains before retrying."_nx;
     if(report.restart)report.detail+=" Fully restart the Switch before launching or reinstalling USB games."_nx;
     report.detail+=" Report: switch/nexusmanager/cleanup-all-last.log";
     return rc;

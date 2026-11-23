@@ -206,7 +206,7 @@ void Menu::Back(){
     } else if(page==Page::Files && !packages.Empty()){
         App::Push<OptionBox>("Leave this source?\n\nThe selected-package queue will be cleared. No files will be deleted."_nx,"Stay"_nx,"Clear queue + leave"_nx,0,[this](auto choice){if(choice && *choice==1){packages.Clear();page=Page::Home;selected=0;actions_dirty=true;}});
     } else if(page==Page::Homebrew || page==Page::Mods){selected=page==Page::Homebrew?2:4;page=Page::More;
-    } else {page=Page::Home;selected=0;}
+    } else {selected_games.clear();page=Page::Home;selected=0;}
 }
 void Menu::Refresh(){
     actions_dirty=true;
@@ -230,6 +230,7 @@ void Menu::Refresh(){
             if(R_FAILED(rc)){Report(rc,"Installed scan failed; no content was changed."_nx);return;}
             title::Clear(false);title_requested.clear();
             games=std::move(*result);
+            std::erase_if(selected_games,[this](u64 id){return std::none_of(games.begin(),games.end(),[&](const auto& g){return g.id==id;});});
             const auto previous=std::find_if(games.begin(),games.end(),[&](const auto& game){return game.CacheKey()==previous_key;});
             selected=previous!=games.end()?size_t(previous-games.begin()):games.empty()?0:std::min(previous_index,games.size()-1);
             actions_dirty=true;
@@ -262,7 +263,7 @@ void Menu::ChooseInstall(const nexusapp::Item& item){
     }
     auto sidebar=std::make_unique<Sidebar>("Where to install?"_nx,"The original file is kept"_nx,Sidebar::Side::RIGHT);
     for(auto target:{Target::Sd,Target::Internal,Target::Usb}){
-        sidebar->Add<SidebarEntryCallback>(nexus::TargetName(target),[this,entry,target]{StartBatch(target,{entry});});
+        sidebar->Add<SidebarEntryCallback>(nexus::TargetName(target),[this,entry,target]{ChooseInstallMode(target,{entry});});
     }
     App::Push(std::move(sidebar));
 }
@@ -374,10 +375,11 @@ void Menu::SetupActions(){
     SetAction(Button::B,page==Page::Home?Action{[this]{Back();}}:Action{"Back"_nx,[this]{Back();}});
     if(page==Page::Installed){
         SetAction(Button::A,Action{"Manage"_nx,[this]{GameActions();}});
-        SetAction(Button::Y,Action{"Refresh"_nx,[this]{Refresh();}});
+        SetAction(Button::X,Action{selected<games.size()&&selected_games.contains(games[selected].id)?"Deselect"_nx:"Select"_nx,[this]{ToggleGame();}});
+        SetAction(Button::Y,selected_games.empty()?Action{"Refresh"_nx,[this]{Refresh();}}:Action{"Delete selected"_nx,[this]{DeleteSelectedGames();}});
         SetAction(Button::R,Action{[this]{OpenUsbRepair();}});
         SetAction(Button::SELECT,Action{[this]{Updates();}});
-        SetAction(Button::START,Action{App::Exit});
+        SetAction(Button::START,selected_games.empty()?Action{App::Exit}:Action{"Clear selection"_nx,[this]{selected_games.clear();actions_dirty=true;}});
     }else if(page==Page::Cleanup){
         SetAction(Button::A,Action{"Review item"_nx,[this]{Activate();}});
         SetAction(Button::X,Action{"Refresh"_nx,[this]{Refresh();}});
@@ -437,19 +439,27 @@ void Menu::ChooseBatchDestination(){
     const auto entries=packages.Entries();
     auto sidebar=std::make_unique<Sidebar>("Where to install?"_nx,std::to_string(entries.size())+" selected files"_nx,Sidebar::Side::RIGHT);
     for(auto target:{Target::Sd,Target::Internal,Target::Usb})
-        sidebar->Add<SidebarEntryCallback>(nexus::TargetName(target),[this,target,entries]{StartBatch(target,entries);});
+        sidebar->Add<SidebarEntryCallback>(nexus::TargetName(target),[this,target,entries]{ChooseInstallMode(target,entries);});
     App::Push(std::move(sidebar));
 }
-void Menu::StartBatch(Target target,const std::vector<nexus::batch::Entry>& entries){
+void Menu::ChooseInstallMode(Target target,const std::vector<nexus::batch::Entry>& entries){
+    if(target!=Target::Usb){StartBatch(target,entries);return;}
+    auto menu=std::make_unique<Sidebar>("Install to USB"_nx,"Choose what to do with the selected packages"_nx,Sidebar::Side::RIGHT,1280.f);
+    menu->Add<SidebarEntryCallback>("Normal install"_nx,[this,entries]{StartBatch(Target::Usb,entries);},true,"Copy missing game files and install their tickets and links."_nx);
+    menu->Add<SidebarEntryCallback>("Tickets + link existing files"_nx,[this,entries]{StartBatch(Target::Usb,entries,true);},true,"Use files already installed on USB. Check them, restore permissions and add the game to HOME."_nx);
+    App::Push(std::move(menu));
+}
+void Menu::StartBatch(Target target,const std::vector<nexus::batch::Entry>& entries,bool reuse_existing_usb_only){
     if(App::IsApplet()){Report(nexus::Unavailable,"Use full-memory homebrew mode before installing, not Album applet mode."_nx);return;}
     const bool from_usb=usb_source;const u64 source_generation=generation;
-    const auto message="Install "_nx+std::to_string(entries.size())+" package(s) to "+nexus::TargetName(target)+"?\n\n"+
+    const auto message=reuse_existing_usb_only?std::string("Tickets + link existing files"_nx)+"\n\n"+std::to_string(entries.size())+" package(s)\n\n"+
+        "Checks the installed USB files for each selected package, then restores its tickets, links and HOME entry. Select the matching base, update and DLC packages you want to restore.\n\nMissing or damaged files stop the queue. Use Normal install after formatting a drive. Completed entries stay registered; saves and source packages are kept."_nx : "Install "_nx+std::to_string(entries.size())+" package(s) to "+nexus::TargetName(target)+"?\n\n"+
         "All selected packages use this destination and the reviewed queue order. Select base, update, then DLC.\n\nThe queue stops on the first error or cancellation. Completed installs stay installed; a stopped package may be incomplete. Source files are kept.\n\nKeep the drive connected and other installers closed."_nx;
-    App::Push<OptionBox>(message,"Cancel"_nx,"Install"_nx,0,[this,target,entries,from_usb,source_generation](auto choice){
+    App::Push<OptionBox>(message,"Cancel"_nx,"Install"_nx,0,[this,target,entries,from_usb,source_generation,reuse_existing_usb_only](auto choice){
         if(!choice || *choice!=1)return;
         auto result=std::make_shared<nexus::batch::Report>(entries,target);
-        App::Push<ProgressBox>(0,"Prepare batch"_nx,nexus::TargetName(target),[result,from_usb,source_generation](ProgressBox* p){
-            return nexusapp::InstallBatch(p,from_usb,source_generation,*result);
+        App::Push<ProgressBox>(0,"Prepare batch"_nx,nexus::TargetName(target),[result,from_usb,source_generation,reuse_existing_usb_only](ProgressBox* p){
+            return nexusapp::InstallBatch(p,from_usb,source_generation,*result,reuse_existing_usb_only);
         },[this,result,from_usb](Result rc){
             result->result=rc;batch_result=result;batch_source=from_usb?"USB":"SD";
             for(const auto& row:result->items)if(row.state==nexus::batch::State::Installed)packages.Remove(row.entry.path);
@@ -792,6 +802,46 @@ void Menu::DeleteGameOptions(const nexusapp::Game& game){
     },true,"Confirm deletion from this storage. Other copies and saved progress are kept."_nx);
     App::Push(std::move(menu));
 }
+void Menu::ToggleGame(){
+    if(selected>=games.size())return;
+    const auto& game=games[selected];
+    if(!game.id || !game.homebrew_path.empty())return;
+    if(!selected_games.erase(game.id))selected_games.insert(game.id);
+    actions_dirty=true;
+}
+void Menu::DeleteSelectedGames(){
+    if(selected_games.empty())return;
+    if(App::IsApplet()){Report(nexus::Unavailable,"Open Nexus Manager in full-memory mode to delete games."_nx);return;}
+    const auto selected_ids=selected_games;
+    auto menu=std::make_unique<Sidebar>("Delete selected games"_nx,std::to_string(selected_ids.size())+" selected. Choose which storage to remove them from."_nx,Sidebar::Side::RIGHT,1280.f);
+    for(auto target:{Target::Sd,Target::Internal,Target::Usb})menu->Add<SidebarEntryCallback>(nexus::TargetName(target),[this,target,selected_ids]{
+        std::vector<nexusapp::CleanupItem> items;std::string names;
+        for(const auto& game:games)if(selected_ids.contains(game.id)){
+            nexusapp::CleanupItem item;item.kind=nexusapp::CleanupKind::Game;item.target=target;item.application=game.id;item.name=game.name;
+            items.push_back(item);if(items.size()<=5)names+="\n"+game.name;
+        }
+        if(items.empty())return;
+        if(items.size()>5)names+="\n+ "+std::to_string(items.size()-5)+" more"_nx;
+        const auto text="Delete selected games"_nx+std::string("\n\n")+std::to_string(items.size())+" games from "_nx+nexus::TargetName(target)+names+
+            "\n\nRemoves the selected games, updates and DLC from this storage. Saved progress and copies on other storage are kept. Unavailable or changed items are skipped. Close the games first. This cannot be undone."_nx;
+        App::Push<OptionBox>(text,"Cancel"_nx,"Delete"_nx,0,[this,items](auto answer){
+            if(!answer || *answer!=1)return;
+            auto report=std::make_shared<nexusapp::CleanupBatchReport>();
+            App::Push<ProgressBox>(0,"Deleting selected games"_nx,"Keep storage connected"_nx,[items,report](ProgressBox* p)->Result{
+                nexusapp::CleanupBatchPlan batch;
+                {ProgressScope preparation(p,0,1000);const auto rc=nexusapp::PreviewCleanupBatch(p,items,batch);
+                    if(R_FAILED(rc)){report->detail="The storage check could not finish. Nothing was removed."_nx;return rc;}}
+                if(!batch.ready){report->detail="None of the selected games could be verified on this storage. Nothing was removed."_nx;return nexus::Invalid;}
+                ProgressScope deletion(p,1000,10000);return nexusapp::ApplyCleanupBatch(p,batch,*report);
+            },[this,report](Result rc){
+                for(auto id:report->removed_games)selected_games.erase(id);
+                refresh_pending=true;actions_dirty=true;GetPolledData(true);
+                if(R_FAILED(rc))Report(rc,report->detail);else App::Push<OptionBox>(report->detail,"Done"_nx,[](auto){});
+            });
+        });
+    },true,"Remove the selected copies, including updates and DLC. Keep saves."_nx);
+    App::Push(std::move(menu));
+}
 void Menu::ReviewRemoval(const nexusapp::CleanupItem& item){
     const auto text=item.name+"\n\n"+std::string(item.kind==nexusapp::CleanupKind::Ticket?"Current system ticket"_nx:nexus::TargetName(item.target))+
         "\n\n"+item.reason+"\n\nPermanently delete this selection? Saved progress and copies on other storage are kept. Close the game and other installers first."_nx;
@@ -1044,7 +1094,7 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
             Text(vg,640,376,18,NVG_ALIGN_CENTER,muted,"For NSP, NSZ, XCI or XCZ files, go back to Install games."_nx);return;
         }
         const auto start=view::PageStart(selected),end=std::min(games.size(),start+view::PageSize);
-        const auto page_label="Page "_nx+std::to_string(selected/view::PageSize+1)+" / "+std::to_string((games.size()+view::PageSize-1)/view::PageSize);
+        const auto page_label=(selected_games.empty()?std::string{}:std::to_string(selected_games.size())+" selected | "_nx)+"Page "_nx+std::to_string(selected/view::PageSize+1)+" / "+std::to_string((games.size()+view::PageSize-1)/view::PageSize);
         Text(vg,802,123,18,NVG_ALIGN_RIGHT|NVG_ALIGN_TOP,muted,page_label.c_str());
         for(size_t i=start;i<end;++i){
             const auto& game=games[i];const auto r=view::Card(i);
@@ -1052,7 +1102,9 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
             violet::Card(vg,card,i==selected);
             const auto it=icons.find(game.CacheKey());
             gfx::drawImage(vg,r.x+8,r.y+7,52,52,it==icons.end()?App::GetDefaultImage():it->second,8);
-            name_line({r.x+76,r.y+7,r.w-98,28},22,game.name,i==selected);
+            const bool marked=selected_games.contains(game.id);
+            name_line({r.x+76,r.y+7,r.w-134,28},22,game.name,i==selected);
+            Text(vg,r.x+r.w-28,r.y+19,22,NVG_ALIGN_CENTER,marked?accent:muted,marked?"[x]":"[ ]");
             const auto location=StorageLabel(game);
             BoundedLine(vg,{r.x+76,r.y+36,r.w-98,24},16,i==selected?accent:muted,location);
         }

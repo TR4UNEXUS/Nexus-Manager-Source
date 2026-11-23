@@ -4,7 +4,7 @@
 #include <string_view>
 #include <cstdint>
 namespace nexus::updates {
-inline constexpr char Version[]="0.2.28";
+inline constexpr char Version[]="0.2.30";
 inline constexpr char Repository[]="https://github.com/TechRepairs4U/Nexus-Manager";
 inline constexpr char ReleaseApi[]="https://api.github.com/repos/TechRepairs4U/Nexus-Manager/releases?per_page=20";
 enum class Artifact {Nro,Nsp};

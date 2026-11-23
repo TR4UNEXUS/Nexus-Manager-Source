@@ -35,7 +35,10 @@ void fatalThrow(Result){assert(false);}
 namespace sphaira {struct App{static void Notify(const std::string&){++notifications;}};namespace utils{Result CreateThread(Thread*t,void(*fn)(void*),void*arg,size_t){*t={fn,arg};return 0;}}}
 namespace nexus {
 constexpr Result Invalid=2,Unavailable=3;
-void Log(const char*,Result,u64=0){}
+void Log(const char* phase,Result rc,u64 value=0){
+ char line[640]{};snprintf(line,sizeof(line),"NM2 2026-11-23T12:00:00Z version=0.2.28 session=0000000000000001 uptime_ms=100 operation=1 task=install event=%s rc=0x%08X value=%llu\n",phase,rc,(unsigned long long)value);
+ auto& bytes=disk["/switch/nexusmanager/nexus.log"];bytes.insert(bytes.end(),line,line+strlen(line));
+}
 struct Status{unsigned mounted{1},ready{1},state{},result{};};struct Client{Result Query(Status&){return 0;}};
 namespace lifecycle{bool foreground=true;bool CanPoll(){return foreground;}}
 namespace routing_backup{struct Status{unsigned flags{1},last_result{};};}

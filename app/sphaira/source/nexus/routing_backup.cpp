@@ -10,7 +10,7 @@ namespace {
 Result Supported(){
     nexus::registration::Capabilities c{};R_TRY(serviceDispatch(ncmGetServiceSession(),65033,
         .buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{&c,sizeof(c)}}));
-    R_UNLESS(nexus::registration::Compatible(c)&&(c.features&4),nexus::Invalid);return 0;
+    R_UNLESS(nexus::registration::Compatible(c)&&(c.features&4),nexus::registration::FirmwareUpdateRequired);return 0;
 }
 }
 Result QueryConsoleRoutingBackup(nexus::routing_backup::Status&status){

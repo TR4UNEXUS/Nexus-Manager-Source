@@ -79,6 +79,9 @@ struct ConfigOverride {
     // NAS installs may finish with size/header checks after streamed source
     // hashing and acknowledged writes. Other installs/imports keep readback.
     bool quick_usb_final_verify{};
+    // Explicit job-local mode: verify every required existing USB NCA before
+    // tickets or routing are published. Never create missing game content.
+    bool reuse_existing_usb_only{};
     nexusapp::InstallReceipt* receipt{};
     // Optional caller-owned output; never accessed by worker threads.
     nexus::install::Diagnostic* diagnostic{};

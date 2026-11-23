@@ -102,6 +102,7 @@ struct ProgressBox{
         ProgressBoxOption=ProgressBoxOption::None,nexus::safety::Operation operation=nexus::safety::Operation::MayWrite)
         :action(std::move(action)),title(std::move(title)),work(std::move(work)),done(std::move(done)),operation(operation){}
     Result ShouldExitResult(){return cancelled?Cancelled:0;}bool ShouldExit(){return cancelled;}
+    void SetItem(const std::string&){}
     int image{};std::string note;
     ProgressBox& SetActionName(std::string next){action=std::move(next);return *this;}
     ProgressBox& SetTitle(std::string next){title=std::move(next);return *this;}
@@ -132,7 +133,8 @@ struct App {
 };
 namespace nexusapp {
 // NETWORK_OUTCOME_PRODUCTION
-Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,const std::string& path,u64 size,nexus::Target target,u64 generation,nexus::install::Diagnostic& diagnostic,NetworkInstallOutcome* outcome=nullptr){
+Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,const std::string& path,u64 size,nexus::Target target,u64 generation,nexus::install::Diagnostic& diagnostic,NetworkInstallOutcome* outcome=nullptr,bool reuse_existing_usb_only=false){
+    if(reuse_existing_usb_only)assert(target==nexus::Target::Usb);
     if(outcome)*outcome={};
     ++state::installs;assert(progress->operation==nexus::safety::Operation::MayWrite);assert(!state::session.expired());assert(size==1024);
     state::target=target;state::selected_generation=generation;state::installed_mount=mount;state::installed_path=path;
@@ -217,7 +219,7 @@ void OpenBrowse(const std::string& protocol="SMB"){
     assert(App::progress&&App::progress->operation==nexus::safety::Operation::ReadOnly);App::Run();
     assert(App::browser->title=="File manager / "+protocol&&App::Has("game.nsp")&&App::Has("folder"));assert(App::Has("notes.txt")&&App::Has("compressed.nsz"));assert(!state::installs&&!state::copies);
 }
-void Pick(){App::Select("game.nsp");assert(App::sidebar->title=="Picked file"&&App::Has("Install picked file"));App::Select("Install picked file");assert(App::sidebar->title=="Choose install destination");assert(App::sidebar->entries.size()==2&&App::Has("SD Card")&&App::Has("USB Drive"));assert(!state::installs&&!state::copies);}
+void Pick(){App::Select("game.nsp");assert(App::sidebar->title=="Picked file"&&App::Has("Install picked file"));App::Select("Install picked file");assert(App::sidebar->title=="Choose install destination");assert(App::sidebar->entries.size()==3&&App::Has("SD Card")&&App::Has("USB Drive")&&App::Has("Tickets + link existing files"));assert(!state::installs&&!state::copies);}
 void Preflight(const std::string& destination){Pick();App::Select(destination);assert(App::progress&&App::progress->operation==nexus::safety::Operation::ReadOnly);App::Run();}
 // QUEUE_UI_CASES
 int main(){
@@ -291,5 +293,12 @@ int main(){
     Reset();Connect(state::connections.front(),"",true);App::Run();state::source_error=Fault;App::Run();assert(App::option&&!App::progress&&!state::installs&&!state::copies&&state::unmounts==1&&state::closes==1);
     Reset();auto session=std::make_shared<Session>();session->mount="nexusnet1:/";session->name="NAS";session->protocol="SMB";session->installing=true;Browse(session,"/folder");App::Run();assert(App::Has("No supported game files in this folder")&&!App::Has("Copy this folder to USB"));
     session.reset();RunQueueUiTests();
+    for(const auto& protocol:{"SMB","NFS"}){
+        Reset();OpenBrowse(protocol);Preflight("Tickets + link existing files");
+        assert(App::option->message.find("No game files are copied or deleted")!=std::string::npos&&!state::installs);
+        App::Press(1);App::Run();assert(state::installs==1&&state::target==nexus::Target::Usb);
+        Reset();OpenBrowse(protocol);state::free_space=1;Preflight("Tickets + link existing files");
+        assert(App::option&&App::option->right=="Install");App::Press(0);assert(!state::installs);
+    }
     std::cout<<"Production NAS install UI: local-only Install games; dedicated SMB/NFS > full-screen Browse > NSP/NSZ/XCI/XCZ > SD/USB; read-only preflight, explicit confirmation, cancellation/errors, source lifetime and USB generation pin passed\n";
 }

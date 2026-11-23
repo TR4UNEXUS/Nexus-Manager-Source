@@ -7,7 +7,7 @@ void MarkNetworkFile(const std::string& name){
 }
 void QueuePreflight(const std::string& destination){
     assert(App::browser&&!App::browser->marked.empty());App::browser->InstallSelected();
-    assert(App::sidebar->title=="Install selected files"&&App::sidebar->entries.size()==2);
+    assert(App::sidebar->title=="Install selected files"&&App::sidebar->entries.size()==3&&App::Has("Tickets + link existing files"));
     for(const auto& row:App::sidebar->entries)assert(dynamic_cast<sphaira::ui::SidebarEntryCallback*>(row.get())->pop_on_click);
     App::Select(destination);assert(App::progress&&App::progress->operation==nexus::safety::Operation::ReadOnly);
     App::Run();

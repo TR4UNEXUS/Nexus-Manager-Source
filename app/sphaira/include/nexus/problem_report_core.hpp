@@ -56,6 +56,13 @@ inline std::string FirmwareLines(std::string_view input){
         const auto at=line.find('=');if(at==line.npos)continue;const std::string_view key(line.data(),at),value(line.data()+at+1,line.size()-at-1);
         if(key=="build"||key=="build_id"){if(Token(value,96)&&out.size()+line.size()+1<=24*1024)out+=line+'\n';continue;}
         if(!Number(value))continue;
+        // Keep numeric sleep/reconnect evidence inside the existing upload
+        // protocol's wake-counter namespace. No free-form paths or text pass.
+        if(key.starts_with("usb_sleep_")&&Token(key,70)){
+            const auto wake="usb_wake_sleep_"+std::string(key.substr(10))+"="+std::string(value)+"\n";
+            if(out.size()+wake.size()<=24*1024)out+=wake;
+            continue;
+        }
         bool allowed=key=="io_read_us"||key=="io_write_us"||key=="io_sync_us";
         for(const auto prefix:{"usb_transport_","usb_live_","usb_startup_","usb_wake_","usb_last_","usb_first_live_","usb_completion_","loader_first_nonzero_"})allowed|=key.starts_with(prefix);
         if(allowed&&Token(key,80)&&out.size()+line.size()+1<=24*1024)out+=line+'\n';

@@ -44,8 +44,8 @@ Result OpenStorage(Target target, NcmContentStorage& cs, u64* generation = nullp
 Result ReadContent(Target target, NcmContentStorage& cs, const NcmContentId& id,
     u64 generation, u64 offset, void* buffer, size_t size);
 Result ListFiles(bool usb, const std::string& path, std::vector<Item>& items, u64& generation);
-Result Install(ui::ProgressBox* progress, bool usb_source, u64 source_generation, const std::string& path, Target target,u64 destination_generation=0,nexus::install::Diagnostic* diagnostic=nullptr,yati::InstallOutcome* outcome=nullptr);
-Result InstallBatch(ui::ProgressBox* progress,bool usb_source,u64 source_generation,nexus::batch::Report& report);
+Result Install(ui::ProgressBox* progress, bool usb_source, u64 source_generation, const std::string& path, Target target,u64 destination_generation=0,nexus::install::Diagnostic* diagnostic=nullptr,yati::InstallOutcome* outcome=nullptr,bool reuse_existing_usb_only=false);
+Result InstallBatch(ui::ProgressBox* progress,bool usb_source,u64 source_generation,nexus::batch::Report& report,bool reuse_existing_usb_only=false);
 Result ScanGames(ui::ProgressBox* progress, std::vector<Game>& games);
 Result InspectGame(ui::ProgressBox* progress,u64 application,Game& game);
 Result RefreshHomeBadges(ui::ProgressBox* progress);

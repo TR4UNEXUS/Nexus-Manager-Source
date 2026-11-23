@@ -239,7 +239,7 @@ void Browse(SessionPtr,const std::string&,BrowserState state={});
 void Destination(SessionPtr,const std::string&,const std::string&,BrowserState state={});
 void Locations(const std::string&,bool);
 void DiscoverSmb(bool);
-void PrepareInstall(SessionPtr session,const Entry& item,nexus::Target target){
+void PrepareInstall(SessionPtr session,const Entry& item,nexus::Target target,bool reuse_existing_usb_only=false){
     auto generation=std::make_shared<u64>();
     const std::string destination=target==nexus::Target::Sd?"SD Card"_nx:"USB Drive"_nx;
     App::Push<ProgressBox>(0,"Check install destination"_nx,destination,[=](ProgressBox* p)->Result{
@@ -250,14 +250,14 @@ void PrepareInstall(SessionPtr session,const Entry& item,nexus::Target target){
         if(target==nexus::Target::Usb){nexus::Client usb;nexus::Status status{};R_TRY(usb.Query(status));R_UNLESS(status.Available(),nexus::Unavailable);*generation=status.generation;}
         R_TRY(nexus::QueryDestination(target,space));
         // NSP size is not installed size. Yati checks the real content sizes.
-        R_UNLESS(space.free>=32*1024*1024,MAKERESULT(2,30));return p->ShouldExitResult();
+        if(!reuse_existing_usb_only)R_UNLESS(space.free>=32*1024*1024,MAKERESULT(2,30));return p->ShouldExitResult();
     },[=](Result rc){
         if(R_FAILED(rc)){App::PushErrorBox(rc,"Could not prepare this install. Check the NAS file and selected drive, finish other transfers and restore any pending USB library recovery before trying again. Nothing was installed."_nx);return;}
-        App::Push<OptionBox>("Install this file to "_nx+destination+"?\n\n"+Leaf(item.path)+"\nFrom: "_nx+session->protocol+" / "+session->name+"\n\nThe game file will be read directly from the NAS. No package copy is needed on SD or USB. The original file stays on the NAS.\n\nKeep the network and destination connected until finished."_nx,"Cancel"_nx,"Install"_nx,0,[=](auto choice){
+        App::Push<OptionBox>((reuse_existing_usb_only?"Tickets + link existing files\n\nRequired installed USB files must already exist. Missing or damaged files stop the operation; use a normal install after formatting a drive. No game files are copied or deleted.\n\n"_nx:std::string{})+"Install this file to "_nx+destination+"?\n\n"+Leaf(item.path)+"\nFrom: "_nx+session->protocol+" / "+session->name+"\n\nThe game file will be read directly from the NAS. No package copy is needed on SD or USB. The original file stays on the NAS.\n\nKeep the network and destination connected until finished."_nx,"Cancel"_nx,"Install"_nx,0,[=](auto choice){
             if(!choice||*choice!=1)return;
             auto diagnostic=std::make_shared<nexus::install::Diagnostic>();
             App::Push<ProgressBox>(0,"Install from "_nx+session->protocol,Leaf(item.path)+" > "+destination,[=](ProgressBox* p){
-                return nexusapp::InstallNetworkPackage(p,session->mount.toString(),item.path,item.size,target,*generation,*diagnostic);
+                return nexusapp::InstallNetworkPackage(p,session->mount.toString(),item.path,item.size,target,*generation,*diagnostic,nullptr,reuse_existing_usb_only);
             },[=](Result result){
                 if(R_FAILED(result)){App::PushErrorBox(result,"Install from "_nx+session->protocol+" to "_nx+destination+" stopped.\n\n"+diagnostic->text);return;}
                 Message("NAS install finished\n\nDestination: "_nx+destination+"\nFile: "_nx+Leaf(item.path)+"\n\n"+diagnostic->completion);
@@ -269,6 +269,7 @@ void ChooseInstallDestination(SessionPtr session,const Entry& item){
     auto menu=std::make_unique<Sidebar>("Choose install destination"_nx,Leaf(item.path),Sidebar::Side::RIGHT);
     menu->Add<SidebarEntryCallback>("SD Card"_nx,[=]{PrepareInstall(session,item,nexus::Target::Sd);},"Install the game directly from your NAS to the SD card."_nx);
     menu->Add<SidebarEntryCallback>("USB Drive"_nx,[=]{PrepareInstall(session,item,nexus::Target::Usb);},"Install the game directly from your NAS to the connected USB drive."_nx);
+    menu->Add<SidebarEntryCallback>("Tickets + link existing files"_nx,[=]{PrepareInstall(session,item,nexus::Target::Usb,true);},true,"Use files already installed on USB. Check them, restore permissions and add the game to HOME."_nx);
     App::Push(std::move(menu));
 }
 void PickPackage(SessionPtr session,const Entry& item){
@@ -299,7 +300,7 @@ Result CheckInstallQueue(SessionPtr session,ProgressBox* progress,nexus::Target 
     else R_UNLESS(!generation,nexus::Invalid);
     return 0;
 }
-Result RunInstallQueue(SessionPtr session,const std::vector<SelectedNetworkFile>& files,nexus::Target target,u64 generation,ProgressBox* progress,NetworkQueueReport& report){
+Result RunInstallQueue(SessionPtr session,const std::vector<SelectedNetworkFile>& files,nexus::Target target,u64 generation,ProgressBox* progress,NetworkQueueReport& report,bool reuse_existing_usb_only=false){
     report.clear();for(const auto& file:files)report.push_back({file});
     R_UNLESS(session&&progress&&!files.empty(),nexus::Invalid);
     if(files.size()>nexus::network::browser::MaxSelection){report.front().state=NetworkQueueRecord::State::Failed;report.front().result=nexus::Invalid;report.front().detail="Select up to 64 files for one queue."_nx;return nexus::Invalid;}
@@ -317,7 +318,7 @@ Result RunInstallQueue(SessionPtr session,const std::vector<SelectedNetworkFile>
         auto result=CheckInstallQueue(session,progress,target,generation);
         if(R_SUCCEEDED(result)){
             nexus::install::Diagnostic diagnostic;nexusapp::NetworkInstallOutcome outcome;
-            result=nexusapp::InstallNetworkPackage(progress,session->mount.toString(),row.file.path,row.file.size,target,generation,diagnostic,&outcome);
+            result=nexusapp::InstallNetworkPackage(progress,session->mount.toString(),row.file.path,row.file.size,target,generation,diagnostic,&outcome,reuse_existing_usb_only);
             row.attempted=outcome.attempted;row.installed_records=outcome.installed_records;row.skipped_records=outcome.skipped_records;
             row.detail=R_SUCCEEDED(result)?diagnostic.completion:diagnostic.text;
         }else row.detail="The queue stopped before this file started. Check the network connection and the selected destination before retrying."_nx;
@@ -359,7 +360,7 @@ std::string InstallQueueSummary(const NetworkQueueReport& report,const std::stri
     text+="The original files stay on the NAS. Files that failed, were cancelled or were not started remain selected for review and retry."_nx;
     return text;
 }
-void PrepareInstallQueue(SessionPtr session,std::vector<SelectedNetworkFile> files,nexus::Target target,std::weak_ptr<BrowserModel> browser){
+void PrepareInstallQueue(SessionPtr session,std::vector<SelectedNetworkFile> files,nexus::Target target,std::weak_ptr<BrowserModel> browser,bool reuse_existing_usb_only=false){
     if(files.empty())return;
     auto generation=std::make_shared<u64>();const std::string destination=target==nexus::Target::Sd?"SD Card"_nx:"USB Drive"_nx;
     App::Push<ProgressBox>(0,"Check selected files"_nx,std::to_string(files.size())+" files > "_nx+destination,[=](ProgressBox* progress)->Result{
@@ -374,17 +375,17 @@ void PrepareInstallQueue(SessionPtr session,std::vector<SelectedNetworkFile> fil
             // selection: unmark/reselect them to review their new size.
             R_UNLESS(exists&&!current.directory&&current.size==file.size,nexus::Invalid);
         }
-        nexus::Space space{};R_TRY(nexus::QueryDestination(target,space));R_UNLESS(space.free>=32*1024*1024,MAKERESULT(2,30));return progress->ShouldExitResult();
+        nexus::Space space{};R_TRY(nexus::QueryDestination(target,space));if(!reuse_existing_usb_only)R_UNLESS(space.free>=32*1024*1024,MAKERESULT(2,30));return progress->ShouldExitResult();
     },[=](Result result){
         if(R_FAILED(result)){App::PushErrorBox(result,"Could not prepare the selected files. Check the NAS and destination. If a selected file was replaced, refresh the folder, unmark it and select it again. Nothing was installed; your selection was kept."_nx);return;}
-        std::string message="Install "_nx+std::to_string(files.size())+" files to "_nx+destination+"?\n\n";
+        std::string message=(reuse_existing_usb_only?"Tickets + link existing files\n\nRequired installed USB files must already exist. Missing or damaged files stop the queue; use a normal install after formatting a drive. No game files are copied or deleted.\n\n"_nx:std::string{})+"Install "_nx+std::to_string(files.size())+" files to "_nx+destination+"?\n\n";
         for(const auto& file:files)message+=file.path+"\n";
         message+="\nFiles install one after another directly from the NAS. Original files are kept. The queue stops if an install fails or you cancel. Keep the network and destination connected."_nx;
         App::Push<OptionBox>(message,"Cancel"_nx,"Install all"_nx,0,[=](auto choice){
             if(!choice||*choice!=1)return;
             auto report=std::make_shared<NetworkQueueReport>();
             for(const auto& file:files)report->push_back({file});
-            App::Push<ProgressBox>(0,"Install selected files"_nx,destination,[=](ProgressBox* progress){return RunInstallQueue(session,files,target,*generation,progress,*report);},[=](Result result){
+            App::Push<ProgressBox>(0,"Install selected files"_nx,destination,[=](ProgressBox* progress){return RunInstallQueue(session,files,target,*generation,progress,*report,reuse_existing_usb_only);},[=](Result result){
                 if(R_FAILED(result)&&std::none_of(report->begin(),report->end(),[](const auto& row){return row.state==NetworkQueueRecord::State::Failed||row.state==NetworkQueueRecord::State::Cancelled;})){
                     auto failed=std::find_if(report->begin(),report->end(),[](const auto& row){return row.state==NetworkQueueRecord::State::Waiting;});
                     if(failed==report->end())failed=std::prev(report->end());
@@ -406,6 +407,7 @@ void ChooseQueueDestination(SessionPtr session,std::vector<SelectedNetworkFile> 
     // chosen so returning from the report cannot replay a stale selection.
     menu->Add<SidebarEntryCallback>("SD Card"_nx,[=]{PrepareInstallQueue(session,files,nexus::Target::Sd,browser);},true,"Install every selected file directly from the NAS to the SD card."_nx);
     menu->Add<SidebarEntryCallback>("USB Drive"_nx,[=]{PrepareInstallQueue(session,files,nexus::Target::Usb,browser);},true,"Install every selected file directly from the NAS to the connected USB drive."_nx);
+    menu->Add<SidebarEntryCallback>("Tickets + link existing files"_nx,[=]{PrepareInstallQueue(session,files,nexus::Target::Usb,browser,true);},true,"Use files already installed on USB. Check them, restore permissions and add the game to HOME."_nx);
     App::Push(std::move(menu));
 }
 void ReviewCopy(SessionPtr session,const std::string& source,const std::string& directory,u64 generation){

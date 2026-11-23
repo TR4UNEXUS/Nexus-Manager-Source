@@ -446,6 +446,8 @@ struct Yati {
     u64 usb_generation{};
     UsbVerificationProgress* usb_verification{};
     bool quick_usb_final_verify{};
+    bool reuse_existing_usb_only{},defer_reuse_publication{};
+    Result CheckReuseTicket(const nca::Header&,std::span<TikCollection>);
     nexus::verification::Cache usb_verified{};
     u64 alias_bytes_left{256ULL*1024*1024};
     size_t alias_candidates_left{64};
@@ -1060,10 +1062,13 @@ Yati::~Yati() {
 }
 
 Result Yati::Setup(const ConfigOverride& override) {
+    const auto step=[](const char* name,Result rc){nexus::Log(name,rc);return rc;};
     diagnostic=override.diagnostic;
     outcome=override.outcome;
     receipt=override.receipt;
     archive_usb_tickets=override.archive_usb_tickets.value_or(true);
+    reuse_existing_usb_only=override.reuse_existing_usb_only;
+    defer_reuse_publication=reuse_existing_usb_only;
     config.sd_card_install = override.sd_card_install.value_or(App::GetApp()->m_install_sd.Get());
     config.allow_downgrade = App::GetApp()->m_allow_downgrade.Get();
     config.skip_if_already_installed = App::GetApp()->m_skip_if_already_installed.Get();
@@ -1092,30 +1097,36 @@ Result Yati::Setup(const ConfigOverride& override) {
         config.convert_to_standard_crypto=false;
         config.lower_master_key=false;
     }
+    if(reuse_existing_usb_only){
+        R_UNLESS(physical_target==nexus::Target::Usb && !source->IsStream(),nexus::Invalid);
+        config.ticket_only=false;config.skip_base=false;config.skip_patch=false;
+        config.skip_addon=false;config.skip_data_patch=false;config.skip_ticket=false;
+        config.lower_system_version=false;quick_usb_final_verify=true;
+    }
     config.allow_downgrade = false;
     storage_id = nexus::LogicalStorage(physical_target);
     destination = std::make_unique<nexus::Destination>(physical_target,override.nexus_destination_generation);
 
-    R_TRY(source->GetOpenResult());
+    R_TRY(step("install-open-source",source->GetOpenResult()));
 
-    R_TRY(splCryptoInitialize());
+    R_TRY(step("install-open-crypto-service",splCryptoInitialize()));
     spl_crypto_init = true;
 
-    R_TRY(ns::Initialize());
+    R_TRY(step("install-open-application-service",ns::Initialize()));
     ns_init = true;
 
-    R_TRY(es::Initialize());
+    R_TRY(step("install-open-ticket-service",es::Initialize()));
     es_init = true;
 
     for (size_t i = 0; i < std::size(NCM_STORAGE_IDS); i++) {
-        R_TRY(ncmOpenContentMetaDatabase(std::addressof(ncm_db[i]), NCM_STORAGE_IDS[i]));
+        R_TRY(step("install-open-content-database",ncmOpenContentMetaDatabase(std::addressof(ncm_db[i]), NCM_STORAGE_IDS[i])));
         if(i == static_cast<size_t>(config.sd_card_install)) {
             const auto opened=destination->Open(ncm_cs[i]);
             if(R_FAILED(opened) && diagnostic && destination->IsUsb())diagnostic->text=
-                "USB preflight failed before content copying. P3 firmware and a ready USB drive are required. Install the matching package3 and fully reboot; keep the source. See nexus.log for the precise stage."_nx;
-            R_TRY(opened);
+                "USB storage could not be prepared. No game files were copied. Keep the original package and check the error details before retrying."_nx;
+            R_TRY(step("install-open-destination",opened));
         } else {
-            R_TRY(nexusapp::OpenStorage(i ? nexus::Target::Sd : nexus::Target::Internal,ncm_cs[i]));
+            R_TRY(step("install-open-other-storage",nexusapp::OpenStorage(i ? nexus::Target::Sd : nexus::Target::Internal,ncm_cs[i])));
         }
     }
 
@@ -1123,12 +1134,32 @@ Result Yati::Setup(const ConfigOverride& override) {
     db = ncm_db[config.sd_card_install];
     if(destination->IsUsb())usb_generation=destination->Generation();
 
-    R_TRY(parse_keys(keys, true));
+    R_TRY(step("install-load-key-material",parse_keys(keys, true)));
     R_SUCCEED();
+}
+
+Result Yati::CheckReuseTicket(const nca::Header& header,std::span<TikCollection> tickets) {
+    if(!reuse_existing_usb_only)return HasRequiredTicket(header,tickets);
+    if(!es::IsRightsIdValid(header.rights_id) || GetTicketCollection(header,tickets))return 0;
+    // A package need not carry a ticket already held by this emuMMC/sysMMC.
+    // Any ES query failure is an unknown result, never proof of absence.
+    for(bool personal:{false,true}){
+        s32 count{},written{},after{};
+        R_TRY(personal?es::CountPersonalizedTicket(&count):es::CountCommonTicket(&count));
+        R_UNLESS(count>=0 && count<=65536,nexus::Invalid);
+        std::vector<FsRightsId> ids(count);
+        if(count)R_TRY(personal?es::ListPersonalizedTicket(&written,ids.data(),count):es::ListCommonTicket(&written,ids.data(),count));
+        R_TRY(personal?es::CountPersonalizedTicket(&after):es::CountCommonTicket(&after));
+        R_UNLESS(written==count && after==count,nexus::Invalid);
+        if(std::any_of(ids.begin(),ids.end(),[&](const auto& id){return !memcmp(&id,&header.rights_id,sizeof(id));}))return 0;
+    }
+    if(diagnostic)diagnostic->text="This package and the current system do not contain a required ticket. Choose your original backup containing the ticket. No game files were copied or deleted."_nx;
+    return Result_YatiTicketNotFound;
 }
 
 Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection& nca) {
     nca.usb_written={};
+    R_UNLESS(!reuse_existing_usb_only || (destination->IsUsb() && !source->IsStream()),nexus::Invalid);
     if(destination->IsUsb() && !source->IsStream()) {
         // An interrupted attempt may have committed this NCA already. Inspect
         // physical USB, not routed Has(), and rehash it before any reuse.
@@ -1145,7 +1176,7 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
             R_TRY(nexusapp::ReadContent(physical_target,cs,nca.content_id,usb_generation,0,&nca.header,sizeof(nca.header)));
             R_TRY(nca::DecryptHeader(&nca.header,keys,nca.header));
             R_UNLESS(info.size==nca.header.size,nexus::Invalid);
-            R_TRY(VerifyReusedNca(nca));R_TRY(HasRequiredTicket(nca.header,tickets));
+            R_TRY(VerifyReusedNca(nca));R_TRY(CheckReuseTicket(nca.header,tickets));
             if(nca.header.distribution_type==nca::DistributionType_GameCard){
                 // A correct original hash does not make cartridge-only data
                 // suitable for installed use. Do not report a successful fix
@@ -1157,6 +1188,11 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
             nca.skipped=true;return 0;
         }
         R_UNLESS(stat==MAKERESULT(140,205),stat); // only an explicit missing file permits creation
+    }
+    if(reuse_existing_usb_only){
+        if(diagnostic)diagnostic->text="A required installed file is missing from USB: "_nx+nca.name+
+            "\nChoose a normal install to restore missing files. Formatting the drive erases game files; tickets and links cannot recover them. No game files were copied or deleted."_nx;
+        return Result_YatiNcaNotFound;
     }
     if (config.skip_if_already_installed || config.ticket_only) {
         R_TRY(ncmContentStorageHas(std::addressof(cs), std::addressof(nca.skipped), std::addressof(nca.content_id)));
@@ -1306,7 +1342,9 @@ Result Yati::InstallNca(std::span<TikCollection> tickets, NcaCollection& nca) {
     R_TRY(install_rc);
 
     fs::FsPath path;
-    if (nca.skipped) {
+    if (nca.skipped && reuse_existing_usb_only) {
+        path=fs::FsPath("@SdCardContent:"+nexusapp::CanonicalUsbContentPath(nca.content_id));
+    } else if (nca.skipped) {
         R_TRY(ncmContentStorageGetPath(std::addressof(cs), path, sizeof(path), std::addressof(nca.content_id)));
     } else {
         pbox->ContentPhase(destination->IsUsb()?"Flushing to USB"_nx:"Flushing to SD"_nx);
@@ -1417,7 +1455,9 @@ Result Yati::InstallCnmtNca(std::span<TikCollection> tickets, CnmtCollection& cn
     R_TRY(InstallNca(tickets, cnmt));
 
     fs::FsPath path;
-    if (cnmt.skipped) {
+    if (cnmt.skipped && reuse_existing_usb_only) {
+        path=fs::FsPath("@SdCardContent:"+nexusapp::CanonicalUsbContentPath(cnmt.content_id));
+    } else if (cnmt.skipped) {
         R_TRY(ncmContentStorageGetPath(std::addressof(cs), path, sizeof(path), std::addressof(cnmt.content_id)));
     } else {
         R_TRY(ncmContentStorageFlushPlaceHolder(std::addressof(cs)));
@@ -1751,11 +1791,17 @@ Result Yati::VerifyReusedNca(const NcaCollection& nca,bool allow_written,const u
         R_UNLESS(hash.Matches(expected,nca.has_expected_hash?32:16),Result_YatiInvalidNcaSha256);
     }
     R_TRY(pbox->ShouldExitResult());
-    // Verify checks the physical size and invokes the P2 registration API.
-    R_TRY(destination->Verify(cs,nca.content_id,size));
+    // Preflight may read/stage small metadata, but must not publish routing.
+    // Only after the entire package passes may P2 ensure its content entries.
+    if(reuse_existing_usb_only){
+        nexus::Client usb;nexus::Info info{};R_TRY(usb.Check(usb_generation));
+        R_TRY(usb.Stat(usb_generation,nexusapp::CanonicalUsbContentPath(nca.content_id),info));
+        R_UNLESS(!info.directory && info.size==size,nexus::Invalid);
+        if(!defer_reuse_publication)R_TRY(destination->EnsureRegistered(nca.content_id,size));
+    }else R_TRY(destination->Verify(cs,nca.content_id,size));
     R_TRY(pbox->ShouldExitResult());
     if(quick_usb_final_verify&&header_known)usb_verified.Remember(key,header_hash);
-    verified=true;pbox->ContentPhase("Verified / registered");
+    verified=true;pbox->ContentPhase(defer_reuse_publication?"Verified on USB"_nx:"Verified / registered"_nx);
     if(progress) {
         progress->completed_bytes+=size;
         ++progress->completed_files;
@@ -1913,6 +1959,42 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
             auto& cnmt = cnmts.emplace_back(NcaCollection{collection});
             cnmt.type = NcmContentType_Meta;
         }
+    }
+
+    if(override.reuse_existing_usb_only){
+        R_UNLESS(!cnmts.empty(),Result_YatiNcaNotFound);
+        std::vector<u32> versions(cnmts.size());std::vector<bool> selected(cnmts.size());
+        // Complete the read-only preflight for ALL base/update/DLC records in
+        // this package before importing a ticket or publishing any mapping.
+        for(size_t i=0;i<cnmts.size();++i){
+            ui::ProgressScope title_scope(pbox,nexus::WorkPart(i,cnmts.size(),9000),nexus::WorkPart(i+1,cnmts.size(),9000));
+            auto& cnmt=cnmts[i];
+            {ui::ProgressScope meta_scope(pbox,0,200);R_TRY(yati->InstallCnmtNca(tickets,cnmt,collections));}
+            bool skip{};R_TRY(yati->GetLatestVersion(cnmt,versions[i],skip));R_TRY(yati->ShouldSkip(cnmt,skip));
+            if(skip){if(yati->outcome)++yati->outcome->skipped_records;continue;}
+            selected[i]=true;u64 total{},done{};
+            for(const auto& nca:cnmt.ncas){R_UNLESS(nca.expected_size<=UINT64_MAX-total,nexus::Invalid);total+=nca.expected_size;}
+            for(auto& nca:cnmt.ncas){
+                ui::ProgressScope content_scope(pbox,200+nexus::WorkPart(done,total,9800),200+nexus::WorkPart(done+nca.expected_size,total,9800));
+                R_TRY(yati->InstallNca(tickets,nca));done+=nca.expected_size;
+            }
+        }
+        R_TRY(pbox->ShouldExitResult());R_TRY(yati->destination->Validate());
+        yati->defer_reuse_publication=false;
+        for(size_t i=0;i<cnmts.size();++i){
+            if(!selected[i])continue;
+            ui::ProgressScope publish_scope(pbox,9000+nexus::WorkPart(i,cnmts.size(),1000),9000+nexus::WorkPart(i+1,cnmts.size(),1000));
+            R_TRY(pbox->ShouldExitResult());R_TRY(yati->destination->Validate());
+            R_TRY(yati->ImportTickets(tickets));
+            R_TRY(yati->RegisterNcasAndPushRecord(cnmts[i],versions[i]));
+            if(yati->outcome)++yati->outcome->installed_records;
+        }
+        if(yati->diagnostic){
+            const auto count=std::count(selected.begin(),selected.end(),true);
+            if(count)yati->diagnostic->completion+="\nExisting USB files checked; tickets, content links and HOME records restored for the completed entries. No game files were copied or deleted."_nx;
+            else yati->diagnostic->completion+="No content was installed. "_nx+std::to_string(cnmts.size())+" entries were skipped by installation checks. Current installed versions were kept."_nx;
+        }
+        return 0;
     }
 
     size_t title_index{};
@@ -2339,7 +2421,7 @@ Result CheckManagerUpdateStorage(NcmStorageId storage,std::string& detail){
     nexus::registration::Capabilities caps{};
     R_TRY(serviceDispatch(ncmGetServiceSession(),nexus::registration::CapabilitiesCommand,
         .buffer_attrs={SfBufferAttr_HipcMapAlias|SfBufferAttr_Out},.buffers={{&caps,sizeof(caps)}}));
-    R_UNLESS(nexus::registration::ExplicitInstallTargetSupported(caps),nexus::Unavailable);
+    R_UNLESS(nexus::registration::ExplicitInstallTargetSupported(caps),nexus::registration::FirmwareUpdateRequired);
     return 0;
 }
 
@@ -2480,6 +2562,7 @@ Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path
 
 Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::FsPath& path, const ConfigOverride& override, s64 source_size) {
     nexus::diagnostics::Operation diagnostic_operation("install-game");
+    const auto run=[&]()->Result{
     if(override.diagnostic)override.diagnostic->Clear();
     const auto ext = std::strrchr(path.s, '.');
     R_UNLESS(ext, Result_YatiContainerNotFound);
@@ -2494,6 +2577,8 @@ Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::
         return Result_XciInvalidHeader;
     }
     const auto kind = nexus::package::Classify(path.s);
+    nexus::Log("install-package-format",0,static_cast<u64>(kind));
+    nexus::Log("install-source-bytes",0,source_size>=0?static_cast<u64>(source_size):UINT64_MAX);
     if (kind == nexus::package::Kind::Nsp || kind == nexus::package::Kind::Nsz) {
         container = std::make_unique<container::Nsp>(source, source_size);
     } else if (kind == nexus::package::Kind::Xci || kind == nexus::package::Kind::Xcz) {
@@ -2502,18 +2587,34 @@ Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::
 
     R_UNLESS(container, Result_YatiContainerNotFound);
     return InstallFromContainer(pbox, container.get(), override);
+    };
+    const auto final_result=run();
+    nexus::Log("install-result",final_result);
+    if(!pbox || !pbox->ShouldExit())nexus::reports::QueueFailure("install",final_result);
+    return final_result;
 }
 
 Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, const ConfigOverride& override) {
+    nexus::diagnostics::Operation diagnostic_operation("install-container");
+    const auto run=[&]()->Result{
     if(override.diagnostic)override.diagnostic->Clear();
     container::Collections collections;
     const auto parse_rc=container->GetCollections(collections);
     if(R_FAILED(parse_rc) && override.diagnostic)override.diagnostic->Set(nexus::install::Failure::Package);
     R_TRY(parse_rc);
     return InstallFromCollections(pbox, container->GetSource(), collections, override);
+    };
+    const auto final_result=run();
+    nexus::Log("install-result",final_result);
+    if(!pbox || !pbox->ShouldExit())nexus::reports::QueueFailure("install",final_result);
+    return final_result;
 }
 
 Result InstallFromCollections(ui::ProgressBox* pbox, source::Base* source, const container::Collections& collections, const ConfigOverride& override) {
+    nexus::diagnostics::Operation diagnostic_operation("install-content");
+    nexus::Log("install-stream-source",0,source->IsStream());
+    nexus::Log("install-requested-target",0,override.nexus_target ? static_cast<u64>(*override.nexus_target) : UINT64_MAX);
+    const auto run=[&]()->Result{
     if(override.diagnostic)override.diagnostic->Clear();
     if(override.outcome)*override.outcome={};
     // Normalize only exact content-ID archive names in this private copy.
@@ -2531,8 +2632,12 @@ Result InstallFromCollections(ui::ProgressBox* pbox, source::Base* source, const
     }
     const auto result=source->IsStream()?InstallInternalStream(pbox,source,prepared,override):InstallInternal(pbox,source,prepared,override);
     if(R_SUCCEEDED(result))nexusapp::BackupConsoleRoutingAfterChange();
-    if(!pbox || !pbox->ShouldExit())nexus::reports::QueueFailure("install",result);
     return result;
+    };
+    const auto final_result=run();
+    nexus::Log("install-result",final_result);
+    if(!pbox || !pbox->ShouldExit())nexus::reports::QueueFailure("install",final_result);
+    return final_result;
 }
 
 } // namespace sphaira::yati

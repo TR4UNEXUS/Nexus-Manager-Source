@@ -22,7 +22,8 @@ using Result=unsigned;using u64=std::uint64_t;
 #define MAKERESULT(m,d) ((m)|((d)<<9))
 struct NcmContentId{unsigned value;};struct TikCollection{};
 namespace nca{enum{DistributionType_GameCard=1};struct Header{u64 size{4096};int distribution_type{};};Result DecryptHeader(Header*,int,Header&){return 0;}}
-struct NcaCollection{int usb_written{};NcmContentId content_id{123};nca::Header header;bool skipped{};};
+constexpr Result Result_YatiNcaNotFound=789;
+struct NcaCollection{std::string name="game.nca";int usb_written{};NcmContentId content_id{123};nca::Header header;bool skipped{};};
 bool use_usb=true,stream=false;Result check_rc{},stat_rc=MAKERESULT(140,205),verify_rc{},ticket_rc{},read_rc{};
 int checks{},stats{},paths{},verifications{},tickets{},path_queries{};bool directory{};u64 file_size=4096;
 struct Destination{bool IsUsb(){return use_usb;}}dest;
@@ -43,9 +44,10 @@ constexpr int FS_MAX_PATH=0x301;
 Result ncmContentStorageGetPath(int*,char*,std::size_t,const NcmContentId*){++path_queries;return 0xA05;}
 struct Diagnostic{std::string text;}diagnostics;
 struct Yati{
+ bool reuse_existing_usb_only{};
  Destination* destination=&dest;Source* source=&src;u64 usb_generation=45;int cs{},physical_target{},keys{};Diagnostic* diagnostic=&diagnostics;
  Result VerifyReusedNca(const NcaCollection&){++verifications;return verify_rc;}
- Result HasRequiredTicket(const nca::Header&,std::span<TikCollection>){++tickets;return ticket_rc;}
+ Result CheckReuseTicket(const nca::Header&,std::span<TikCollection>){++tickets;return ticket_rc;}
  Result InstallNcaInternal(std::span<TikCollection>,NcaCollection&);
 };
 METHOD
@@ -61,6 +63,12 @@ int main(){Yati y;
  reset();stat_rc=0;ticket_rc=321;NcaCollection no_ticket;assert(y.InstallNcaInternal({},no_ticket)==321&&!no_ticket.skipped);
  reset();use_usb=false;NcaCollection sd;assert(y.InstallNcaInternal({},sd)==0&&stats==0);
  reset();stream=true;NcaCollection streaming;assert(y.InstallNcaInternal({},streaming)==0&&stats==0);
+ y.reuse_existing_usb_only=true;
+ reset();NcaCollection absent;assert(y.InstallNcaInternal({},absent)==Result_YatiNcaNotFound&&!absent.skipped&&verifications==0);assert(diagnostics.text.find("Formatting")!=std::string::npos);
+ reset();stat_rc=0;NcaCollection linked;assert(y.InstallNcaInternal({},linked)==0&&linked.skipped&&path_queries==0);
+ reset();stream=true;NcaCollection forward;assert(y.InstallNcaInternal({},forward)==nexus::Invalid&&stats==0);
+ reset();use_usb=false;NcaCollection wrong_target;assert(y.InstallNcaInternal({},wrong_target)==nexus::Invalid&&stats==0);
+ reset();stat_rc=0;NcaCollection cartridge;cartridge.header.distribution_type=nca::DistributionType_GameCard;assert(y.InstallNcaInternal({},cartridge)==nexus::Invalid&&!cartridge.skipped);
  puts("USB reinstall preflight passed: stale records, missing/present files, corruption, tickets, disconnects, SD and streaming paths.");
 }
 '''

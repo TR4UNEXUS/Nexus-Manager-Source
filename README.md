@@ -2,22 +2,23 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.28 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.28).
+This repository contains the 0.2.30 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TechRepairs4U/Nexus-Manager/releases/tag/v0.2.30).
 
-## What's new since 0.2.24
+## What's new since 0.2.28
 
-- Switch system-language detection and a language selector, with translations throughout the interface.
-- Guided USB repair with a read-only preview, explicit confirmation and results grouped by game, update and DLC.
-- Checked USB map backup to console storage. Backup results are reported separately from repair results.
-- Durable checkpoints and revalidation when recovering an interrupted move.
-- Signed repair guidance, a checked local cache and an offline fallback. Guidance cannot run code, change arbitrary paths or bypass content validation.
-- Report a problem and optional automatic failure reports. Reporting asks for consent, filters diagnostic fields and waits until Manager is idle to upload.
+- Clear firmware-update guidance when the active USB service does not support the required protocol.
+- Move recovery when identical destination content is already registered. Content must match before reuse; a failed check keeps the source.
+- Clearer storage, connection, locked-file and conflicting-content errors.
+- More accurate failure-stage reporting, with install setup and sleep/wake diagnostics.
+- Bulk deletion of selected games while keeping saved progress.
+- Tickets + link existing files for complete content already on a drive, using a suitable original package.
+- Clearer guidance for formatted drives. A map backup cannot restore erased game content.
 
-Reports exclude raw logs, credentials, tickets, saves and game files. A matching server receipt is saved before a queued report is removed. Users can disable reporting or discard queued reports. The public build leaves server uploads disabled; deployment configuration belongs outside this repository.
+Guided USB repair, console backups of the USB map, language selection, port and mod management, File manager, FTP/USB cable transfers and SMB/NFS installs remain available. Repairs cannot replace missing game files or tickets, and integrity checks stay enabled.
 
-Existing features include port management, icon caching, mod folders and ZIPs, File manager copy/move/delete, FTP and NAS stream installs, cleanup and app updates. Repairs cannot replace missing game files or tickets. Saved progress remains separate from game-content deletion.
+Problem reports remain optional and exclude raw logs, credentials, tickets, saves and game files. The public build leaves private server uploads disabled; deployment configuration stays outside this repository. Users can disable reporting or discard queued reports.
 
-The application build and automated checks passed. Version 0.2.28 still needs wider testing on consoles, drives and network servers. Please report the steps to reproduce a problem and a diagnostic report when available, without including private files.
+The application build and automated checks passed. Version 0.2.30 still needs console testing. Please report reproducible problems and a diagnostic report where available, without including private files.
 
 ## Getting started
 

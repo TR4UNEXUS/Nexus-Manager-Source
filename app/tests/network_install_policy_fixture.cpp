@@ -1,4 +1,5 @@
 #include "nexus/task_progress.hpp"
+#include "nexus/localize.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -16,37 +17,40 @@ using u8=std::uint8_t;using u32=std::uint32_t;using u64=std::uint64_t;using s32=
 #define ON_SCOPE_EXIT(...) ((void)0)
 void log_write(const char*,...){}
 namespace nexus {constexpr Result Invalid=123;}
-enum {NcmContentMetaType_Unknown=0,NcmContentMetaType_Application=0x80,NcmContentMetaType_Patch=0x81,NcmContentMetaType_AddOnContent=0x82,NcmContentMetaType_DataPatch=0x84,NcmContentInstallType_Full=0,NcmContentType_Meta=0};
+constexpr Result Result_YatiNcaNotFound=124;
+enum {NcmContentMetaType_Unknown=0,NcmContentMetaType_Application=0x80,NcmContentMetaType_Patch=0x81,NcmContentMetaType_AddOnContent=0x82,NcmContentMetaType_DataPatch=0x84,NcmContentInstallType_Full=0,NcmContentType_Meta=0,NcmContentType_Control=3};
 struct NcmContentMetaKey{u64 id{};u32 version{};u8 type{};};
-std::vector<NcmContentMetaKey> installed;unsigned publication_calls{},fail_publication{};
+std::vector<NcmContentMetaKey> installed;unsigned publication_calls{},fail_publication{},prepared{},fail_prepare{},ticket_calls{};
 Result ncmContentMetaDatabaseList(int* db,s32* total,s32* count,NcmContentMetaKey* out,size_t capacity,u8,u64,u64,u64,u8){*total=*db?installed.size():0;*count=std::min<size_t>(capacity,*total);if(*count)std::copy_n(installed.begin(),*count,out);return 0;}
 Result ncmContentMetaDatabaseHas(int*,bool* out,const NcmContentMetaKey* key){*out=std::any_of(installed.begin(),installed.end(),[&](const auto& i){return i.id==key->id&&i.version==key->version&&i.type==key->type;});return 0;}
 struct SavedBool{bool value{true};bool Get()const{return value;}};
 struct SavedFilters{SavedBool m_ticket_only,m_skip_base,m_skip_patch,m_skip_addon,m_skip_data_patch,m_skip_ticket;} saved;
 struct App{static SavedFilters* GetApp(){return &saved;}};
-namespace ui {struct ProgressBox{};struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};}
-namespace source {struct Base{};}
+namespace ui {struct ProgressBox{bool cancelled{};Result ShouldExitResult(){return cancelled?777:0;}};struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};}
+namespace source {struct Base{bool IsStream(){return false;}};}
 namespace container {struct CollectionEntry{std::string name;u64 id{};u32 version{};u8 kind{};};using Collections=std::vector<CollectionEntry>;}
-struct NcaCollection:container::CollectionEntry{u8 type{};s64 size{};};
+struct NcaCollection:container::CollectionEntry{u8 type{};s64 size{};u64 expected_size{4096};};
 struct CnmtCollection:NcaCollection{std::vector<NcaCollection> ncas;NcmContentMetaKey key;};
 struct TikCollection{};
 // OUTCOME_PRODUCTION
 struct Config{bool ticket_only{},skip_base{},skip_patch{},skip_addon{},skip_data_patch{},skip_ticket{},skip_if_already_installed{},allow_downgrade{};};
-struct ConfigOverride{std::optional<bool> ticket_only,skip_base,skip_patch,skip_addon,skip_data_patch,skip_ticket;InstallOutcome* outcome{};};
+struct ConfigOverride{bool reuse_existing_usb_only{};std::optional<bool> ticket_only,skip_base,skip_patch,skip_addon,skip_data_patch,skip_ticket;InstallOutcome* outcome{};};
 u64 ApplicationId(const CnmtCollection&){return 100;}
 struct Yati {
+    bool defer_reuse_publication{};struct Dest{Result Validate(){return 0;}} dest;Dest* destination=&dest;
+    struct Diagnostic{std::string completion;} diag;Diagnostic* diagnostic=&diag;
     Config config;InstallOutcome* outcome{};int ncm_db[2]{1,0},db{1};
     Yati(ui::ProgressBox*,source::Base*){}
     Result Setup(const ConfigOverride& override){
-        outcome=override.outcome;
+        outcome=override.outcome;defer_reuse_publication=override.reuse_existing_usb_only;
         // FILTER_SETUP_PRODUCTION
         return 0;
     }
     void Cleanup(const NcaCollection&){}
     Result ParseTicketsIntoCollection(std::vector<TikCollection>&,const container::Collections&,bool){return 0;}
-    Result InstallCnmtNca(std::span<TikCollection>,CnmtCollection& cnmt,const container::Collections&){cnmt.key={cnmt.id,cnmt.version,cnmt.kind};return 0;}
-    Result InstallNca(std::span<TikCollection>,NcaCollection&){return 0;}
-    Result ImportTickets(std::span<TikCollection>){return config.skip_ticket?567:0;}
+    Result InstallCnmtNca(std::span<TikCollection>,CnmtCollection& cnmt,const container::Collections&){cnmt.key={cnmt.id,cnmt.version,cnmt.kind};cnmt.ncas.push_back({});return 0;}
+    Result InstallNca(std::span<TikCollection>,NcaCollection&){if(defer_reuse_publication){assert(!ticket_calls&&!publication_calls);return ++prepared==fail_prepare?998:0;}return 0;}
+    Result ImportTickets(std::span<TikCollection>){assert(!defer_reuse_publication);++ticket_calls;return config.skip_ticket?567:0;}
     Result RemoveInstalledNcas(const CnmtCollection&){return 0;}
     Result RegisterNcasAndPushRecord(const CnmtCollection&,u32){return ++publication_calls==fail_publication?789:0;}
     Result GetLatestVersion(const CnmtCollection&,u32&,bool&);
@@ -73,5 +77,20 @@ int main(){
     outcome={};publication_calls=0;const container::Collections mixed{all[0],all[1]};assert(!InstallInternal(&progress,&source,mixed,options));assert(outcome.installed_records==1&&outcome.skipped_records==1&&publication_calls==1);
     // A metadata/HOME publication failure never increments installed entries.
     installed.clear();outcome={};publication_calls=0;fail_publication=2;assert(InstallInternal(&progress,&source,all,options)==789);assert(outcome.installed_records==1&&!outcome.skipped_records&&publication_calls==2);
+    // Real reuse-only coordinator: every base/update/DLC member must pass
+    // before the first ticket or HOME record is published.
+    options.reuse_existing_usb_only=true;fail_publication=0;
+    for(unsigned failure=1;failure<=4;++failure){
+        outcome={};publication_calls=ticket_calls=prepared=0;fail_prepare=failure;
+        assert(InstallInternal(&progress,&source,all,options)==998);
+        assert(!outcome.installed_records&&!publication_calls&&!ticket_calls);
+    }
+    fail_prepare=0;outcome={};publication_calls=ticket_calls=prepared=0;
+    assert(!InstallInternal(&progress,&source,all,options));assert(prepared==4&&outcome.installed_records==4&&publication_calls==4);
+    outcome={};publication_calls=ticket_calls=prepared=0;fail_publication=2;
+    assert(InstallInternal(&progress,&source,all,options)==789&&outcome.installed_records==1);
+    fail_publication=0;publication_calls=ticket_calls=prepared=0;progress.cancelled=true;
+    assert(InstallInternal(&progress,&source,all,options)==777&&!publication_calls&&!ticket_calls);progress.cancelled=false;
+    assert(InstallInternal(&progress,&source,{},options)==Result_YatiNcaNotFound);
     std::cout<<"Actual installer filter, older-update skip and outcome-count tests passed\n";
 }

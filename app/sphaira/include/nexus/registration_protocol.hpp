@@ -22,6 +22,9 @@ inline bool ExplicitInstallTargetSupported(const Capabilities& c){
 inline constexpr std::uint32_t ContentAlreadyExists = 5u | (4u << 9);
 // Local app result; never substitutes for an IPC/storage error.
 inline constexpr std::uint32_t RepairPending = 505u | (900u << 9);
+// 901-903 are reserved for ticket, import-system and changed-source results.
+inline constexpr std::uint32_t FirmwareUpdateRequired = 505u | (904u << 9);
+inline constexpr std::uint32_t MetadataConflict = 505u | (905u << 9);
 inline constexpr char PendingJournal[] = "/atmosphere/usb_content-repair.pending";
 
 // SF stable-sorts input arguments by increasing alignment, not declaration

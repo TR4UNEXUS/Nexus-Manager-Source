@@ -19,7 +19,7 @@ struct NetworkInstallOutcome {size_t installed_records{},skipped_records{};bool 
 Result InstallNetworkPackage(ui::ProgressBox* progress,const std::string& mount,
     const std::string& path,u64 expected_size,nexus::Target target,
     u64 destination_generation,nexus::install::Diagnostic& diagnostic,
-    NetworkInstallOutcome* result=nullptr);
+    NetworkInstallOutcome* result=nullptr,bool reuse_existing_usb_only=false);
 // Retained for older internal callers; the same supported-format checks apply.
 Result InstallNetworkNsp(ui::ProgressBox* progress,const std::string& mount,
     const std::string& path,u64 expected_size,nexus::Target target,
