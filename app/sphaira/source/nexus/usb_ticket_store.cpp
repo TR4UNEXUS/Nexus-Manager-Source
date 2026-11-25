@@ -1,6 +1,7 @@
 #include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_ticket_store.hpp"
+#include "nexus/hats.hpp"
 #include "nexus/nx_Client.hpp"
 #include "yati/nx/es.hpp"
 #include "defines.hpp"
@@ -48,6 +49,7 @@ void Checksum(Header& h,std::span<const u8> ticket,std::span<const u8> cert){
     sha256ContextGetHash(&sha,h.checksum.data());
 }
 Result Read(nexus::Client& usb,u64 gen,const std::string& path,std::vector<u8>& out){
+    R_TRY(usb.Check(gen));
     nexus::Info info{};R_TRY(usb.Stat(gen,path,info));
     R_UNLESS(!info.directory && info.size>=sizeof(Header) && info.size<=sizeof(Header)+2*MaxPart,InvalidUsbTicket);
     out.resize(info.size);u64 got{};R_TRY(usb.Read(gen,path,0,out.data(),out.size(),got));
@@ -72,13 +74,13 @@ Result Directory(nexus::Client& usb,u64 gen,const std::string& path){
 }
 Result LoadUsbTicketPair(u64 generation,const FsRightsId& rights,UsbTicketPair& out){
     out={};Header wanted;wanted.rights=rights;R_UNLESS(es::IsRightsIdValid(rights),InvalidUsbTicket);
-    R_TRY(Console(wanted.console));nexus::Client usb;R_TRY(usb.Check(generation));
+    R_TRY(Console(wanted.console));nexus::Client usb;
     std::vector<u8> raw;R_TRY(Read(usb,generation,Path(wanted),raw));return Decode(raw,wanted,out);
 }
 Result SaveUsbTicketPair(u64 generation,const FsRightsId& rights,std::span<const u8> ticket,std::span<const u8> certificate){
     R_TRY(Validate(rights,ticket,certificate));Header h;h.rights=rights;h.ticket_size=ticket.size();h.certificate_size=certificate.size();
     R_TRY(Console(h.console));Checksum(h,ticket,certificate);
-    nexus::Client usb;R_TRY(usb.Check(generation));const auto path=Path(h);
+    nexus::Client usb;const auto path=Path(h);
     std::vector<u8> previous;const auto found=Read(usb,generation,path,previous);
     if(R_SUCCEEDED(found)){
         UsbTicketPair pair;R_TRY(Decode(previous,h,pair));
@@ -101,8 +103,21 @@ Result SaveUsbTicketPair(u64 generation,const FsRightsId& rights,std::span<const
     R_TRY(usb.RenameNew(generation,stage,path));R_TRY(usb.Flush(generation));
     R_TRY(Read(usb,generation,path,check));R_UNLESS(check==raw,InvalidUsbTicket);return 0;
 }
+Result LoadUsbImportTicketPair(u64 generation,const FsRightsId& rights,UsbTicketPair& out){
+    const Result archived=LoadUsbTicketPair(generation,rights,out);
+    if(archived!=MissingUsbTicket)return archived;
+    Header expected;
+    expected.magic=0x3150434e; // NCP1: original package pair, no console binding
+    expected.rights=rights;
+    const auto path="/nexus/pc-import/v1/tickets/"+Hex(&rights,sizeof(rights))+".bin";
+    nexus::Client usb;
+    std::vector<u8> raw;
+    R_TRY(Read(usb,generation,path,raw));
+    R_UNLESS(::nexus::hats::SupportsPcLibrary(),InvalidUsbTicket);
+    return Decode(raw,expected,out);
+}
 Result ImportUsbTicketPair(u64 generation,const FsRightsId& rights){
-    UsbTicketPair pair;R_TRY(LoadUsbTicketPair(generation,rights,pair));
+    UsbTicketPair pair;R_TRY(LoadUsbImportTicketPair(generation,rights,pair));
     R_TRY(es::Initialize());ON_SCOPE_EXIT(es::Exit());
     nexus::Client usb;R_TRY(usb.Check(generation));
     R_TRY(es::ImportTicket(pair.ticket.data(),pair.ticket.size(),pair.certificate.data(),pair.certificate.size()));

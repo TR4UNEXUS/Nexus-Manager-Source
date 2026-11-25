@@ -236,7 +236,7 @@ Result ScanUsbRecovery(ui::ProgressBox* p,RecoveryPlan& plan,u64 only_applicatio
             }
             candidates.push_back(c);files.push_back(std::move(f));
         }
-        if(!any){if(only_application){++plan.skipped;note("No matching USB files found"_nx);}continue;} // never register physical SD-only content as USB
+        if(!any){if(only_application){++plan.skipped;note("No USB files match the registered copy. For a game compressed on PC, open Import from PC."_nx);}continue;} // never register physical SD-only content as USB
         if(!complete || sd_program){
             note(sd_program?"SD copy kept; no USB routing change"_nx:"Incomplete on drive"_nx);++plan.skipped;continue;
         }

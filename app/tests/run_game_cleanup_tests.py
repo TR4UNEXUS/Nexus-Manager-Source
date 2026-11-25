@@ -13,7 +13,7 @@ model='\n'.join(block(production,'struct '+name+' {')+';' for name in ('File','R
 api=api[api.index('enum class CleanupKind'):api.index('// Inventory and preview')]
 fixture=fixture.replace('// MODEL_PRODUCTION',model).replace('// API_PRODUCTION',api).replace('// STATE_PRODUCTION',block(production,'struct RemovalState {')+';')
 functions='\n'.join(block(production,name) for name in ('void MergeUsbOwnership(', 'std::set<Id> PhysicalIds(', 'std::string AppName(', 'Result ScanCleanup(', 'static Result PrepareGameRemoval(', 'Result PreviewGameRemoval(', 'Result ApplyGameRemoval(', 'Digest RemovalFingerprint(', 'Result PreviewCleanupBatch(', 'Result ApplyCleanupBatch('))
-fixture=fixture.replace('// FUNCTIONS_PRODUCTION',functions)
+fixture=fixture.replace('// FUNCTIONS_PRODUCTION',functions+'\n'+block(production,'Result RegisterPcReplacement(')+'\n'+block(production,'Result FinishPcReplacement(')+'\n'+block(production,'Result FinishPcRemoval('))
 with tempfile.TemporaryDirectory(prefix='nexus-game-cleanup-') as tmp:
  source=Path(tmp)/'actual.cpp';source.write_text(fixture)
  for optimization in ('-O0','-O2'):

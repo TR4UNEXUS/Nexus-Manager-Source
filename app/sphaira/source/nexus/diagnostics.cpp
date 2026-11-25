@@ -20,6 +20,7 @@ namespace nexus {
 namespace {
 std::mutex log_mutex;
 std::atomic<u64> next_operation{1};
+std::atomic<u64> current_game{};
 thread_local u64 operation{};
 thread_local bool operation_failed{};
 thread_local const char* operation_name="background";
@@ -31,11 +32,16 @@ bool Rotate(const char* current,const char* prior){
 }
 }
 namespace diagnostics {
+u64 CurrentGame(){return current_game.load();}
 u64 Session(){static const u64 session=armGetSystemTick();return session;}
 Operation::Operation(const char* name):previous(operation),previous_name(operation_name),previous_failure(operation_failed){operation_failed=false;operation=next_operation.fetch_add(1);operation_name=name;Log("operation-begin",0,operation);}
 Operation::~Operation(){Log("operation-ended",0,operation);operation=previous;operation_name=previous_name;operation_failed=previous_failure;}
 }
 void Log(const char* phase,Result result,u64 value){
+    if(phase&&!result){
+        if(!strcmp(phase,"operation-begin"))current_game=0;
+        if(!strcmp(phase,"install-content-program-id")||!strcmp(phase,"install-package-title-id")||!strcmp(phase,"move-begin-M4"))current_game=value;
+    }
     std::scoped_lock lock(log_mutex);
     mkdir("sdmc:/switch/nexusmanager",0777);
     constexpr const char* path="sdmc:/switch/nexusmanager/nexus.log";

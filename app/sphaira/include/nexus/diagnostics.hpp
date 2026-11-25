@@ -5,6 +5,7 @@
 namespace sphaira::ui {class ProgressBox;}
 namespace nexus::diagnostics {
 u64 Session();
+u64 CurrentGame();
 class Operation {
     u64 previous{};const char* previous_name{};bool previous_failure{};
 public:

@@ -14,4 +14,6 @@ void Poll(bool idle);
 void Stop();
 void DisplayReportMenu();
 bool OfferChoice();
+// Applet hooks only record a notification. Collection waits for idle foreground.
+void OnResume();
 }

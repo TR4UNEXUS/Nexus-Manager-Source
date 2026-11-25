@@ -15,8 +15,20 @@
 #include <openssl/sha.h>
 #include <yyjson.h>
 #include "nexus/problem_report_core.hpp"
-using u8=uint8_t;using u64=uint64_t;using Result=uint32_t;
+#include "nexus/report_observations.hpp"
+#include "nexus/hats_identity.hpp"
+using u8=uint8_t;using u32=uint32_t;using u64=uint64_t;using s64=int64_t;using Result=uint32_t;
 constexpr Result Fault=123;
+constexpr unsigned InfoType_UsedMemorySize=0,CUR_PROCESS_HANDLE=0;
+unsigned hosversionGet(){return 0x170500;}bool envIsNso(){return true;}unsigned appletGetOperationMode(){return 0;}
+Result svcGetInfo(u64*,unsigned,unsigned,unsigned){return Fault;}
+using PsmChargerType=unsigned;Result psmInitialize(){return Fault;}void psmExit(){}
+Result psmGetBatteryChargePercentage(u32*){return Fault;}Result psmGetChargerType(PsmChargerType*){return Fault;}
+using NifmInternetConnectionType=unsigned;using NifmInternetConnectionStatus=unsigned;
+constexpr unsigned NifmServiceType_User=0;
+Result nifmInitialize(unsigned){return Fault;}void nifmExit(){}Result nifmGetInternetConnectionStatus(unsigned*,u32*,unsigned*){return Fault;}
+struct FsFileSystem{};Result fsOpenSdCardFileSystem(FsFileSystem*){return Fault;}void fsFsClose(FsFileSystem*){}
+Result fsFsGetFreeSpace(FsFileSystem*,const char*,s64*){return Fault;}Result fsFsGetTotalSpace(FsFileSystem*,const char*,s64*){return Fault;}
 #define R_FAILED(r) ((r)!=0)
 #define R_SUCCEEDED(r) ((r)==0)
 #define R_UNLESS(c,r) do{if(!(c))return(r);}while(0)
@@ -34,6 +46,7 @@ Result threadStart(Thread*t){++starts;t->fn(t->arg);return 0;}Result threadWaitF
 void fatalThrow(Result){assert(false);}
 namespace sphaira {struct App{static void Notify(const std::string&){++notifications;}};namespace utils{Result CreateThread(Thread*t,void(*fn)(void*),void*arg,size_t){*t={fn,arg};return 0;}}}
 namespace nexus {
+namespace diagnostics{inline u64 game{};u64 CurrentGame(){return game;}}
 constexpr Result Invalid=2,Unavailable=3;
 void Log(const char* phase,Result rc,u64 value=0){
  char line[640]{};snprintf(line,sizeof(line),"NM2 2026-11-23T12:00:00Z version=0.2.28 session=0000000000000001 uptime_ms=100 operation=1 task=install event=%s rc=0x%08X value=%llu\n",phase,rc,(unsigned long long)value);

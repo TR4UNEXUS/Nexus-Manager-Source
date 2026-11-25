@@ -46,3 +46,4 @@ dependencies/libnx-source/nx/release/
 nexus_report_endpoint.hpp
 
 repair-catalog-signing.pem
+/app/assets/romfs/nexus-hats/hats-installer.bin

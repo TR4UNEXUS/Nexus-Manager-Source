@@ -22,6 +22,7 @@
 #include "title_info.hpp"
 #include "image.hpp"
 #include "nexus/update.hpp"
+#include "nexus/hats.hpp"
 #include "nexus/update_restart.hpp"
 #include "nexus/lifecycle.hpp"
 #include "nexus/vsd_policy.hpp"
@@ -221,15 +222,18 @@ void Menu::Refresh(){
         },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
     } else if(page==Page::Installed){
         auto result=std::make_shared<std::vector<nexusapp::Game>>();
-        App::Push<ProgressBox>(0,"Loading your games"_nx,"Reading game locations; no full-file verification"_nx,[this,result](ProgressBox* p){
+        auto salty=std::make_shared<nexus::saltynx::Library>();
+        App::Push<ProgressBox>(0,"Loading your games"_nx,"Reading game locations; no full-file verification"_nx,[this,result,salty](ProgressBox* p){
             if(!title_service_ready){R_TRY(title::Init());title_service_ready=true;}
             R_TRY(p->ShouldExitResult());
             R_TRY(nexusapp::ScanGames(p,*result));
+            *salty=nexus::saltynx::Inspect();
             return nexusapp::ScanGameLocations(p,*result);
-        },[this,result,previous_key,previous_index](Result rc){
+        },[this,result,salty,previous_key,previous_index](Result rc){
             if(R_FAILED(rc)){Report(rc,"Installed scan failed; no content was changed."_nx);return;}
             title::Clear(false);title_requested.clear();
             games=std::move(*result);
+            salty_library=std::move(*salty);
             std::erase_if(selected_games,[this](u64 id){return std::none_of(games.begin(),games.end(),[&](const auto& g){return g.id==id;});});
             const auto previous=std::find_if(games.begin(),games.end(),[&](const auto& game){return game.CacheKey()==previous_key;});
             selected=previous!=games.end()?size_t(previous-games.begin()):games.empty()?0:std::min(previous_index,games.size()-1);
@@ -370,14 +374,16 @@ void Menu::RunProbe(){
 }
 void Menu::SetupActions(){
     actions_dirty=false;
-    for(auto button:{Button::X,Button::Y,Button::START,Button::SELECT,Button::L,Button::R})RemoveAction(button);
+    for(auto button:{Button::X,Button::Y,Button::START,Button::SELECT,Button::L,Button::R,Button::R2})RemoveAction(button);
     SetAction(Button::A,Action{page==Page::Queue || page==Page::Results?"Details"_nx:"Open"_nx,[this]{Activate();}});
     SetAction(Button::B,page==Page::Home?Action{[this]{Back();}}:Action{"Back"_nx,[this]{Back();}});
     if(page==Page::Installed){
         SetAction(Button::A,Action{"Manage"_nx,[this]{GameActions();}});
+        if(salty_library.installed)SetAction(Button::R2,Action{[this]{ShowSaltyDetails();}});
         SetAction(Button::X,Action{selected<games.size()&&selected_games.contains(games[selected].id)?"Deselect"_nx:"Select"_nx,[this]{ToggleGame();}});
         SetAction(Button::Y,selected_games.empty()?Action{"Refresh"_nx,[this]{Refresh();}}:Action{"Delete selected"_nx,[this]{DeleteSelectedGames();}});
         SetAction(Button::R,Action{[this]{OpenUsbRepair();}});
+        SetAction(Button::L,Action{[]{nexusapp::DisplayPcUsbImport();}});
         SetAction(Button::SELECT,Action{[this]{Updates();}});
         SetAction(Button::START,selected_games.empty()?Action{App::Exit}:Action{"Clear selection"_nx,[this]{selected_games.clear();actions_dirty=true;}});
     }else if(page==Page::Cleanup){
@@ -477,6 +483,72 @@ void Menu::BatchResultDetails(){
         "\nSource file kept. Failed/cancelled packages may be partly installed.\nDetails: switch/nexusmanager/batch-last.log"_nx;
     if(row.result)Report(row.result,text);else App::Push<OptionBox>(text,"Back"_nx,"OK",0,[](auto){});
 }
+bool Menu::HasSaltyDetails() const {
+    return page==Page::Installed && salty_library.installed && selected<games.size() &&
+        (games[selected].id >> 56) == 1 && games[selected].homebrew_path.empty() && games[selected].forwarder_path.empty();
+}
+
+const char* Menu::SaltyLabel(const nexusapp::Game& game) const {
+    using namespace nexus::saltynx;
+    if (salty_library.Setting(game.id) == Exception::Skip) return "SaltyNX exception set"_nx;
+    switch (salty_library.Guidance(game.id, game.name, game.display_version)) {
+        case Advice::MarioLaunch:
+        case Advice::VersionIssue: return "SaltyNX launch advice"_nx;
+        case Advice::CoreError: return "SaltyNX load error"_nx;
+        case Advice::PluginsOnly: return "SaltyNX plugin limit"_nx;
+        default: return "SaltyNX details"_nx;
+    }
+}
+
+void Menu::ShowSaltyDetails() {
+    using namespace nexus::saltynx;
+    if (!HasSaltyDetails()) return;
+    const auto game = games[selected];
+    salty_library = Inspect();
+    if (!salty_library.installed) { App::Notify("SaltyNX installation was not found."_nx); return; }
+    const auto advice = salty_library.Guidance(game.id, game.name, game.display_version);
+    const auto current = salty_library.Setting(game.id);
+    const auto mode = advice == Advice::PluginsOnly ? Exception::Plugins : Exception::Skip;
+    const bool applied = current == Exception::Skip || (mode == Exception::Plugins &&
+        (current == Exception::Plugins || current == Exception::PluginsAndRomfs));
+    std::string text = game.name + "\n\n";
+    switch (advice) {
+        case Advice::MarioLaunch: text += "On Nexus USB, this game could close at launch. Skipping SaltyNX fixed it on the tested setup."_nx; break;
+        case Advice::VersionIssue: text += "SaltyNX lists a launch issue for this edition and version."_nx; break;
+        case Advice::CoreError: text += "Your SaltyNX log recorded a core load error for this game. If it closes at launch, try a game exception."_nx; break;
+        case Advice::PluginsOnly: text += "SaltyNX lists a limit for external plugins in this game. Its core features can still work."_nx; break;
+        default: text += "Manager has no recorded compatibility issue for this game. If you are troubleshooting a launch, you can try an exception."_nx; break;
+    }
+    text += "\n\n";
+    if (!salty_library.settings_readable) text += "Manager could not read the current exceptions."_nx;
+    else if (current == Exception::Skip) text += "SaltyNX is already set to skip this game."_nx;
+    else if (current == Exception::PluginsAndRomfs) text += "External plugins are disabled. The core is skipped when a RomFS mod is present."_nx;
+    else if (current == Exception::WithRomfs) text += "The current exception applies when a RomFS mod is present."_nx;
+    else if (current == Exception::Plugins) text += "External plugins are already disabled for this game."_nx;
+    else text += mode == Exception::Plugins ? "This exception disables external plugins for this game."_nx :
+        "This exception turns off SaltyNX features for this game."_nx;
+    if (salty_library.settings_readable && !applied && current != Exception::None) {
+        text += " ";
+        text += mode == Exception::Plugins ? "This exception disables external plugins for this game."_nx :
+            "This exception turns off SaltyNX features for this game."_nx;
+    }
+    const auto line = Entry(game.id, current == Exception::Skip ? Exception::Skip : mode);
+    text += "\n\n";
+    text += applied ? "Current entry"_nx : "To add it manually, put this line in the SD card file"_nx;
+    text += "\n/SaltySD/exceptions.txt\n" + line;
+    if (applied || !salty_library.settings_readable) {
+        App::Push<OptionBox>(text,"Close"_nx,[](auto){});
+        return;
+    }
+    App::Push<OptionBox>(text,"Back"_nx,"Add exception"_nx,0,[this,id=game.id,mode](auto choice) {
+        if (!choice || *choice != 1) return;
+        const auto result = nexus::saltynx::AddException(id,mode);
+        salty_library = nexus::saltynx::Inspect();
+        if (result == Save::Failed) App::Notify("Could not confirm the exception. Check the file on your SD card."_nx);
+        else App::Notify("Exception set. Close the game and launch it again."_nx);
+    });
+}
+
 void Menu::GameActions(bool primary_move){
     if(App::IsApplet()){Report(nexus::Unavailable,"Open Nexus Manager in full-memory mode (hold R while starting a game), not through Album."_nx);return;}
     if(selected>=games.size())return;
@@ -549,6 +621,9 @@ void Menu::ShowGameActions(const nexusapp::Game& game){
     });
     sidebar->Add<SidebarEntryCallback>("Delete game"_nx,[this,game]{DeleteGameOptions(game);},"Remove this game, updates and DLC from selected storage. Saved progress is kept."_nx);
     sidebar->Add<SidebarEntryCallback>("Check and repair"_nx,[this,game]{RecoverUsbIndexes(game.id);});
+    if(nexus::hats::SupportsPcLibrary())
+        sidebar->Add<SidebarEntryCallback>("Import from PC"_nx,[game]{nexusapp::DisplayPcUsbImport(game.id);});
+    if (HasSaltyDetails()) sidebar->Add<SidebarEntryCallback>(SaltyLabel(game),[this]{ShowSaltyDetails();});
     if(!game.forwarder_path.empty())sidebar->Add<SidebarEntryCallback>("Forwarder information"_nx,[game]{
         App::Push<OptionBox>("HOME-menu forwarder\n\n"_nx+game.forwarder_path+"\n\nMove/Copy game transfers the full port folder, including every file and subfolder, and creates a shortcut for SD or USB. Known separate data folders are included automatically."_nx,"Back"_nx,"OK",0,[](auto){});
     });
@@ -684,8 +759,9 @@ void Menu::Updates(){
     options->Add<SidebarEntryCallback>("Repair USB library"_nx,[this]{RecoverUsbIndexes();},"Check USB games and rebuild their links for this SD card and system."_nx);
     options->Add<SidebarEntryCallback>("Network locations (SMB / NFS)"_nx,[]{devoptab::DisplayNetworkLocations();});
     options->Add<SidebarEntryCallback>("Check for Manager updates"_nx,[this]{CheckForUpdates();},"Check for a newer Nexus Manager, then choose whether to download and install it."_nx);
+    options->Add<SidebarEntryCallback>("Nexus HATS updates"_nx,[]{nexus::hats::Display();},"Choose a HATS pack, download it and restart into the protected installer."_nx);
     options->Add<SidebarEntryCallback>("About Nexus Manager"_nx,[]{
-        App::Push<OptionBox>(std::string("Nexus Manager ")+nexus::updates::Version+"\n\nIndependent GPL app based on Nexus USB Loader and Sphaira. No DBI binary, code or artwork is included.\n\nManager checks for updates at startup. Downloads only start when you choose to update. You can also check in Help & recovery. Firmware and settings stay unchanged."_nx,"Close"_nx,[](auto){});
+        App::Push<OptionBox>(std::string("Nexus Manager ")+nexus::updates::Version+"\n\nIndependent GPL app based on Nexus USB Loader and Sphaira. No DBI binary, code or artwork is included.\n\nManager checks for app and HATS updates at startup. Downloads only start when you choose them. HATS updates install your chosen firmware pack after a restart, keeping games, saves and USB maps. Find both updaters in Help & recovery."_nx,"Close"_nx,[](auto){});
     });
     App::Push(std::move(options));
 }
@@ -718,12 +794,16 @@ bool Menu::PollStartupUpdate(){
     }
     // Never interrupt a browser, transfer, repair or another dialog. If the
     // check finishes while navigating, keep its result until Home is visible.
-    if(startup_update_handled || page!=Page::Home)return false;
-    nexus::updates::Release release;
-    if(!nexus::updates::TakeStartupRelease(release))return false;
-    startup_update_handled=true;
-    ShowUpdatePrompt(release);
-    return true;
+    if(page!=Page::Home)return false;
+    if(!startup_update_handled){
+        nexus::updates::Release release;
+        if(nexus::updates::TakeStartupRelease(release)){
+            startup_update_handled=true;ShowUpdatePrompt(release);return true;
+        }
+    }
+    nexus::hats::Release hats;
+    if(nexus::hats::TakeStartup(hats)){nexus::hats::Prompt(hats);return true;}
+    return false;
 }
 void Menu::ShowUpdatePrompt(const nexus::updates::Release& available){
     auto release=std::make_shared<nexus::updates::Release>(available);
@@ -921,6 +1001,7 @@ void Menu::Activate(){
             App::Push<InstallSourcesSidebar>([this](Sidebar& sources){
                 sources.Add<SidebarEntryCallback>("SD card"_nx,[this]{ChooseSource(false);},true);
                 sources.Add<SidebarEntryCallback>("USB drive"_nx,[this]{ChooseSource(true);},true);
+                sources.Add<SidebarEntryCallback>("Import from PC"_nx,[]{nexusapp::DisplayPcUsbImport();},true);
             });
         }
         else if(selected==2)App::Push<managertools::Menu>(managertools::Mode::Volumes);
@@ -945,8 +1026,15 @@ void Menu::Update(Controller* c,TouchInfo* touch){
     nexusapp::PollAutomaticRoutingBackup();
     if(PollStartupUpdate())return;
     const bool report_idle=page==Page::Home && HasFocus() && !ShouldPop() && nexus::lifecycle::CanPoll();
+    if(report_idle){
+        nexusapp::StartPcInstallDetection();
+        if(nexusapp::DispatchPcRemovals())return;
+        if(auto scan=nexusapp::TakeDetectedPcInstalls()){
+            nexusapp::AddPcGames(std::move(scan));return;
+        }
+    }
     if(report_idle && nexus::reports::OfferChoice()){
-        App::Push<OptionBox>("Help improve Nexus?\n\nAllow automatic diagnostic reports after failed installs, transfers, deletions and repairs? Reports contain app versions, error codes, filtered USB counters and structured events; game identifiers may appear. Keys, tickets, passwords, network settings, game files and saves are excluded. Reports are kept for up to 30 days.\n\nUploads wait until Manager is idle. Change this any time in Help & recovery > Report a problem."_nx,"Not now"_nx,"Enable"_nx,0,[](auto choice){
+        App::Push<OptionBox>("Help improve Nexus?\n\nAllow reports after failed tasks, recent crashes and returning to Manager? Includes versions, game IDs, error codes, transfer stages, USB status, battery samples, connection type and configured module IDs. Keys, tickets, passwords, addresses, game files, saves and raw memory are excluded. Reports are kept for up to 30 days.\n\nUploads wait until Manager is idle. Change this any time in Help & recovery > Report a problem."_nx,"Not now"_nx,"Enable"_nx,0,[](auto choice){
             if(!choice)return;const auto rc=nexus::reports::SetPreference(*choice==1);if(R_FAILED(rc))App::Notify("The reporting preference could not be saved. Automatic uploads remain off for this session."_nx);
         });return;
     }
@@ -967,6 +1055,8 @@ void Menu::Update(Controller* c,TouchInfo* touch){
                 break;
             }
         } else if(page==Page::Installed) {
+            if(HasSaltyDetails() && touch->in_range({822,594,404,44})){ShowSaltyDetails();return;}
+            if(touch->in_range({340,110,262,46})){nexusapp::DisplayPcUsbImport();return;}
             if(touch->in_range({850,110,376,46})){OpenUsbRepair();return;}
             const auto start=view::PageStart(selected);
             for(size_t i=start;i<std::min(Count(),start+view::PageSize);++i){
@@ -1086,6 +1176,8 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
         BoundedLine(vg,{54,602,1172,31},16,muted,choosing?"Enter the folder containing contents or exefs_patches, then press X."_nx:"Review before applying. Game data stays on USB; boot files and system modules are excluded."_nx);
     }else if(page==Page::Installed){
         Text(vg,54,116,28,NVG_ALIGN_LEFT|NVG_ALIGN_TOP,fg,"Installed games"_nx);
+        const auto import_pc=std::string(gfx::getButton(Button::L))+"  "+"Import from PC"_nx;
+        nexusdialog::Button(vg,{340,110,262,46},import_pc.c_str(),false);
         const auto use_usb=std::string(gfx::getButton(Button::R))+"  Repair USB games"_nx;
         nexusdialog::Button(vg,{850,110,376,46},use_usb.c_str(),false);
         if(games.empty()){
@@ -1126,7 +1218,11 @@ void Menu::Draw(NVGcontext* vg,Theme* theme){
         for(size_t i=0;i<3;++i)info_line(330+i*26,std::string(storage_names[i])+": "+
             (game.size_known[i]?(game.installed_bytes[i]?utils::formatSizeStorage(game.installed_bytes[i]):std::string("Not installed"_nx)):std::string("Unavailable"_nx)));
         const auto pages=std::string(gfx::getButton(Button::LEFT))+" "+gfx::getButton(Button::RIGHT)+"  Change page"_nx;
-        BoundedLine(vg,{54,602,1172,31},16,muted,pages);
+        BoundedLine(vg,{54,602,748,31},16,muted,pages);
+        if(HasSaltyDetails()) {
+            const auto label=std::string(gfx::getButton(Button::R2))+"  "+SaltyLabel(game);
+            BoundedLine(vg,{822,601,404,32},18,accent,label);
+        }
     }else if(page==Page::Queue || page==Page::Results){
         const bool results=page==Page::Results;
         const char* heading=results?(batch_result && batch_result->result?"Batch stopped"_nx:"Batch complete"_nx):"Install queue"_nx;

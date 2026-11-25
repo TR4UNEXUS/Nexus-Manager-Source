@@ -405,6 +405,7 @@ Result ListFiles(bool usb,const std::string& path,std::vector<Item>& items,u64& 
     R_SUCCEED();
 }
 Result Install(ui::ProgressBox* p,bool usb,u64 generation,const std::string& path,Target target,u64 destination_generation,nexus::install::Diagnostic* diagnostic,yati::InstallOutcome* outcome,bool reuse_existing_usb_only) {
+    nexus::Log("install-local-source",0,usb?1:0);
     R_UNLESS(!reuse_existing_usb_only || target==Target::Usb,Invalid);
     yati::ConfigOverride cfg{}; cfg.nexus_target=target;cfg.reuse_existing_usb_only=reuse_existing_usb_only;
     cfg.diagnostic=diagnostic;cfg.outcome=outcome;if(outcome)*outcome={};

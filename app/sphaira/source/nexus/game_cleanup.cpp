@@ -5,7 +5,7 @@
 #include "nexus/game_cleanup.hpp"
 #include "nexus/game_cleanup_core.hpp"
 #include "nexus/usb_import_diagnostic.hpp"
-#include "nexus/usb_import_scan.hpp"
+#include "nexus/usb_import.hpp"
 #include "nexus/usb_import_scan_core.hpp"
 #include "nexus/index_recovery.hpp"
 #include "nexus/home_badges.hpp"
@@ -21,6 +21,7 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include "nexus/pc_removal.hpp"
 #include <cstdio>
 #include <unistd.h>
 
@@ -58,7 +59,8 @@ struct Session {
     bool ncm{},ns{};u64 generation{};Target target{};ui::ProgressBox* progress;
     explicit Session(ui::ProgressBox* p):progress(p){}
     ~Session(){ncmContentMetaDatabaseClose(&db);ncmContentStorageClose(&storage);if(ns)sphaira::ns::Exit();if(ncm)ncmExit();}
-    Result Check(){R_TRY(progress->ShouldExitResult());R_UNLESS(nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
+    const std::atomic_bool* cancel{};
+    Result Check(){if(progress)R_TRY(progress->ShouldExitResult());R_UNLESS((!cancel||!cancel->load())&&nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
         if(target==Target::Usb){nexus::Client c;R_TRY(c.Check(generation));}return 0;}
     Result Open(Target t,bool placeholders=true){
         R_UNLESS(nexus::ValidTarget(t),Invalid);target=t;
@@ -287,7 +289,7 @@ Result ReadRights(ui::ProgressBox* p,const Inventory& i,std::map<Id,Rights>& rig
 Result KeepSharedRecord(ui::ProgressBox* p,Target target,const Record& record,bool& keep){
     keep=false;if(target==Target::Internal)return 0;
     if(target==Target::Usb){NcmContentStorage sd{};R_TRY(OpenStorage(Target::Sd,sd));ON_SCOPE_EXIT(ncmContentStorageClose(&sd));
-        for(const auto& id:record.ids){R_TRY(p->ShouldExitResult());bool has{};const auto content=Content(id);R_TRY(ncmContentStorageHas(&sd,&has,&content));keep|=has;}return 0;}
+        for(const auto& id:record.ids){if(p)R_TRY(p->ShouldExitResult());bool has{};const auto content=Content(id);R_TRY(ncmContentStorageHas(&sd,&has,&content));keep|=has;}return 0;}
     nexus::Client client;nexus::Status status{};Result rc{};const auto provider=nexus::Detect(rc);
     if(provider==nexus::Provider::Unknown)return rc;if(provider==nexus::Provider::Absent)return UsbRoutingReferences(record.ids,keep);
     R_TRY(client.Query(status));
@@ -346,7 +348,7 @@ Result ScanGameLocations(ui::ProgressBox* p,std::vector<Game>& games){
         if(label.empty()){
             const Result failed=errors[0]?errors[0]:errors[1]?errors[1]:errors[2];
             if(failed){char code[48];snprintf(code,sizeof(code),"Location check failed: 0x%08X"_nx,unsigned(failed));label=code;}
-            else label="No files on connected storage"_nx;
+            else label="Registered game files not found"_nx;
         }
         game.location_hint=std::move(label);
         const auto& info=details[game.id];game.installed_bytes=info.installed_bytes;game.size_known=checked;
@@ -365,7 +367,7 @@ struct TicketRemovalState {
     bool operator==(const TicketRemovalState&)const=default;
 };
 namespace {
-Result TicketInventory(ui::ProgressBox* p,TicketRemovalState& out,std::string& detail){
+Result TicketInventory(ui::ProgressBox* p,TicketRemovalState& out,std::string& detail,const std::set<Id>* removed_on_pc=nullptr){
     out={};detail="Could not account for all game content. Keep the SD card and USB drive connected, close installers and repair unreadable content before removing tickets."_nx;
     R_UNLESS(nexus::lifecycle::CanPoll()&&nexus::transfer::Active()==nexus::transfer::Mode::Off,nexus::Unavailable);
     R_TRY(ReadTickets(p,out.tickets));R_TRY(ReadUsbRoutingContent(out.mapped));
@@ -380,7 +382,7 @@ Result TicketInventory(ui::ProgressBox* p,TicketRemovalState& out,std::string& d
         if(!i.placeholders.empty()){detail="Unfinished installs are present. Finish them, or review and remove the unwanted unfinished installs in Cleanup before checking unused tickets."_nx;return nexus::Unavailable;}
         if(target==Target::Usb){
             R_UNLESS(i.generation==out.generations[2],nexus::Unavailable);
-            for(const auto& id:out.mapped)if(!i.files.contains(id)){detail="Some mapped USB game files are missing from this drive. Repair the USB library or reconnect the correct drive before removing tickets."_nx;return nexus::Unavailable;}
+            for(const auto& id:out.mapped)if(!i.files.contains(id)&&!(removed_on_pc&&removed_on_pc->contains(id))){detail="Some mapped USB game files are missing from this drive. Repair the USB library or reconnect the correct drive before removing tickets."_nx;return nexus::Unavailable;}
         }
         out.stamps[index]=i.stamp;out.generations[index]=i.generation;
         std::map<Id,Rights> rights;R_TRY(ReadRights(p,i,rights));
@@ -591,6 +593,269 @@ Result ApplyGameRemoval(ui::ProgressBox* p,const GameRemovalPlan& plan,GameRemov
     return result;
 }
 
+namespace {
+constexpr char PcFolder[]="/nexus/pc-import/v1/removals";
+Result ReadPcReceipt(nexus::Client& usb,const PcRemoval& item,nexus::pc::Receipt& receipt,Digest& hash,nexus::pc::Receipt* replacement=nullptr){
+    const auto& name=item.filename;
+    const bool swap=name.size()==37&&name.ends_with(".swap");
+    R_UNLESS(((swap&&replacement)||(name.size()==36&&name.ends_with(".del")))&&std::all_of(name.begin(),name.begin()+32,[](char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');}),Invalid);
+    const auto path=std::string(PcFolder)+"/"+name;
+    nexus::Info info{};R_TRY(usb.Stat(item.generation,path,info));R_UNLESS(!info.directory&&info.size>=48&&info.size<=(swap?8*1024*1024+40:4*1024*1024),Invalid);
+    std::vector<u8> raw(info.size);
+    for(size_t at=0;at<raw.size();){
+        const auto length=std::min(usb.TransferLimit(),raw.size()-at);u64 read{};
+        R_TRY(usb.Read(item.generation,path,at,raw.data()+at,length,read));R_UNLESS(read==length,Invalid);at+=length;
+    }
+    const auto payload=std::span<const u8>(raw).first(raw.size()-32);
+    sha256CalculateHash(hash.data(),payload.data(),payload.size());
+    R_UNLESS(std::equal(hash.begin(),hash.end(),raw.end()-32),Invalid);
+    if(swap){
+        constexpr char hex[]="0123456789abcdef";
+        for(size_t n=0;n<16;n++)R_UNLESS(name[n*2]==hex[hash[n]>>4]&&name[n*2+1]==hex[hash[n]&15],Invalid);
+        R_UNLESS(nexus::pc::ParseReplacement(payload,receipt,*replacement,[](auto bytes){
+            Digest sum{};sha256CalculateHash(sum.data(),bytes.data(),bytes.size());return sum;
+        }),Invalid);
+    }else R_UNLESS(nexus::pc::Parse(payload,receipt),Invalid);
+    return usb.Check(item.generation);
+}
+}
+Result ListPcRemovals(ui::ProgressBox* p,std::vector<PcRemoval>& items,const std::atomic_bool* cancel,std::set<Id>* verified_absences){
+    if(verified_absences)verified_absences->clear();
+    items.clear();nexus::Client usb;nexus::Status status{};R_TRY(usb.Query(status));R_UNLESS(status.Available(),nexus::Unavailable);
+    for(const auto path:{"/nexus/pc-import/v1/replace-stage","/nexus/pc-import/v1/replace-ready"}){
+        nexus::Info info{};auto stat=usb.Stat(status.generation,path,info);
+        if(R_SUCCEEDED(stat))return nexus::Unavailable;
+        if(stat!=MissingUsb)return stat;
+    }
+    std::vector<nexus::Entry> entries;const auto rc=usb.List(status.generation,PcFolder,entries);
+    if(rc==MissingUsb)return 0;R_TRY(rc);R_UNLESS(entries.size()<=8192,Invalid);
+    for(const auto& e:entries){
+        if(p)R_TRY(p->ShouldExitResult());R_UNLESS(!cancel||!cancel->load(),nexus::Unavailable);std::string name(e.name,strnlen(e.name,sizeof(e.name)));
+        const bool swap=name.ends_with(".swap");
+        if(e.directory||(!swap&&!name.ends_with(".del")))continue;
+        PcRemoval item{name,status.generation};nexus::pc::Receipt data,fresh;
+        R_TRY(ReadPcReceipt(usb,item,data,item.digest,&fresh));item.game=data.game;
+        std::set<Id> present;bool applicable=true;
+        for(const auto& m:fresh.members){
+            nexus::Info info{};auto stat=usb.Stat(item.generation,CanonicalUsbContentPath(Content(m.meta)),info);
+            if(stat==MissingUsb){applicable=false;break;}R_TRY(stat);R_UNLESS(!info.directory,Invalid);present.insert(m.meta);
+        }
+        if(!applicable)continue;
+        for(const auto& m:data.members){
+            if(present.contains(m.meta))continue;
+            nexus::Info info{};const auto stat=usb.Stat(item.generation,CanonicalUsbContentPath(Content(m.meta)),info);
+            if(R_SUCCEEDED(stat)){applicable=false;break;}if(stat!=MissingUsb)return stat;
+        }
+        if(applicable)items.push_back(std::move(item));
+    }
+    if(!items.empty()){
+        Session session(p);session.cancel=cancel;R_TRY(session.Open(Target::Usb,false));R_UNLESS(session.generation==status.generation,Invalid);
+        Inventory registered;R_TRY(Database(session,registered));std::set<Id> routes;R_TRY(ReadUsbRoutingContent(routes));
+        std::vector<PcRemoval> applicable;
+        for(const auto& item:items){
+            nexus::pc::Receipt data,fresh;Digest hash;R_TRY(ReadPcReceipt(usb,item,data,hash,&fresh));R_UNLESS(hash==item.digest,Invalid);
+            bool relevant=false,mismatch=false;
+            size_t registered_fresh=0;
+            for(const auto& record:registered.records)if(record.application==item.game){
+                if(nexus::pc::Matches(fresh,record.key.id,record.key.version,record.key.type,record.ids)){
+                    ++registered_fresh;
+                    continue;
+                }
+                if(!nexus::pc::Matches(data,record.key.id,record.key.version,record.key.type,record.ids)){mismatch=true;break;}
+                bool keep{};R_TRY(KeepSharedRecord(p,Target::Usb,record,keep));
+                if(keep&&!fresh.members.empty()){mismatch=true;break;}
+                relevant|=!keep||std::any_of(data.members.begin(),data.members.end(),[&](const auto& m){return routes.contains(m.meta);});
+            }
+            // A previous run may have retired the old registrations before the
+            // rebuilt family reached HOME. The receipt remains valid across reboots.
+            relevant |= registered_fresh < fresh.members.size();
+            if(relevant&&!mismatch){
+                applicable.push_back(item);
+                if(verified_absences&&fresh.members.empty()){
+                    std::set<Id> ids;
+                    for(const auto& record:registered.records)if(record.application==item.game)ids.insert(record.ids.begin(),record.ids.end());
+                    for(const auto& record:registered.records)if(record.application!=item.game)for(const auto& id:record.ids)ids.erase(id);
+                    verified_absences->insert(ids.begin(),ids.end());
+                }
+            }
+        }
+        items=std::move(applicable);
+    }
+    return usb.Check(status.generation);
+}
+namespace {
+// Re-read and classify the replacement on the same drive after retiring the
+// obsolete keys. Never pass unrelated games to the family import transaction.
+Result RegisterPcReplacement(ui::ProgressBox* p,u64 generation,const nexus::pc::Receipt& fresh,bool& imported){
+    UsbImportScan scan;
+    R_TRY(ScanUsbImports(p,scan,generation,nullptr,false,false));
+    R_UNLESS(scan.complete&&scan.generation==generation,Invalid);
+    std::erase_if(scan.titles,[&](const auto& row){return row.record.application_id!=fresh.game;});
+    R_UNLESS(scan.titles.size()==fresh.members.size(),Invalid);
+    std::set<Id> verified;
+    for(const auto& row:scan.titles){
+        const auto& r=row.record;
+        R_UNLESS(!r.content.empty(),Invalid);
+        std::set<Id> ids;
+        for(const auto& c:r.content)ids.insert(Identity(c.info.content_id));
+        const auto meta=Identity(r.content.front().info.content_id);
+        R_UNLESS(verified.insert(meta).second&&std::any_of(fresh.members.begin(),fresh.members.end(),[&](const auto& m){
+            return m.meta==meta&&m.title==r.key.id&&m.version==r.key.version&&m.type==r.key.type&&m.ids==ids;
+        }),Invalid);
+        R_UNLESS(row.status==UsbImportStatus::Ready||
+            (row.status==UsbImportStatus::AlreadyRegistered&&row.registration==UsbImportRegistration::Usb),Invalid);
+    }
+    if(std::all_of(scan.titles.begin(),scan.titles.end(),[](const auto& row){return row.status==UsbImportStatus::AlreadyRegistered;}))return 0;
+    const auto plan=PlanUsbLibrary(scan);
+    R_UNLESS(plan.summary.repairable_games==1&&plan.summary.selected_items==scan.titles.size(),Invalid);
+    UsbImportResult result;
+    R_TRY(ImportUsbLibrary(p,scan,result,true));
+    R_UNLESS(result.imported==scan.titles.size()&&!result.skipped&&!result.pending&&!result.rolled_back,Invalid);
+    imported=true;
+    return 0;
+}
+Result FinishPcReplacement(ui::ProgressBox* p,nexus::Client& usb,const PcRemoval& item,
+        const nexus::pc::Receipt& old,const nexus::pc::Receipt& fresh,bool& changed){
+    bool retired=false;
+    {
+        Session session(p);R_TRY(session.Open(Target::Usb,false));R_UNLESS(session.generation==item.generation,Invalid);
+        UsbImportScan scan;R_TRY(ScanUsbImports(p,scan,item.generation,nullptr,false,true));R_UNLESS(scan.complete,Invalid);
+        std::set<Id> new_ids,metas;
+        for(const auto& row:scan.titles){
+            const auto& rec=row.record;if(rec.application_id!=item.game)continue;
+            R_UNLESS(!rec.content.empty(),Invalid);
+            std::set<Id> ids;
+            for(const auto& part:rec.content){
+                u64 size{};ncmContentInfoSizeToU64(&part.info,&size);nexus::Info info{};
+                R_TRY(usb.Stat(item.generation,CanonicalUsbContentPath(part.info.content_id),info));
+                R_UNLESS(!info.directory&&info.size==size,Invalid);
+                ids.insert(Identity(part.info.content_id));
+            }
+            const auto meta=Identity(rec.content.front().info.content_id);
+            if(!std::any_of(fresh.members.begin(),fresh.members.end(),[&](const auto& m){
+                return m.meta==meta&&m.title==rec.key.id&&m.type==rec.key.type&&m.version==rec.key.version&&m.ids==ids;
+            })||!metas.insert(meta).second)return 0;
+            new_ids.insert(ids.begin(),ids.end());
+        }
+        R_UNLESS(metas.size()==fresh.members.size(),Invalid);
+        for(const auto& member:old.members)if(!metas.contains(member.meta)){
+            nexus::Info info{};auto stat=usb.Stat(item.generation,CanonicalUsbContentPath(Content(member.meta)),info);
+            if(R_SUCCEEDED(stat))return 0;if(stat!=MissingUsb)return stat;
+        }
+        Inventory db;R_TRY(Database(session,db));std::set<Id> obsolete;
+        std::vector<NcmContentMetaKey> keys;
+        for(const auto& rec:db.records){
+            if(rec.application!=item.game){new_ids.insert(rec.ids.begin(),rec.ids.end());continue;}
+            if(nexus::pc::Matches(fresh,rec.key.id,rec.key.version,rec.key.type,rec.ids))continue;
+            if(!nexus::pc::Matches(old,rec.key.id,rec.key.version,rec.key.type,rec.ids))return 0;
+            bool native{};R_TRY(KeepSharedRecord(p,Target::Usb,rec,native));if(native)return 0;
+            keys.push_back(rec.key);obsolete.insert(rec.ids.begin(),rec.ids.end());
+        }
+        std::vector<NcmContentId> absent;
+        for(const auto& id:obsolete)if(!new_ids.contains(id)){
+            nexus::Info info{};const auto cid=Content(id);auto stat=usb.Stat(item.generation,CanonicalUsbContentPath(cid),info);
+            if(stat==MissingUsb)absent.push_back(cid);else R_TRY(stat);
+        }
+        std::vector<ncm::ContentStorageRecord> home;R_TRY(ns::GetApplicationRecords(item.game,home));
+        const auto removed=std::erase_if(home,[&](const auto& r){return r.storage_id==nexus::LogicalStorage(Target::Usb)&&
+            std::any_of(keys.begin(),keys.end(),[&](const auto& key){return nexus::SameMetaKey(r.key,key);});});
+        R_TRY(session.Check());R_TRY(nexus::CheckUsbMutationAllowed());
+        if(!absent.empty())R_TRY(RemoveDeletedUsbRouting(p,item.generation,absent,{}));
+        if(removed){
+            R_TRY(session.Check());
+            if(home.empty()){R_TRY(ns::DeleteApplicationRecord(item.game));}
+            else {R_TRY(ns::PushApplicationRecord(item.game,home.data(),home.size()));}
+        }
+        for(const auto& key:keys){R_TRY(session.Check());R_TRY(ncmContentMetaDatabaseRemove(&session.db,&key));}
+        if(!keys.empty())R_TRY(ncmContentMetaDatabaseCommit(&session.db));
+        retired=!keys.empty()||removed||!absent.empty();
+    }
+    bool imported=false;
+    const auto rc=RegisterPcReplacement(p,item.generation,fresh,imported);
+    nexus::Log("pc-compressed-relink",rc,item.game);
+    R_TRY(rc);
+    changed=retired||imported;
+    return 0;
+}
+Result RemovePcTickets(ui::ProgressBox* p,nexus::Client& usb,const PcRemoval& item,const std::set<u64>& titles,const Digest& inventory_stamp){
+    const auto path=std::string(PcFolder)+"/"+item.filename.substr(0,32)+".rights";
+    nexus::Info info{};const auto stat=usb.Stat(item.generation,path,info);
+    if(stat==MissingUsb)return 0; // Older PC versions recorded only content IDs.
+    R_TRY(stat);R_UNLESS(!info.directory&&info.size>=72&&info.size<=72+4096*16,Invalid);
+    std::vector<u8> bytes(info.size);
+    for(size_t at=0;at<bytes.size();){
+        const auto n=std::min(usb.TransferLimit(),bytes.size()-at);u64 received{};
+        R_TRY(usb.Read(item.generation,path,at,bytes.data()+at,n,received));R_UNLESS(received==n,Invalid);at+=n;
+    }
+    Digest sum{};sha256CalculateHash(sum.data(),bytes.data(),bytes.size()-32);
+    std::set<Rights> candidates;
+    R_UNLESS(nexus::pc::TicketCandidates(bytes,item.digest,sum,titles,candidates),Invalid);
+    if(candidates.empty())return 0;
+    TicketList present;R_TRY(ReadTickets(p,present));
+    std::erase_if(candidates,[&](const auto& id){return !present.Has(id);});
+    if(candidates.empty())return 0;
+
+    // Take the exception set from matching local NCM records. A receipt on its
+    // own never establishes ownership of an absent NCA or an unused ticket.
+    std::vector<PcRemoval> current;std::set<Id> absent;
+    R_TRY(ListPcRemovals(p,current,nullptr,&absent));
+    R_UNLESS(std::any_of(current.begin(),current.end(),[&](const auto& r){
+        return r.generation==item.generation&&r.digest==item.digest&&r.filename==item.filename;
+    }),Invalid);
+    TicketRemovalState state;std::string detail;
+    R_TRY(TicketInventory(p,state,detail,&absent));
+    R_UNLESS(state.usb&&state.generations[2]==item.generation&&state.stamps[2]==inventory_stamp,Invalid);
+    std::erase_if(candidates,[&](const auto& id){return !UnusedTicket(state,id);});
+    if(candidates.empty())return 0;
+    // TicketInventory already rechecks every storage stamp, ticket list, route
+    // and USB generation after scanning headers. Apply immediately in this task.
+    R_TRY(es::Initialize());ON_SCOPE_EXIT(es::Exit());
+    for(const auto& id:candidates){
+        R_TRY(p->ShouldExitResult());R_TRY(usb.Check(item.generation));R_TRY(nexus::CheckUsbMutationAllowed());
+        FsRightsId rights{};memcpy(&rights,id.data(),16);R_TRY(es::DeleteTicket(rights));
+    }
+    TicketList after;R_TRY(ReadTickets(p,after));
+    for(const auto& id:candidates)R_UNLESS(!after.Has(id),Invalid);
+    nexus::Log("pc-deletion-unused-tickets",0,candidates.size());return 0;
+}
+}
+Result FinishPcRemoval(ui::ProgressBox* p,const PcRemoval& item,bool& changed){
+    changed=false;nexus::Client usb;nexus::pc::Receipt request,fresh;Digest hash;
+    R_TRY(ncmInitialize());ON_SCOPE_EXIT(ncmExit());
+    R_TRY(ReadPcReceipt(usb,item,request,hash,&fresh));R_UNLESS(hash==item.digest&&request.game==item.game,Invalid);
+    R_TRY(nexus::CheckUsbMutationAllowed());
+    if(!fresh.members.empty())return FinishPcReplacement(p,usb,item,request,fresh,changed);
+    Inventory i;R_TRY(ReadInventory(p,Target::Usb,i,false));R_UNLESS(i.generation==item.generation&&!i.usb_unknown,Invalid);
+    std::set<Id> others;for(const auto& ref:i.references)if(ref.application!=item.game)others.insert(ref.content.begin(),ref.content.end());
+    // A reinstall or a new member invalidates the old request. Shared physical
+    // files can remain, but a selected metadata NCA must always be absent.
+    for(const auto& m:request.members)if(i.files.contains(m.meta))return 0;
+    for(const auto& ref:i.references)if(ref.application==item.game)
+        for(const auto& id:ref.content)if(i.files.contains(id)&&!others.contains(id))return 0;
+    std::set<Id> missing;std::set<u64> removed_titles;bool matched=false,remove=false;
+    for(const auto& record:i.records)if(record.application==item.game){
+        if(!nexus::pc::Matches(request,record.key.id,record.key.version,record.key.type,record.ids))return 0;
+        matched=true;bool keep{};R_TRY(KeepSharedRecord(p,Target::Usb,record,keep));remove|=!keep;
+        if(!keep)removed_titles.insert(record.key.id);
+        for(const auto& id:record.ids)if(!i.files.contains(id)){
+            if(others.contains(id))return 0;
+            missing.insert(id);
+        }
+    }
+    if(!matched)return 0;
+    if(!remove){
+        std::set<Id> routes;R_TRY(ReadUsbRoutingContent(routes));
+        std::vector<NcmContentId> ids;for(const auto& id:missing)if(routes.contains(id))ids.push_back(Content(id));
+        if(ids.empty())return 0;
+        R_TRY(RemoveDeletedUsbRouting(p,item.generation,ids,{item.game}));changed=true;return 0;
+    }
+    CleanupItem selected{};selected.kind=CleanupKind::Game;selected.target=Target::Usb;selected.application=item.game;selected.generation=item.generation;
+    GameRemovalPlan plan;R_TRY(PreviewGameRemoval(p,selected,plan));
+    R_UNLESS(plan.state&&plan.files==0&&plan.records>0&&i.stamp==plan.state->before.stamp,Invalid);
+    if(!removed_titles.empty())R_TRY(RemovePcTickets(p,usb,item,removed_titles,i.stamp));
+    GameRemovalReport report;R_TRY(ApplyGameRemoval(p,plan,report));R_UNLESS(report.complete&&report.removed==0,Invalid);
+    changed=true;return 0;
+}
 namespace {
 Digest RemovalFingerprint(const GameRemovalPlan& plan,const std::set<u64>& batch_games){
     Sha256Context hash;sha256ContextCreate(&hash);

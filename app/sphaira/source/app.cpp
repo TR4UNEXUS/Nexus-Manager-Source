@@ -11,6 +11,7 @@
 #include "app.hpp"
 #include "nexus/transfer.hpp"
 #include "nexus/lifecycle.hpp"
+#include "nexus/problem_reports.hpp"
 #include "nexus/usb_library_startup.hpp"
 #include "log.hpp"
 #include "ui/nvg_util.hpp"
@@ -278,6 +279,7 @@ void deko3d_error_cb(void* userData, const char* context, DkResult result, const
 
 void on_applet_focus_state(App* app) {
     nexus::lifecycle::SetForeground(appletGetFocusState() == AppletFocusState_InFocus);
+    nexus::power::Focus(appletGetFocusState() == AppletFocusState_InFocus);
     if(!nexus::lifecycle::CanPoll())nexusapp::CancelUsbLibraryStartupCheck();
     switch (appletGetFocusState()) {
         case AppletFocusState_InFocus:
@@ -352,6 +354,7 @@ void appplet_hook_calback(AppletHookType type, void *param) {
             break;
 
         case AppletHookType_OnExitRequest:
+            nexus::power::Stop();
             nexus::lifecycle::BeginShutdown();
             nexusapp::CancelUsbLibraryStartupCheck();
             nexus::startup::BeginShutdown();
@@ -360,6 +363,8 @@ void appplet_hook_calback(AppletHookType type, void *param) {
             break;
 
         case AppletHookType_OnResume:
+            nexus::reports::OnResume();
+            on_applet_focus_state(app);
             log_write("[APPLET] AppletHookType_OnResume\n");
             // App::Notify("AppletHookType_OnResume");
             break;
@@ -1630,6 +1635,7 @@ Result App::GetEmmcSize(s64* free, s64* total) {
 
 App::App(const char* argv0) {
     nexus::lifecycle::SetForeground(appletGetFocusState() == AppletFocusState_InFocus);
+    nexus::power::Focus(appletGetFocusState() == AppletFocusState_InFocus);
     // boost mode is enabled in userAppInit().
     ON_SCOPE_EXIT(App::SetBoostMode(false));
     SCOPED_TIMESTAMP("App Constructor");
@@ -2070,6 +2076,7 @@ void App::ShowEnableInstallPromptOption(option::OptionBool& option, bool& enable
 }
 
 App::~App() {
+    nexus::power::Stop();
     m_quit = true; // no completion callback may start new work during teardown
     nexusapp::StopUsbLibraryStartupCheck();
     // boost mode is disabled in userAppExit().

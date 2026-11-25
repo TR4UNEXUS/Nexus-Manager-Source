@@ -29,8 +29,10 @@ struct UsbImportScan {u64 generation{7};std::vector<UsbImportTitle> titles;bool 
 struct UsbLibrarySummary {size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{},selected_items{};};
 struct UsbLibraryPlan {UsbLibrarySummary summary;std::vector<bool> selected;std::vector<std::string> family_reason;};
 // PRODUCTION_PLAN
-struct UsbImportResult {std::vector<std::string> entries;size_t imported{},skipped{};Result result{};bool restart{},pending{},rolled_back{};std::string detail,report_path;};
+struct UsbImportResult {std::vector<std::string> entries;
+    std::vector<uint64_t> entry_applications;size_t imported{},skipped{};Result result{};bool restart{},pending{},rolled_back{};std::string detail,report_path;};
 struct World {
+    bool expect_quick{};
     std::vector<std::string> trace;
     std::map<std::string,unsigned> calls;
     std::map<std::string,unsigned> fail;
@@ -151,8 +153,9 @@ bool Publish(Disk& d,const Journal& j){
 }
 }
 namespace yati {
-Result VerifyExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord& record){assert(generation==7&&!world.pending);world.verified.push_back(record.key.id);return world.Hit("verify");}
-Result PublishExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord& record,u32){
+Result VerifyExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord& record,bool quick){assert(world.expect_quick==quick);assert(generation==7&&!world.pending);world.verified.push_back(record.key.id);return world.Hit("verify");}
+Result PublishExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord& record,u32,bool quick){
+    assert(world.expect_quick==quick);
     assert(generation==7&&world.pending);
     R_TRY(world.Hit("publish.before"));
     ++world.live_writes;world.published.push_back(record.key.id);world.metadata[Key(record.key)]={true,record.installed_meta};
@@ -173,6 +176,7 @@ Result UpdateHomeBadge(const Game&){return world.Hit("badge.update");}
 Result FinishHomeRefresh(u64){return world.Hit("badge.finish");}
 void SaveReport(Disk&,UsbImportResult& out){world.Hit("report");out.report_path="fixture-report";}
 void BackupConsoleRoutingAfterChange(){assert(!world.pending);world.Hit("backup.confirm");}
+void ShowUsbImportGame(ui::ProgressBox*,u64,const std::vector<const UsbImportTitle*>&){}
 // PRODUCTION_IMPORT
 unsigned cases{},assertions{};
 #define REQUIRE(c) do{++assertions;if(!(c)){std::cerr<<"failed line "<<__LINE__<<": " #c "\n";std::abort();}}while(0)
@@ -185,10 +189,12 @@ void Seed(const UsbImportTitle& row,u8 storage=5){
 }
 UsbImportScan Family(){auto scan=Scan();scan.titles.push_back(Title(100,101,0x81));scan.titles.push_back(Title(100,102,0x82));return scan;}
 void Reset(){world=World{};identity_reply={};std::memset(identity_paths,0,sizeof(identity_paths));identity_device=123;identity_cid={1,2,3,4};REQUIRE(!identity_spl_refs&&!identity_handles);++cases;}
-Result Run(const UsbImportScan& scan,UsbImportResult& out){ui::ProgressBox p;const auto prior=world.calls["backup.confirm"];const auto result=ImportUsbLibrary(&p,scan,out);REQUIRE(world.calls["backup.confirm"]-prior==unsigned(out.imported&&!out.pending));REQUIRE(world.worker_count==0);REQUIRE(!identity_spl_refs&&!identity_handles);REQUIRE(result==out.result);if(result)REQUIRE(!out.detail.empty());return result;}
+Result Run(const UsbImportScan& scan,UsbImportResult& out,bool quick=false){world.expect_quick=quick;ui::ProgressBox p;const auto prior=world.calls["backup.confirm"];const auto result=ImportUsbLibrary(&p,scan,out,quick);REQUIRE(world.calls["backup.confirm"]-prior==unsigned(out.imported&&!out.pending));REQUIRE(world.worker_count==0);REQUIRE(!identity_spl_refs&&!identity_handles);REQUIRE(result==out.result);if(result)REQUIRE(!out.detail.empty());return result;}
 bool Mentions(const UsbImportResult& out,const std::string& needle){return out.detail.find(needle)!=std::string::npos;}
 int main(){
     UsbImportResult out;
+    Reset();REQUIRE(Run(Family(),out,true)==0&&out.imported==3);
+    Reset();world.fail["verify"]=1;REQUIRE(Run(Family(),out,true)==Injected&&!world.live_writes&&!world.journal_writes);
     for(const auto& gate:{"open","guard","firmware","check","snapshot","verify","directory","activate.before"}){
         Reset();world.fail[gate]=1;REQUIRE(Run(Scan(),out)==Injected);REQUIRE(world.live_writes==0);REQUIRE(world.rollback_writes==0);REQUIRE(!world.pending&&!out.pending&&!out.restart&&out.imported==0);REQUIRE(Mentions(out,"0x00001759"));
         if(std::string(gate)=="snapshot"){
@@ -199,7 +205,7 @@ int main(){
         if(std::string(gate)=="verify")REQUIRE(Mentions(out,"content hashes"));
     }
     for(unsigned invalid=0;invalid<3;++invalid){Reset();auto scan=Scan();if(invalid==0)scan.complete=false;if(invalid==1)scan.generation=0;
-        if(invalid==2){REQUIRE(ImportUsbLibrary(nullptr,scan,out)==nexus::Invalid);REQUIRE(out.result==nexus::Invalid&&!out.detail.empty());}
+        if(invalid==2){REQUIRE(ImportUsbLibrary(nullptr,scan,out,false)==nexus::Invalid);REQUIRE(out.result==nexus::Invalid&&!out.detail.empty());}
         else REQUIRE(Run(scan,out)==nexus::Invalid);
         REQUIRE(world.calls["open"]==0&&world.journal_writes==0&&world.live_writes==0);
     }

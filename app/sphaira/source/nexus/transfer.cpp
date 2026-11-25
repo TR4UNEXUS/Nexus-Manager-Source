@@ -376,7 +376,7 @@ void Stop(){
     network=false;
     if(sockets)socketExit();
     sockets=false;
-    if(awake)appletSetAutoSleepDisabled(false);
+    if(awake)sphaira::App::SetAutoSleepDisabled(false);
     awake=refreshAwake=false;
     if(mode!=Mode::Off)nexus::Log("manager-transfer-stop",lastError.load());
     {std::scoped_lock lock(queueMutex);jobs.clear();ftpStream.reset();}endpoint.clear();mode=Mode::Off;
@@ -463,7 +463,7 @@ Result Start(Mode next){
         }return 0;
     };
     auto rc=init();if(R_FAILED(rc)){lastError=rc;activity::Get().Failure("Connection could not start"_nx,rc);Stop();return rc;}
-    mode=next;appletSetAutoSleepDisabled(true);awake=refreshAwake=true;
+    mode=next;sphaira::App::SetAutoSleepDisabled(true);awake=refreshAwake=true;
     activity::Get().Connect(next==Mode::Cable?"USB cable / MTP - open Nintendo Switch on your PC"_nx:endpoint+" - Anonymous login"_nx);
     if(!usbAvailable)activity::Get().Event("USB install unavailable. SD installs are ready."_nx);
     nexus::Log(next==Mode::Cable?"manager-transfer-mtp-start":"manager-transfer-ftp-start",0);return 0;
@@ -472,9 +472,8 @@ void Poll(){
     PollInstall();if(mode==Mode::Cable && !haze::IsRunning())failed=true;
     if(mode==Mode::Ftp && !sphaira::ftpsrv::IsRunning()){lastError=Bad;nexus::Log("pc-ftp-stopped",Bad);failed=true;}
     if(mode!=Mode::Off && (!lifecycle::CanPoll() || failed.load()))Stop();
-    // ProgressBox resets auto-sleep AFTER its completion callback. Reapply once
-    // on the next UI tick, after PrepareSession/installation's box was destroyed.
-    if(mode!=Mode::Off && refreshAwake){appletSetAutoSleepDisabled(true);refreshAwake=false;}
+    // The foreground policy owns sleep across progress and transfer lifetimes.
+    if(mode!=Mode::Off && refreshAwake){sphaira::App::SetAutoSleepDisabled(true);refreshAwake=false;}
 }
 std::string Status(){
     if(mode==Mode::Off)return failed?"Connection stopped\nCheck your connection and try again.\nIncomplete uploads stay unfinished; existing files are kept."_nx:"Ready when you are\nChoose USB cable or Wi-Fi above to connect your PC.\nNo connection is running in the background."_nx;

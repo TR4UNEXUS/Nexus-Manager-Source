@@ -1,6 +1,9 @@
 #include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_import.hpp"
+#include "nexus/game_cleanup.hpp"
+#include "nexus/hats.hpp"
+#include "nexus/nx_Client.hpp"
 #include "nexus/usb_library_startup.hpp"
 #include "nexus/usb_ticket_prepare.hpp"
 #include "nexus/progress_safety.hpp"
@@ -10,6 +13,7 @@
 #include "ui/option_box.hpp"
 #include "ui/progress_box.hpp"
 #include "ui/usb_import_view.hpp"
+#include "ui/usb_import_icons.hpp"
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -24,7 +28,7 @@ std::string Failure(const char* heading,const std::string& detail,Result rc,cons
     if(R_FAILED(rc))text+="\n\n"+Diagnostic(rc);
     return text;
 }
-struct ReviewRow {std::string title,subtitle,detail;};
+struct ReviewRow {std::string title,subtitle,detail;u64 application{};};
 void DrawLine(NVGcontext* vg,float x,float y,float size,const NVGcolor& colour,const std::string& text,float width){
     nvgFontSize(vg,size);
     const auto fitted=view::FitLineText(text,width,[&](std::string_view value){return nvgTextBounds(vg,0,0,value.data(),value.data()+value.size(),nullptr);});
@@ -36,6 +40,7 @@ class ReviewMenu final:public ui::menu::MenuBase {
     static constexpr size_t PageRows=5;
     std::string heading,summary,note;
     std::vector<ReviewRow> rows;
+    std::unique_ptr<ui::UsbImportIcons> icons;
     size_t selected{};
     std::string primary_label;
     std::function<void()> primary;
@@ -53,6 +58,8 @@ public:
         SetAction(Button::RIGHT,Action{[this]{if(Active()&&!rows.empty())selected=std::min(selected+PageRows,rows.size()-1);}});
     }
     const char* GetShortTitle() const override{return "USB games"_nx;}
+    void SetIcons(std::shared_ptr<UsbImportScan> scan){icons=std::make_unique<ui::UsbImportIcons>(std::move(scan));}
+    void StopIcons(){if(icons)icons->Stop();}
     void SetPrimary(std::string label,std::function<void()> callback){
         primary_label=std::move(label);primary=std::move(callback);
         SetAction(Button::X,Action{primary_label,[this]{if(Active()&&primary)primary();}});
@@ -88,8 +95,11 @@ public:
         for(size_t i=first;i<std::min(rows.size(),first+PageRows);++i){
             const auto box=Row(i);violet::Card(vg,box,i==selected,true);
             nvgSave(vg);nvgIntersectScissor(vg,box.x+16,box.y+7,box.w-38,box.h-12);
-            DrawLine(vg,box.x+16,box.y+9,22,white,rows[i].title,box.w-38);
-            DrawLine(vg,box.x+16,box.y+38,16,white,rows[i].subtitle,box.w-38);nvgRestore(vg);
+            const bool show_icon=icons && rows[i].application;
+            const float inset=show_icon?80:16;
+            if(show_icon)gfx::drawImage(vg,box.x+16,box.y+7,52,52,icons->Get(vg,rows[i].application),7);
+            DrawLine(vg,box.x+inset,box.y+9,22,white,show_icon?icons->Name(rows[i].application,rows[i].title):rows[i].title,box.w-inset-22);
+            DrawLine(vg,box.x+inset,box.y+38,16,white,rows[i].subtitle,box.w-inset-22);nvgRestore(vg);
         }
         const auto hint=std::string(gfx::getButton(Button::A))+"  Full details and long reports  /  "_nx+gfx::getButton(Button::UP)+" "+gfx::getButton(Button::DOWN)+"  Choose an item"_nx;
         gfx::drawText(vg,66,613,16,white,hint.c_str());
@@ -141,7 +151,7 @@ std::string ItemDetails(const UsbImportTitle& item,bool selected,const std::stri
     if(!item.meta_path.empty())text+="\nMetadata file: "_nx+item.meta_path;
     return text;
 }
-void ResultPage(std::shared_ptr<UsbImportResult> result,Result rc);
+void ResultPage(std::shared_ptr<UsbImportResult> result,Result rc,std::shared_ptr<UsbImportScan> scan={});
 void RestoreBackup(ReviewMenu* owner){
     auto consumed=std::make_shared<bool>();
     App::Push<OptionBox>("Restore the saved USB import backup?\n\nThis restores the interrupted game's registration and routing. USB game files and saves stay in place. Any game permissions already added remain installed.\n\nKeep the SD and USB connected. Fully restart the Switch after restoration."_nx,"Cancel"_nx,"Restore backup"_nx,0,[owner,consumed](auto choice){
@@ -154,7 +164,7 @@ void RestoreBackup(ReviewMenu* owner){
         },ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
     });
 }
-void ResultPage(std::shared_ptr<UsbImportResult> result,Result rc){
+void ResultPage(std::shared_ptr<UsbImportResult> result,Result rc,std::shared_ptr<UsbImportScan> scan){
     const auto heading=result->pending?"Recovery needed"_nx:result->rolled_back?"Previous registration restored"_nx:R_FAILED(rc)?"Adding games stopped"_nx:"USB import complete"_nx;
     const auto summary="Added: "+std::to_string(result->imported)+" items  /  Not added: "_nx+std::to_string(result->skipped)+" items"_nx;
     const auto note=result->pending?"Keep the backups. Restore them before installing or moving anything."_nx:result->restart?"Fully restart the Switch before playing or making more changes."_nx:"Choose a result below to see exactly what happened."_nx;
@@ -165,8 +175,14 @@ void ResultPage(std::shared_ptr<UsbImportResult> result,Result rc){
     detail+="\n\nGame files and saves were not copied or deleted. Game permissions already added remain installed after a rollback."_nx;
     if(!result->report_path.empty())detail+="\n\nSaved report:\n"_nx+result->report_path;
     std::vector<ReviewRow> rows{{"Summary and saved report"_nx,note,detail}};
-    for(size_t i=0;i<result->entries.size();++i)rows.push_back({view::OutcomeTitle(result->entries[i]),"Outcome "_nx+std::to_string(i+1)+" / "+std::to_string(result->entries.size()),result->entries[i]});
+    for(size_t i=0;i<result->entries.size();++i){
+        const auto application=i<result->entry_applications.size()?result->entry_applications[i]:0;
+        const auto& line=result->entries[i];
+        const auto subtitle=application?line.substr(0,line.find(':')):"Outcome "_nx+std::to_string(i+1)+" / "+std::to_string(result->entries.size());
+        rows.push_back({view::OutcomeTitle(line),subtitle,line,application});
+    }
     auto menu=std::make_unique<ReviewMenu>(heading,summary,note,std::move(rows));
+    if(scan)menu->SetIcons(std::move(scan));
     menu->SetAction(Button::B,Action{"Done"_nx,[ptr=menu.get()]{if(ptr->HasFocus()&&!ptr->ShouldPop())ptr->SetPop();}});
     if(result->pending)menu->SetPrimary("Restore backup"_nx,[ptr=menu.get()]{RestoreBackup(ptr);});
     else if(result->restart)menu->SetPrimary("Exit Manager"_nx,[]{App::Exit();});
@@ -209,9 +225,10 @@ void PreparationHelp(std::shared_ptr<UsbImportScan> scan){
     auto consumed=std::make_shared<bool>();
     App::Push<OptionBox>("Need permissions on a new SD card/system?\n\n1. Start the original SD card/system where these USB games work.\n2. Scan the USB here, then choose Prepare USB and save the supported permissions.\n3. Boot the new SD card/system, scan again and add the ready games.\n\nIf the original system is unavailable, or a permission cannot be saved, reinstall that game from your original backup. Games and saves are not copied by this tool."_nx,"Back"_nx,"Check preparation"_nx,0,[scan,consumed](auto choice){if(*consumed)return;*consumed=true;if(choice&&*choice==1)PrepareForAnotherCard(scan);});
 }
-void Preview(std::shared_ptr<UsbImportScan> scan){
+void Preview(std::shared_ptr<UsbImportScan> scan,bool pc){
     const auto plan=PlanUsbLibrary(*scan);
-    const auto counts=CountPreview(*scan,plan);
+    auto counts=CountPreview(*scan,plan);
+    if(pc)std::stable_partition(counts.order.begin(),counts.order.end(),[&](size_t i){return counts.selected[i];});
     std::vector<ReviewRow> rows;
     const auto summary="Games ready: "_nx+std::to_string(plan.summary.repairable_games)+"  /  "+std::to_string(counts.ready)+" items to verify"_nx;
     const auto note="Need checking: "_nx+std::to_string(plan.summary.blocked_games)+"  /  "+view::ReadyBreakdown(counts);
@@ -228,24 +245,37 @@ void Preview(std::shared_ptr<UsbImportScan> scan){
         const auto status=reason.empty()?FriendlyStatus(item.status,counts.selected[index]):"Game family needs checking"_nx;
         const auto subtitle=known?std::string(view::KindName(Kind(item.record.key.type)))+" / "+status+" / version "_nx+std::to_string(item.record.key.version):"Needs checking / open for the file and diagnostic"_nx;
         const auto family=counts.family[index].empty()?item.name:counts.family[index];
-        rows.push_back({known?family:"Unrecognised content"_nx,subtitle,ItemDetails(item,counts.selected[index],reason)});
+        rows.push_back({known?family:"Unrecognised content"_nx,subtitle,ItemDetails(item,counts.selected[index],reason),known?item.record.application_id:0});
     }
-    auto menu=std::make_unique<ReviewMenu>("Repair USB games"_nx,summary,note,std::move(rows));
+    auto menu=std::make_unique<ReviewMenu>(pc?"Import from PC"_nx:"Repair USB games"_nx,summary,note,std::move(rows));
+    menu->SetIcons(scan);
     if(!scan->titles.empty())menu->SetSecondary("Prepare USB"_nx,[scan]{PreparationHelp(scan);});
-    if(counts.ready&&plan.summary.repairable_games)menu->SetPrimary("Repair ready games"_nx,[scan,counts,families=plan.summary.repairable_games,ptr=menu.get()]{
+    if(counts.ready&&plan.summary.repairable_games)menu->SetPrimary(pc?"Add games to HOME"_nx:"Repair ready games"_nx,[pc,scan,counts,families=plan.summary.repairable_games,ptr=menu.get()]{
         auto consumed=std::make_shared<bool>();
-        App::Push<OptionBox>("Repair "_nx+std::to_string(families)+(families==1?" game?\n\n"_nx:" games?\n\n"_nx)+view::ReadyBreakdown(counts)+"\n\nNexus verifies the USB files and backs up this system's game records first. Each family's USB base game, updates and DLC are handled together, including healthy USB members. Native registrations are kept. Game files and saves stay in place. Blocked families are skipped and listed in the report.\n\nGame permissions added during repair remain installed after a rollback. Keep SD and USB connected, then fully restart the Switch afterward."_nx,"Cancel"_nx,"Repair games"_nx,0,[scan,ptr,consumed](auto choice){
+        if(pc){
+            App::Push<OptionBox>("Quick add checks the file sizes, headers, metadata and original tickets. Full check also reads every game file before adding it to HOME."_nx,"Full check"_nx,"Quick add"_nx,1,[scan,ptr,consumed](auto choice){
+                if(*consumed)return;
+                *consumed=true;
+                if(!choice || ptr->ShouldPop())return;
+                ptr->StopIcons();ptr->SetPop();
+                if(*choice==1){AddPcGames(scan);return;}
+                auto result=std::make_shared<UsbImportResult>();
+                App::Push<ProgressBox>(0,"Add games to HOME"_nx,"Checking existing USB content"_nx,[scan,result](ProgressBox* p){return ImportUsbLibrary(p,*scan,*result);},[scan,result](Result rc){ResultPage(result,rc,scan);},ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
+            });
+            return;
+        }
+        App::Push<OptionBox>(("Repair "_nx+std::to_string(families)+(families==1?" game?\n\n"_nx:" games?\n\n"_nx))+view::ReadyBreakdown(counts)+"\n\nNexus verifies the USB files and backs up this system's game records first. Each family's USB base game, updates and DLC are handled together, including healthy USB members. Native registrations are kept. Game files and saves stay in place. Blocked families are skipped and listed in the report.\n\nGame permissions added during repair remain installed after a rollback. Keep SD and USB connected, then fully restart the Switch afterward."_nx,"Cancel"_nx,"Repair games"_nx,0,[scan,ptr,consumed](auto choice){
             if(*consumed)return;*consumed=true;
-            if(!choice||*choice!=1||ptr->ShouldPop())return;ptr->SetPop();auto result=std::make_shared<UsbImportResult>();
-            App::Push<ProgressBox>(0,"Repair USB games"_nx,"Verifying and registering existing files"_nx,[scan,result](ProgressBox* p){return ImportUsbLibrary(p,*scan,*result);},[result](Result rc){
+            if(!choice||*choice!=1||ptr->ShouldPop())return;ptr->StopIcons();ptr->SetPop();auto result=std::make_shared<UsbImportResult>();
+            App::Push<ProgressBox>(0,"Repair USB games"_nx,"Verifying and registering existing files"_nx,[scan,result](ProgressBox* p){return ImportUsbLibrary(p,*scan,*result);},[scan,result](Result rc){
                 if(R_FAILED(rc)&&result->detail.empty())result->detail="The import could not finish. Review the diagnostic and per-item outcomes before trying again."_nx;
-                ResultPage(result,rc);
+                ResultPage(result,rc,scan);
             },ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
         });
     });
     App::Push(std::move(menu));
 }
-void ScanAndPreview(){
+void ScanAndPreview(bool pc=false,u64 only_application=0){
     auto scan=std::make_shared<UsbImportScan>();auto pending=std::make_shared<bool>();
     App::Push<ProgressBox>(0,"Scan USB games"_nx,"Checking previous setup, then reading installed games"_nx,[scan,pending](ProgressBox* p)->Result{
         R_TRY(p->ShouldExitResult());
@@ -253,19 +283,62 @@ void ScanAndPreview(){
         if(R_FAILED(checked)){scan->detail="Could not check for an interrupted import on this SD card. No library changes were made. Keep any existing import backup folders."_nx;return checked;}
         if(*pending)return 0;
         return ScanUsbImports(p,*scan);
-    },[scan,pending](Result rc){
+    },[scan,pending,pc,only_application](Result rc){
         if(*pending){
             auto menu=std::make_unique<ReviewMenu>("Finish recovery first"_nx,"An earlier USB import was interrupted"_nx,"Restore its backup before adding, installing or moving games."_nx,std::vector<ReviewRow>{{"Why recovery is needed"_nx,"Your USB game files and saves remain in place"_nx,"An earlier import has a saved recovery journal. Restore the previous registration and routing before making more changes. Keep all import backup folders.\n\nFully restart the Switch after restoration. Game permissions already installed remain installed."_nx}});
             menu->SetPrimary("Restore backup"_nx,[ptr=menu.get()]{RestoreBackup(ptr);});App::Push(std::move(menu));return;
         }
         if(R_FAILED(rc)||!scan->complete){App::Push<OptionBox>(Failure("The USB scan could not finish."_nx,scan->detail,rc,"No library changes were made. Review the diagnostic before retrying."_nx),"Back"_nx,[](auto){});return;}
-        Preview(scan);
+        if(only_application)std::erase_if(scan->titles,[&](const auto& row){return row.record.application_id!=only_application;});
+        Preview(scan,pc);
     },ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
 }
+}
+void AddPcGames(std::shared_ptr<UsbImportScan> scan){
+    auto result=std::make_shared<UsbImportResult>();
+    App::Push<ui::ProgressBox>(0,"Add games to HOME"_nx,"Checking files and original tickets"_nx,[scan,result](ui::ProgressBox* p){
+        return ImportUsbLibrary(p,*scan,*result,true);
+    },[scan,result](Result rc){ResultPage(result,rc,scan);},ui::ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
 }
 void DisplayUsbImport(){
     StopUsbLibraryStartupCheck();
     if(App::IsApplet()){App::Push<ui::OptionBox>("Open the Nexus Manager HOME app, or hold R while starting a game for full-memory mode, then scan USB again."_nx,"Back"_nx,[](auto){});return;}
     ScanAndPreview();
+}
+void DisplayPcUsbImport(u64 only_application){
+    StopUsbLibraryStartupCheck();
+    if(App::IsApplet()||!::nexus::hats::SupportsPcLibrary()){
+        App::Push<ui::OptionBox>("Open Nexus Manager from HOME on Nexus HATS NX1 to import games from your PC."_nx,"Back"_nx,[](auto){});return;
+    }
+    auto receipts=std::make_shared<std::vector<PcRemoval>>();
+    App::Push<ui::ProgressBox>(0,"Import from PC"_nx,"Checking PC changes"_nx,[receipts](ui::ProgressBox* p)->Result{
+        R_TRY(ncmInitialize());ON_SCOPE_EXIT(ncmExit());R_TRY(::nexus::CheckUsbFirmware());return ListPcRemovals(p,*receipts);
+    },[receipts,only_application](Result rc){
+        if(R_FAILED(rc)){App::PushErrorBox(rc,"Could not read the PC changes on this USB drive."_nx);return;}
+        if(only_application)std::erase_if(*receipts,[&](const auto& r){return r.game!=only_application||!r.filename.ends_with(".swap");});
+        if(receipts->empty()){ScanAndPreview(true,only_application);return;}
+        std::string ids;for(size_t i=0;i<std::min<size_t>(6,receipts->size());++i){char text[32];snprintf(text,sizeof(text),"\n%016llX",static_cast<unsigned long long>((*receipts)[i].game));ids+=text;}
+        App::Push<ui::OptionBox>("USB games changed on PC: "_nx+std::to_string(receipts->size())+ids+"\n\nUpdate the matching USB entries on HOME? SD and internal copies and saved progress are kept."_nx,"Skip"_nx,"Update HOME"_nx,0,[receipts,only_application](auto choice){
+            if(!choice)return;if(*choice!=1)return;
+            auto count=std::make_shared<size_t>();
+            App::Push<ui::ProgressBox>(0,"Update HOME"_nx,"Checking USB library changes"_nx,[receipts,count](ui::ProgressBox* p)->Result{
+                for(const auto& entry:*receipts){R_TRY(p->ShouldExitResult());bool changed{};R_TRY(FinishPcRemoval(p,entry,changed));*count+=changed;}return 0;
+            },[count,only_application](Result result){
+                if(R_FAILED(result)){App::PushErrorBox(result,"PC sync stopped. Reopen Import from PC to review the remaining changes."_nx);return;}
+                App::Push<ui::OptionBox>("Games updated on HOME: "_nx+std::to_string(*count)+"\n\nRestart the Switch after finishing your USB changes."_nx,"Continue"_nx,[only_application](auto){if(!only_application)ScanAndPreview(true);});
+            },ui::ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
+        });
+    },ui::ProgressBoxOption::None,nexus::safety::Operation::ReadOnly);
+}
+bool DispatchPcRemovals(){
+    auto receipts=TakeDetectedPcRemovals();if(!receipts)return false;
+    App::Push<ui::ProgressBox>(0,"Update HOME"_nx,"Checking PC changes"_nx,[receipts](ui::ProgressBox* p)->Result{
+        for(const auto& item:*receipts){R_TRY(p->ShouldExitResult());bool changed{};R_TRY(FinishPcRemoval(p,item,changed));}
+        return 0;
+    },[](Result rc){
+        if(R_FAILED(rc)){App::PushErrorBox(rc,"PC sync stopped. Reopen Import from PC to review the remaining changes."_nx);return;}
+        ResumePcInstallDetection();
+    },ui::ProgressBoxOption::None,nexus::safety::Operation::MayWrite);
+    return true;
 }
 }

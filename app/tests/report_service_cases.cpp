@@ -1,6 +1,6 @@
 using namespace nexus::reports;
 size_t Queued(){return std::count_if(disk.begin(),disk.end(),[](auto& e){return e.first.ends_with(".json");});}
-void Reset(){Stop();disk.clear();trace.clear();seen.clear();preference=-2;offered=false;started=false;finished=false;cancel=false;last_receipt.clear();next_attempt={};starts=sends=notifications=0;send_rc=0;bad_receipt=write_receipt_failure=remove_failure=sd_failure=false;nexus::lifecycle::foreground=true;}
+void Reset(){Stop();disk.clear();trace.clear();seen.clear();preference=-2;offered=false;started=false;finished=false;cancel=false;last_receipt.clear();next_attempt={};starts=sends=notifications=0;send_rc=0;bad_receipt=write_receipt_failure=remove_failure=sd_failure=false;nexus::lifecycle::foreground=true;resume_pending=false;resume_reports=0;crash_scanned=false;previous_battery_valid=false;nexus::diagnostics::game=0;}
 int main(){
  Reset();assert(OfferChoice()&&!OfferChoice());QueueFailure("install",1);assert(!Queued());
  assert(!SetPreference(false));QueueFailure("repair",2);assert(!Queued());
@@ -34,5 +34,25 @@ int main(){
  Reset();nexus::snapshot_result=Fault;assert(!SetPreference(true));QueueFailure("install",1);assert(Queued()==1);
  for(const auto&[name,bytes]:disk)if(name.ends_with(".json")){const std::string body(bytes.begin(),bytes.end());assert(body.find("usb_live_snapshot_current=0")!=std::string::npos);assert(body.find("usb_live_snapshot_current=1")==std::string::npos);}
  nexus::snapshot_result=0;
+ Reset();assert(!SetPreference(true));OnResume();cancel=false;CollectIdleObservations();assert(Queued()==1);
+ for(const auto&[name,bytes]:disk)if(name.ends_with(".json")){const std::string body(bytes.begin(),bytes.end());bool manual=true;assert(QueuedPayload(body,manual)&&!manual);assert(body.find("report-auto-applet-resume")!=body.npos);}
+ assert(!SetPreference(false));cancel=false;assert(!UploadOne()&&!sends&&Queued()==1);
+ Reset();assert(!SetPreference(true));nexus::diagnostics::game=0x0100000000010000;QueueFailure("install",9);nexus::diagnostics::game=0x0100000000020000;QueueFailure("install",9);assert(Queued()==2);
+ Reset();const std::string legacy="NEXUS-REPORTS-1 enabled\n";disk[Choice]={legacy.begin(),legacy.end()};assert(Preference()==-1&&OfferChoice());
+ const auto add_crash=[](long long age,const char* title="010013c00e930000"){
+  char name[64];snprintf(name,sizeof(name),"%011lld_%s.log",(long long)std::time(nullptr)-age,title);
+  const std::string body=std::string("Atmosphere Crash Report (v1.7):\nResult: 0x299C02\nProgram ID: ")+title+"\nType: User Break\nRegisters: PRIVATE_RAW_MEMORY\npassword: PRIVATE_PASSWORD\n";
+  disk[std::string("/atmosphere/crash_reports/")+name]={body.begin(),body.end()};return std::string(name);
+ };
+ Reset();assert(!SetPreference(true));auto crash_name=add_crash(60);cancel=false;CollectIdleObservations();assert(Queued()==1);
+ assert(disk.contains(std::string(Root)+"/last-crash.txt"));
+ for(const auto&[name,bytes]:disk)if(name.ends_with(".json")){
+  const std::string body(bytes.begin(),bytes.end());bool manual=true;assert(QueuedPayload(body,manual)&&!manual);
+  assert(body.find("report-auto-game-crash")!=body.npos&&body.find("PRIVATE_RAW_MEMORY")==body.npos&&body.find("PRIVATE_PASSWORD")==body.npos);
+ }
+ assert(!ClearQueued());crash_scanned=false;cancel=false;CollectIdleObservations();assert(!Queued());
+ Reset();assert(!SetPreference(true));add_crash(8*24*60*60);cancel=false;CollectIdleObservations();assert(!Queued());
+ Reset();assert(!SetPreference(true));add_crash(-3600);cancel=false;CollectIdleObservations();assert(!Queued());
+ Reset();assert(!SetPreference(false));add_crash(60);cancel=false;CollectIdleObservations();assert(!Queued());
  std::cout<<"PASS: production report queue, consent, idle/retry gating, receipt persistence, deduplication, limits, live snapshot/fallback and private-field rejection.\n";
 }

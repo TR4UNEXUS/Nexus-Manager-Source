@@ -9,6 +9,7 @@
 #include "fs.hpp"
 #include "log.hpp"
 #include "utils/audio.hpp"
+#include "nexus/awake.hpp"
 
 #ifdef USE_NVJPG
 #include <nvjpg.hpp>
@@ -206,24 +207,10 @@ public:
     static void SetScreenDisabled(bool disable);
 
     static void SetAutoSleepDisabled(bool enable) {
-        static Mutex mutex{};
-        static int ref_count{};
-
-        mutexLock(&mutex);
-        ON_SCOPE_EXIT(mutexUnlock(&mutex));
-
-        if (enable) {
-            appletSetAutoSleepDisabled(true);
-            ref_count++;
-        } else {
-            if (ref_count) {
-                ref_count--;
-            }
-
-            if (!ref_count) {
-                appletSetAutoSleepDisabled(false);
-            }
-        }
+        // Existing task entry/exit calls refresh the application-owned policy.
+        // Neither a progress dialog nor FTP cleanup owns the idle timer now.
+        (void)enable;
+        nexus::power::Refresh();
     }
 
     static void SetBoostMode(bool enable, bool force = false) {

@@ -426,6 +426,7 @@ struct Yati {
     Result ImportTickets(std::span<TikCollection> tickets);
     Result RemoveInstalledNcas(const CnmtCollection& cnmt);
     Result RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_version_num);
+    Result RegisterMetaAndPushRecord(const CnmtCollection& cnmt, u32 latest_version_num);
     bool defer_postcommit{};
     bool archive_usb_tickets{true};
 
@@ -776,6 +777,8 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
 
                 // store the unmodified header.
                 t->nca->header = header;
+                nexus::Log("install-content-program-id",0,header.program_id);
+                nexus::Log("install-content-type",0,header.content_type);
 
                 if (!config.skip_rsa_header_fixed_key_verify) {
                     log_write("verifying nca fixed key\n");
@@ -1107,6 +1110,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     }
     config.allow_downgrade = false;
     storage_id = nexus::LogicalStorage(physical_target);
+    nexus::Log("install-destination",0,static_cast<u64>(physical_target));
     destination = std::make_unique<nexus::Destination>(physical_target,override.nexus_destination_generation);
 
     R_TRY(step("install-open-source",source->GetOpenResult()));
@@ -1294,6 +1298,9 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
         log_write("some reads failed, waking threads: %s\n", nca.name.c_str());
         log_write("returning due to fail: %s\n", nca.name.c_str());
         nexus::Log("install-worker-data",t_data.GetResults(),t_data.GetWriteOffset());
+        nexus::Log("install-worker-read",t_data.read_result.load(),t_data.read_offset);
+        nexus::Log("install-worker-decompress",t_data.decompress_result.load(),t_data.decompress_offset);
+        nexus::Log("install-worker-write",t_data.write_result.load(),t_data.GetWriteOffset());
         nexus::Log("install-worker-expected-bytes",0,t_data.GetWriteSize());
         return t_data.GetResults();
     }
@@ -1481,6 +1488,9 @@ Result Yati::InstallCnmtNca(std::span<TikCollection> tickets, CnmtCollection& cn
     cnmt.key.id=header.title_id;cnmt.key.type=header.meta_type;
     const auto owner=header.meta_type==NcmContentMetaType_Patch ? ApplicationId(cnmt) : header.title_id;
     diagnostic_title=header.title_id;
+    nexus::Log("install-package-title-id",0,header.title_id);
+    nexus::Log("install-package-title-version",0,header.title_version);
+    nexus::Log("install-package-title-type",0,header.meta_type);
 
     for (const auto& packed_info : infos) {
         const auto& info = packed_info.info;
@@ -1875,7 +1885,12 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
     diagnostic_title=cnmt.key.id;
 
     R_TRY(PublishNcas(cnmt));
+    return RegisterMetaAndPushRecord(cnmt,latest_version_num);
+}
 
+Result Yati::RegisterMetaAndPushRecord(const CnmtCollection& cnmt, u32 latest_version_num) {
+    const auto app_id=ApplicationId(cnmt);
+    R_UNLESS(app_id,nexus::Invalid);
     // build ncm meta and push to the database.
     BufHelper buf{};
     buf.write(std::addressof(cnmt.meta_header), sizeof(cnmt.meta_header));
@@ -2226,11 +2241,13 @@ Result ExistingCollection(const ExistingUsbRecord& record,CnmtCollection& cnmt){
     }
     return 0;
 }
-Result InspectExisting(ui::ProgressBox* pbox,u64 generation,CnmtCollection& cnmt,const keys::Keys& keys,bool hash_contents,bool require_tickets){
+enum class ExistingCheck { Full, QuickPc, BeforeRegistration };
+Result InspectExisting(ui::ProgressBox* pbox,u64 generation,CnmtCollection& cnmt,const keys::Keys& keys,ExistingCheck mode){
+    const bool require_tickets=mode==ExistingCheck::BeforeRegistration;
     R_UNLESS(pbox && generation,nexus::Invalid);nexus::Client usb;R_TRY(usb.Check(generation));
     std::vector<FsRightsId> common,personal;
     if(require_tickets){R_TRY(es::GetCommonTickets(common));R_TRY(es::GetPersonalisedTickets(personal));}
-    std::vector<u8> buffer(hash_contents?1024*1024:sizeof(nca::Header));
+    std::vector<u8> buffer(!require_tickets?1024*1024:sizeof(nca::Header));
     const auto inspect=[&](NcaCollection& entry)->Result{
         R_TRY(pbox->ShouldExitResult());R_TRY(usb.Check(generation));const auto path=ExistingUsbPath(entry.content_id);
         nexus::Info stat{};R_TRY(usb.Stat(generation,path,stat));R_UNLESS(!stat.directory && stat.size==entry.expected_size,nexus::Invalid);
@@ -2238,13 +2255,11 @@ Result InspectExisting(ui::ProgressBox* pbox,u64 generation,CnmtCollection& cnmt
         nca::Header header;memcpy(&header,buffer.data(),sizeof(header));
         if(!header.IsValid())R_TRY(nca::DecryptHeader(buffer.data(),keys,header));
         R_UNLESS(header.size==entry.expected_size && header.kaek_index<3 && header.GetKeyGeneration()<=KEYGEN_LIMIT,nexus::Invalid);
-        if(entry.type==NcmContentType_Meta)R_UNLESS(header.content_type==nca::ContentType_Meta,nexus::Invalid);
-        if(entry.type==NcmContentType_Program)R_UNLESS(header.content_type==nca::ContentType_Program,nexus::Invalid);
-        if(entry.type==NcmContentType_Control)R_UNLESS(header.content_type==nca::ContentType_Control,nexus::Invalid);
+        R_UNLESS(nexusapp::HeaderType(entry.type,header.content_type),nexus::Invalid);
         if(require_tickets && es::IsRightsIdValid(header.rights_id))
             R_UNLESS(es::IsRightsIdFound(header.rights_id,common)||es::IsRightsIdFound(header.rights_id,personal),Result_YatiTicketNotFound);
         entry.header=header;
-        if(hash_contents){
+        if(mode==ExistingCheck::Full || (mode==ExistingCheck::QuickPc && entry.type==NcmContentType_Meta)){
             nca::ContentHash hash;pbox->NewTransfer("Checking existing USB content"_nx);
             for(u64 off=0;off<stat.size;){
                 R_TRY(pbox->ShouldExitResult());R_TRY(usb.Check(generation));const auto count=std::min<u64>(buffer.size(),stat.size-off);
@@ -2259,11 +2274,11 @@ Result InspectExisting(ui::ProgressBox* pbox,u64 generation,CnmtCollection& cnmt
     R_TRY(inspect(cnmt));for(auto& entry:cnmt.ncas)R_TRY(inspect(entry));return 0;
 }
 }
-Result VerifyExistingUsbRecord(ui::ProgressBox* pbox,u64 generation,const ExistingUsbRecord& record){
+Result VerifyExistingUsbRecord(ui::ProgressBox* pbox,u64 generation,const ExistingUsbRecord& record,bool quick_pc_import){
     CnmtCollection cnmt;R_TRY(ExistingCollection(record,cnmt));keys::Keys keys;R_TRY(keys::parse_keys(keys,false));
-    return InspectExisting(pbox,generation,cnmt,keys,true,false);
+    return InspectExisting(pbox,generation,cnmt,keys,quick_pc_import?ExistingCheck::QuickPc:ExistingCheck::Full);
 }
-Result PublishExistingUsbRecord(ui::ProgressBox* pbox,u64 generation,const ExistingUsbRecord& record,u32 latest_version,nexus::install::Diagnostic* diagnostic){
+Result PublishExistingUsbRecord(ui::ProgressBox* pbox,u64 generation,const ExistingUsbRecord& record,u32 latest_version,bool quick_pc_import,nexus::install::Diagnostic* diagnostic){
     CnmtCollection cnmt;R_TRY(ExistingCollection(record,cnmt));
     // No source archive is needed: this adapter cannot supply or copy data.
     struct ExistingSource final:source::Base{Result Read(void*,s64,s64,u64* got)override{if(got)*got=0;return nexus::Invalid;}} source;
@@ -2274,7 +2289,19 @@ Result PublishExistingUsbRecord(ui::ProgressBox* pbox,u64 generation,const Exist
     for(const auto& existing:current)if(existing.key.id==record.key.id && existing.key.type==record.key.type)
         R_UNLESS(existing.storage_id==NcmStorageId_SdCard && existing.key.version==record.key.version &&
             existing.key.install_type==record.key.install_type,nexus::Invalid);
-    R_TRY(InspectExisting(pbox,generation,cnmt,yati.keys,false,true));
+    R_TRY(InspectExisting(pbox,generation,cnmt,yati.keys,ExistingCheck::BeforeRegistration));
+    if(quick_pc_import){
+        // InspectExisting checked tickets, headers and lengths on the pinned drive.
+        // Register the existing files without creating a full-payload hash proof.
+        yati.diagnostic_title=cnmt.key.id;
+        const auto register_file=[&](const NcaCollection& file)->Result{
+            R_TRY(pbox->ShouldExitResult());
+            return yati.destination->Verify(yati.cs,file.content_id,file.expected_size);
+        };
+        R_TRY(register_file(cnmt));
+        for(const auto& file:cnmt.ncas)R_TRY(register_file(file));
+        return yati.RegisterMetaAndPushRecord(cnmt,latest_version);
+    }
     // Reuses PublishNca -> VerifyReusedNca -> generation-pinned P2 registration,
     // NCM readback and NS record merging. No deletion/downgrade cleanup occurs.
     return yati.RegisterNcasAndPushRecord(cnmt,latest_version);

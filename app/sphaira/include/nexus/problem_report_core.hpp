@@ -34,7 +34,8 @@ inline bool StatusFields(std::string_view text){
     }return false;
 }
 inline std::string ManagerLines(std::string_view input){
-    std::istringstream stream{std::string(input)};std::string line;std::vector<std::string> safe;
+    std::istringstream stream{std::string(input)};std::string line,session;
+    using Row=std::pair<size_t,std::string>;std::vector<Row> safe,context;size_t sequence{};
     while(std::getline(stream,line)){
         if(line.size()>640||!line.starts_with("NM2 "))continue;
         std::istringstream fields(line);std::array<std::string,10> f;bool valid=true;
@@ -46,9 +47,23 @@ inline std::string ManagerLines(std::string_view input){
         if(value(0).size()>15||!std::all_of(value(0).begin(),value(0).end(),[](char c){return(c>='0'&&c<='9')||c=='.';})||
            !Hex(value(1),16)||!Number(value(2))||!Number(value(3))||!Token(value(4),64)||!Token(value(5),192)||
            !value(6).starts_with("0x")||!Hex(value(6).substr(2),8)||!Number(value(7)))continue;
-        safe.push_back(line);if(safe.size()>80)safe.erase(safe.begin());
+        if(session!=value(1)){context.clear();session=value(1);}
+        const auto event=value(5);
+        const bool keep=event=="install-content-program-id"||event.starts_with("install-package-title-")||
+            event=="install-package-format"||event=="install-source-bytes"||event=="install-local-source"||
+            event=="install-network-source"||event=="install-ftp-stream"||event=="install-destination"||
+            event=="move-begin-M4"||event=="move-route-M4";
+        if(event=="operation-begin")context.clear();
+        const Row row{sequence++,line};
+        if(keep){context.push_back(row);if(context.size()>16)context.erase(context.begin());}
+        safe.push_back(row);if(safe.size()>80)safe.erase(safe.begin());
     }
-    std::string out;for(const auto&s:safe)if(out.size()+s.size()+1<=48*1024)out+=s+'\n';return out;
+    for(const auto& row:context)if(std::none_of(safe.begin(),safe.end(),[&](const Row& s){return s.first==row.first;}))safe.push_back(row);
+    std::sort(safe.begin(),safe.end(),[](const Row& a,const Row& b){return a.first<b.first;});
+    while(safe.size()>80){const auto disposable=std::find_if(safe.begin(),safe.end(),[&](const Row& row){
+        return std::none_of(context.begin(),context.end(),[&](const Row& pin){return pin.first==row.first;});});
+        if(disposable==safe.end())break;safe.erase(disposable);}
+    std::string out;for(const auto& [index,s]:safe)if(out.size()+s.size()+1<=48*1024)out+=s+'\n';return out;
 }
 inline std::string FirmwareLines(std::string_view input){
     std::istringstream stream{std::string(input)};std::string line,out;

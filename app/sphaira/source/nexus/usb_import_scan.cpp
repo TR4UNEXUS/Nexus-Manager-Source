@@ -13,6 +13,8 @@
 #include "yati/nx/es.hpp"
 #include "yati/nx/ns.hpp"
 #include "title_info.hpp"
+#include "image.hpp"
+#include "app.hpp"
 #include "defines.hpp"
 #include <algorithm>
 #include <array>
@@ -23,6 +25,17 @@
 #include <tuple>
 
 namespace sphaira::nexusapp {
+bool HeaderType(u8 ncm_type,u8 nca_type){
+    switch(ncm_type){
+        case NcmContentType_Meta:return nca_type==nca::ContentType_Meta;
+        case NcmContentType_Program:return nca_type==nca::ContentType_Program;
+        case NcmContentType_Control:return nca_type==nca::ContentType_Control;
+        case NcmContentType_HtmlDocument:return nca_type==nca::ContentType_Manual;
+        case NcmContentType_Data:return nca_type==nca::ContentType_Data||nca_type==nca::ContentType_PublicData;
+        case NcmContentType_LegalInformation:return nca_type==nca::ContentType_Manual||nca_type==nca::ContentType_PublicData;
+        default:return false;
+    }
+}
 namespace {
 namespace core=nexus::usb_import;
 constexpr Result MissingUsb=MAKERESULT(140,205);
@@ -36,17 +49,6 @@ std::string SafeName(std::string name){for(auto& c:name)if(static_cast<unsigned 
 struct File {NcmContentId id{};std::string path;u64 size{};};
 struct HeaderInfo {FsRightsId rights{};u64 size{};u8 type{};bool valid{};};
 bool SameKey(const NcmContentMetaKey& a,const NcmContentMetaKey& b){return MetaKey(a)==MetaKey(b)&&a.install_type==b.install_type;}
-bool HeaderType(u8 ncm_type,u8 nca_type){
-    switch(ncm_type){
-        case NcmContentType_Meta:return nca_type==nca::ContentType_Meta;
-        case NcmContentType_Program:return nca_type==nca::ContentType_Program;
-        case NcmContentType_Control:return nca_type==nca::ContentType_Control;
-        case NcmContentType_HtmlDocument:return nca_type==nca::ContentType_Manual;
-        case NcmContentType_Data:return nca_type==nca::ContentType_Data||nca_type==nca::ContentType_PublicData;
-        case NcmContentType_LegalInformation:return nca_type==nca::ContentType_Manual||nca_type==nca::ContentType_PublicData;
-        default:return false;
-    }
-}
 struct Session {
     ui::ProgressBox* progress;
     UsbImportScan& scan;
@@ -329,6 +331,7 @@ Result Classify(Session& s,UsbImportTitle& row){
             incomplete=true;continue;
         }
         if(content.info.content_type==NcmContentType_Program||content.info.content_type==NcmContentType_Data){
+            s.stage="checking for an existing copy on the SD card"_nx;
             bool on_sd{};R_TRY(ncmContentStorageHas(&s.native,&on_sd,&content.info.content_id));native_content|=on_sd;
         }
         const auto& rights=it->second.rights;
@@ -341,7 +344,8 @@ Result Classify(Session& s,UsbImportTitle& row){
     for(const auto& rights:row.required_tickets){
         if(es::IsRightsIdFound(rights,s.tickets))continue;
         row.missing_tickets=true;
-        R_TRY(s.Check());UsbTicketPair pair;const auto rc=LoadUsbTicketPair(s.scan.generation,rights,pair);
+        s.stage="reading the original ticket from the USB drive"_nx;
+        R_TRY(s.Check());UsbTicketPair pair;const auto rc=LoadUsbImportTicketPair(s.scan.generation,rights,pair);
         if(rc==MissingUsbTicket||rc==InvalidUsbTicket){
             row.status=UsbImportStatus::TicketMissing;
             row.reason=rc==InvalidUsbTicket?"The required ticket was not found in the current system. The USB backup cannot be used for this console. Reinstall from your original backup; do not delete a working game."_nx:"The required ticket was not found in the current system. No usable backup is available on USB. Reinstall from your original backup if this game cannot launch; do not delete a working game."_nx;
@@ -349,6 +353,7 @@ Result Classify(Session& s,UsbImportTitle& row){
         }
         R_TRY(rc);row.archived_tickets.push_back(rights);
     }
+    s.stage="reading this game's HOME records"_nx;
     const std::vector<ncm::ContentStorageRecord>* applications{};R_TRY(s.AppRecords(record.application_id,applications));
     const ncm::ContentStorageRecord* native_record{};
     for(const auto& registered:*applications){
@@ -392,6 +397,7 @@ Result Classify(Session& s,UsbImportTitle& row){
         if(!SameReferences(raw,record)){row.status=UsbImportStatus::Incomplete;row.reason="This title and version are already registered with different content. Reinstall from your original backup to resolve the conflict."_nx;return 0;}
         record.installed_meta=std::move(raw);
         const bool home=s.home_applications.contains(record.application_id)&&std::any_of(applications->begin(),applications->end(),[&](const auto& r){return r.storage_id==NcmStorageId_SdCard&&SameKey(r.key,record.key);});
+        row.needs_home_import=!home||!row.archived_tickets.empty()||routing==nexus::repair::MergeResult::Changed;
         if(home&&row.archived_tickets.empty()&&routing==nexus::repair::MergeResult::Intact){
             row.registration=UsbImportRegistration::Usb;
             // HOME badge images are cosmetic. A missing cache must not offer
@@ -402,6 +408,7 @@ Result Classify(Session& s,UsbImportTitle& row){
             return s.Check();
         }
     }
+    if(!existing)row.needs_home_import=true;
     row.status=UsbImportStatus::Ready;
     row.reason=row.archived_tickets.empty()?"Missing registration or USB routing can be restored from the existing USB files. The whole game family's hashes will be checked before repair."_nx:"Current-system permissions are missing. Valid saved tickets for this console can be restored after the whole USB game family is verified."_nx;
     return s.Check();
@@ -530,7 +537,7 @@ Result CheckBaseGames(Session& s){
     return s.Check();
 }
 
-Result ControlName(Session& s,const yati::ExistingUsbContent& content,std::string& name){
+Result ReadControlPresentation(Session& s,const yati::ExistingUsbContent& content,std::string& name,std::vector<u8>* icon=nullptr){
     u64 size{};ncmContentInfoSizeToU64(&content.info,&size);
     File file{content.info.content_id,CanonicalUsbContentPath(content.info.content_id),size};
     nca::Header header{};bool valid{};R_TRY(s.Header(file,header,valid));
@@ -558,6 +565,25 @@ Result ControlName(Session& s,const yati::ExistingUsbContent& content,std::strin
         const auto metadata_offset=core::Read<u64>(romfs,56),metadata_size=core::Read<u64>(romfs,64),data_offset=core::Read<u64>(romfs,72);
         if(!metadata_size||metadata_size>256*1024||!core::Range(metadata_offset,metadata_size,layer.hash_data_size)||data_offset>layer.hash_data_size)continue;
         R_TRY(read(metadata_offset,metadata_size,romfs));u64 offset{},length{};
+        if(icon && icon->empty()){
+            static constexpr const char* languages[]={"Japanese","AmericanEnglish","French","German","Italian","Spanish","SimplifiedChinese","Korean","Dutch","Portuguese","Russian","TraditionalChinese","BritishEnglish","CanadianFrench","LatinAmericanSpanish","SimplifiedChinese","TraditionalChinese","BrazilianPortuguese"};
+            u64 code{};SetLanguage preferred=SetLanguage_ENUS;
+            if(R_SUCCEEDED(setGetSystemLanguage(&code)))setMakeLanguage(code,&preferred);
+            auto load_icon=[&](const char* language)->bool{
+                const std::string filename=std::string("icon_")+language+".dat";
+                u64 at{},bytes{};
+                if(!core::FindRomfsRootFile(romfs,layer.hash_data_size-data_offset,filename,at,bytes)||!bytes||bytes>256*1024)return false;
+                std::vector<u8> encoded;
+                if(R_FAILED(read(data_offset+at,bytes,encoded)))return false;
+                *icon=ImageNormalizeIcon(encoded);
+                return !icon->empty();
+            };
+            const size_t lang=static_cast<size_t>(preferred)<std::size(languages)?static_cast<size_t>(preferred):size_t(SetLanguage_ENUS);
+            if(!load_icon(languages[lang]) && (lang==SetLanguage_ENUS || !load_icon(languages[SetLanguage_ENUS]))){
+                for(size_t i=0;i<std::size(languages);++i)
+                    if(i!=lang&&i!=SetLanguage_ENUS&&load_icon(languages[i]))break;
+            }
+        }
         if(!core::FindRomfsRootFile(romfs,layer.hash_data_size-data_offset,"control.nacp",offset,length)||length<sizeof(NacpStruct))continue;
         std::vector<u8> bytes;R_TRY(read(data_offset+offset,sizeof(NacpStruct),bytes));NacpStruct nacp{};std::memcpy(&nacp,bytes.data(),sizeof(nacp));
         // Compressed/newer title formats remain a title-ID fallback; this
@@ -582,13 +608,61 @@ Result ReadTitleNames(Session& s){
         for(const auto& content:row.record.content){
             if(content.info.content_type!=NcmContentType_Control)continue;
             const auto header=s.headers.find(ContentId(content.info.content_id));if(header==s.headers.end()||!header->second.valid)continue;
-            std::string name;R_TRY(ControlName(s,content,name));if(name.empty())continue;
+            std::string name;R_TRY(ReadControlPresentation(s,content,name));if(name.empty())continue;
             row.name=name;names.emplace(application,std::move(name));break;
         }
     }
     for(auto& row:s.scan.titles){const auto known=names.find(row.record.application_id);if(known!=names.end())row.name=known->second;}
     return s.Check();
 }
+}
+
+UsbImportArtwork ReadUsbImportArtwork(u64 generation,const UsbImportFamily& family,const std::atomic_bool* cancel){
+    UsbImportArtwork art;
+    if(family.empty() || !generation)return art;
+    const auto app=family.front()->record.application_id;
+    UsbImportScan media;
+    Session s(nullptr,media,cancel);
+    if(!app || R_FAILED(s.Open(generation,true)))return art;
+    // New games have no HOME record. Read the small icon from their own control
+    // archive on USB. Updates and DLC share the application artwork.
+    for(const auto* row:family){
+        for(const auto& file:row->record.content){
+            if(file.info.content_type!=NcmContentType_Control)continue;
+            if(R_FAILED(s.Check()))return {};
+            ReadControlPresentation(s,file,art.name,&art.icon);
+            if(!art.icon.empty())return R_SUCCEEDED(s.Check())?art:UsbImportArtwork{};
+        }
+    }
+    // An update/DLC-only family can already have its base game's icon on HOME.
+    if(R_SUCCEEDED(s.Check()) && R_SUCCEEDED(ns::Initialize())){
+        ON_SCOPE_EXIT(ns::Exit());
+        auto data=std::make_unique<NsApplicationControlData>();
+        u64 size{};
+        if(R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_CacheOnly,app,data.get(),sizeof(*data),&size)) &&
+            size>sizeof(NacpStruct) && size<=sizeof(*data)){
+            art.icon=ImageNormalizeIcon({data->icon,size_t(size-sizeof(NacpStruct))});
+            if(art.name.empty() && data->nacp.titles_data_format==0){
+                NacpLanguageEntry* language{};
+                if(R_SUCCEEDED(nacpGetLanguageEntry(&data->nacp,&language)) && language){
+                    const auto len=strnlen(language->name,sizeof(language->name));
+                    if(len<sizeof(language->name)){
+                        auto label=SafeName(std::string(language->name,len));
+                        if(core::Utf8(label))art.name=std::move(label);
+                    }
+                }
+            }
+        }
+    }
+    return R_SUCCEEDED(s.Check())?art:UsbImportArtwork{};
+}
+
+void ShowUsbImportGame(ui::ProgressBox* progress,u64 generation,const UsbImportFamily& rows){
+    if(!progress || rows.empty())return;
+    auto art=ReadUsbImportArtwork(generation,rows);
+    progress->SetItem(art.name.empty()?rows.front()->name:art.name);
+    if(art.icon.empty())progress->SetImage(App::GetDefaultImage());
+    else progress->SetImageData(art.icon);
 }
 
 std::string CanonicalUsbContentPath(const NcmContentId& id){
@@ -689,7 +763,15 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
             scan.titles.push_back(std::move(row));continue;
         }
         row.name=names?SafeName(title::GetCachedTitleName(row.record.application_id)):std::string{};if(row.name.empty())row.name=TitleId(row.record.application_id);
-        if(!ownership_only){s.stage="checking content, permissions and registrations"_nx;R_TRY(Classify(s,row));}
+        if(!ownership_only){
+            s.stage="checking content, permissions and registrations"_nx;
+            const auto rc=Classify(s,row);
+            if(R_FAILED(rc)){
+                const auto title=std::string("Title ID: "_nx)+TitleId(row.record.key.id);
+                scan.detail=nexus::usbimport::FailureDetail(s.stage,rc,title);
+                return rc;
+            }
+        }
         references+=row.record.content.size();stored_meta+=row.record.installed_meta.size();
         if(references>MaxReferences||stored_meta>MaxStoredMeta){scan.detail="This drive's metadata exceeds the safe scan limit. No registrations were changed."_nx;return nexus::Invalid;}
         scan.titles.push_back(std::move(row));if(progress)progress->UpdateTransfer(i+1,metas.size());
@@ -705,7 +787,7 @@ Result ScanUsbImports(ui::ProgressBox* progress,UsbImportScan& scan,u64 expected
         }
     }
     s.stage="reconciling all registered game-family members"_nx;R_TRY(ReconcileFamilyMembers(s));R_TRY(CheckBaseGames(s));if(names){if(progress)progress->NewTransfer("Reading game names"_nx);R_TRY(ReadTitleNames(s));}R_TRY(s.CheckTicketsUnchanged());R_TRY(s.Check());scan.complete=true;
-    scan.detail="The scan read USB content directly. No game files, tickets, HOME records or SD routing indexes were changed. Import checks content hashes before registration. Optional delta fragments are not installed game content."_nx;
+    scan.detail="The scan read USB content directly. No game files, tickets, HOME records or SD routing indexes were changed. Optional delta fragments are not installed game content."_nx;
     return 0;
     };
     const auto result=operation();

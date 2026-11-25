@@ -8,9 +8,10 @@ Row MakeRow(const char* name,const char* reason,UsbImportStatus status,std::uint
     Row row;row.name=name;row.reason=reason;row.status=status;row.record={{id,version,type},family};row.meta_path="usb:/registered/example.cnmt.nca";return row;
 }
 void Reset(){
+    pc_applied=0;
     App::option.reset();App::sidebar.reset();App::progress.reset();App::menu.reset();App::applet=App::exited=false;
     App::option_pushes=App::progress_pushes=0;
-    injected_plan.reset();startup_result={};startup_starts=startup_takes=startup_stops=0;startup_available=false;nexus::lifecycle::poll_allowed=true;
+    injected_plan.reset();startup_starts=startup_takes=startup_stops=0;startup_available=false;nexus::lifecycle::poll_allowed=true;
     pending_flag=false;pending_rc=scan_rc=import_rc=restore_rc=plan_rc=prepare_rc=0;
     pending_checks=scans=imports=restores=mutations=plans=prepares=0;
     prepared_scan={};prepared_scan.complete=true;prepared_scan.detail="Scan complete";
@@ -18,8 +19,8 @@ void Reset(){
         MakeRow("Existing game","Registered here",UsbImportStatus::AlreadyRegistered,0x0100000000002000ULL,0,NcmContentMetaType_Application,0x0100000000002000ULL),
         MakeRow("Incomplete update","One file is missing",UsbImportStatus::Incomplete,0x0100000000001800ULL,42,NcmContentMetaType_Patch,0x0100000000001000ULL),
         MakeRow("DLC","Reinstall from original backup",UsbImportStatus::TicketMissing,0x0100000000001001ULL,1,NcmContentMetaType_AddOnContent,0x0100000000001000ULL)};
-    import_result={{"Ready game imported\nVerification and registration complete","Other records skipped\nThe files are unchanged"},1,3,true,false,false,"Import complete","SD:/report.txt"};
-    restore_result={{"Registration restored"},0,0,true,false,true,"Backup restored","SD:/restore.txt"};
+    import_result={{"Ready game imported\nVerification and registration complete","Other records skipped\nThe files are unchanged"},{100,0},1,3,true,false,false,"Import complete","SD:/report.txt"};
+    restore_result={{"Registration restored"},{},0,0,true,false,true,"Backup restored","SD:/restore.txt"};
     prepare_plan={{{"Ready game - Base game","A supported licence is available","ID 0100000000001000 version 0",UsbTicketPrepareStatus::Ready},
         {"Existing game - Base game","Existing licence copy is valid","ID 0100000000002000 version 0",UsbTicketPrepareStatus::AlreadyPrepared},
         {"DLC - DLC","The original backup is required","ID 0100000000001001 version 1",UsbTicketPrepareStatus::NeedsBackup}},1,true,"Setup checked"};
@@ -41,13 +42,17 @@ void CancelOnce(std::optional<s64> choice){
     App::Press(choice);repeated(1);assert(!owner->ShouldPop()&&owner->HasFocus()&&!App::progress&&App::progress_pushes==workers&&!mutations);
 }
 namespace librarycheck {
-enum class Button{A,B,X,Y,R,SELECT,START};
+enum class Button{A,B,X,Y,L,R,R2,SELECT,START};
 struct Action{std::string label;std::function<void()> callback;Action()=default;Action(std::function<void()> cb):callback(std::move(cb)){}Action(std::string text,std::function<void()> cb):label(std::move(text)),callback(std::move(cb)){};};
 static unsigned entries{},managed{},moved{},refreshed{},helped{},exited{};
-namespace nexusapp{void DisplayUsbImport(){++entries;}}
+namespace nexusapp{unsigned pc_entries{};void DisplayPcUsbImport(){++pc_entries;}}
 struct App{static void Exit(){++exited;}};
 struct Menu{
-    size_t selected{};std::vector<int> games;std::map<Button,Action> actions;
+    struct Game{int id;};size_t selected{};std::vector<Game> games;std::set<int> selected_games;bool actions_dirty{};std::map<Button,Action> actions;
+    void ToggleGame(){if(selected<games.size())selected_games.insert(games[selected].id);}
+    struct {bool installed{};} salty_library;
+    void ShowSaltyDetails(){}
+    void DeleteSelectedGames(){selected_games.clear();}
     void SetAction(Button b,Action a){actions[b]=std::move(a);}
     const char* PrimaryLabel(int){return "Move game";}
     void GameActions(bool move=false){if(move)++moved;else ++managed;}
@@ -64,19 +69,19 @@ void TouchEntry(Touch* touch){// LIBRARY_IMPORT_TOUCH
 struct DrawRecord{Rect rect;std::string text;};static std::vector<DrawRecord> draws;
 constexpr int NVG_ALIGN_LEFT=1,NVG_ALIGN_TOP=2;
 void Text(int,float,float,float,int,int,const char*){}
-namespace gfx{const char* getButton(Button button){assert(button==Button::R);return "[Switch R]";}}
+namespace gfx{const char* getButton(Button button){return button==Button::L?"[Switch L]":"[Switch R]";}}
 namespace nexusdialog{void Button(int,Rect rect,const char* text,bool){draws.push_back({rect,text});}}
 void DrawHeader(){const int vg{},fg{};// LIBRARY_IMPORT_DRAW
 }
 void Verify(){
-    for(bool empty:{false,true}){Menu menu;if(!empty)menu.games.push_back(1);menu.Setup();
-        assert(menu.actions.size()==5&&!menu.actions.contains(Button::X)); // B is shared by all pages; Move was removed.
-        menu.actions.at(Button::R).callback();
+    for(bool empty:{false,true}){Menu menu;if(!empty)menu.games.push_back({1});menu.Setup();
+        assert(menu.actions.size()==7&&menu.actions.at(Button::X).label=="Select");
+        menu.actions.at(Button::L).callback();menu.actions.at(Button::R).callback();
         menu.actions.at(Button::A).callback();menu.actions.at(Button::Y).callback();menu.actions.at(Button::SELECT).callback();menu.actions.at(Button::START).callback();}
     assert(entries==2&&managed==2&&!moved&&refreshed==2&&helped==2&&exited==2);
-    draws.clear();DrawHeader();assert(draws.size()==1);const auto r=draws[0].rect;
+    draws.clear();DrawHeader();assert(draws.size()==2&&nexusapp::pc_entries==2&&draws[0].text=="[Switch L]  Import from PC");const auto r=draws[1].rect;
     assert(r.x==850&&r.y==110&&r.w==376&&r.h==46&&r.x+r.w<=1226&&r.y+r.h<174);
-    assert(draws[0].text=="[Switch R]  Repair USB games");
+    assert(draws[1].text=="[Switch R]  Repair USB games");
     Touch inside{r.x+r.w/2,r.y+r.h/2};TouchEntry(&inside);assert(entries==3);
     for(const Touch outside:std::vector<Touch>{{r.x-1,r.y},{r.x,r.y-1},{r.x+r.w,r.y},{r.x,r.y+r.h}}){auto touch=outside;TouchEntry(&touch);}assert(entries==3);
 }
@@ -119,7 +124,7 @@ int main(){
     for(auto latest:{UsbImportStatus::Incomplete,UsbImportStatus::TicketMissing,UsbImportStatus::AlreadyRegistered}){Case();Reset();auto row=prepared_scan.titles.front();row.record.key.version=1;prepared_scan.titles={row};row.record.key.version=2;row.status=latest;prepared_scan.titles.push_back(row);Scan();
         assert(!App::Has("Repair ready games")&&App::Has("Prepare USB"));assert(Contains(App::Draw(),"0 items to verify"));Details("No complete game family is ready to repair");App::Key(UiButton::DOWN);App::Key(UiButton::DOWN);Details("A newer version or a native registration can take priority");}
     for(bool content:{false,true}){Case();Reset();prepared_scan.titles.clear();prepared_scan.nca_files=content?3:0;prepared_scan.unreadable_ncas=content?1:0;Scan();assert(!App::Has("Repair ready games"));App::Key(UiButton::A);
-        assert(Contains(App::option->message,content?"not necessarily empty":"No installed USB games"));assert(Contains(App::option->message,"NSP, NSZ, XCI or XCZ")&&Contains(App::option->message,prepared_scan.detail));App::Press({});}
+        assert(Contains(App::option->message,content?"not necessarily empty":"No installed USB games"));assert(Contains(App::option->message,"Tickets + link existing files")&&Contains(App::option->message,prepared_scan.detail));App::Press({});}
     // A controller action can push a modal before the touch branch in the same frame.
     Case();Reset();Scan();auto dialogs=App::option_pushes;App::Frame({UiButton::X,UiButton::Y,UiButton::A},{true,1000,150});assert(App::option_pushes==dialogs+1&&App::option->right=="Repair games");
     App::Frame({UiButton::X,UiButton::Y,UiButton::A},{true,1000,150});assert(App::option_pushes==dialogs+1&&!mutations);App::Press(0);assert(!App::menu->ShouldPop()&&App::menu->HasFocus());
@@ -163,6 +168,36 @@ int main(){
     App::Key(UiButton::DOWN);App::Key(UiButton::DOWN);Details("already healthy");Details("Included in family repair");App::Select("Repair ready games");assert(Contains(App::option->message,"Repair 1 game?")&&Contains(App::option->message,"Native registrations are kept"));App::Press(0);assert(!mutations);
     Case();Reset();prepared_scan.titles={base,healthy};injected_plan=UsbLibraryPlan{{1,0,1,1,0},{false,false},{"Latest DLC permissions are missing","Latest DLC permissions are missing"}};Scan();assert(!App::Has("Repair ready games")&&Contains(App::Draw(),"0 items to verify"));App::Key(UiButton::DOWN);Details("Latest DLC permissions are missing");Details("whole game family must pass");assert(!mutations);
     Case();Reset();injected_plan=UsbLibraryPlan{{1,1,0,0,1},{},{}};Scan();assert(!App::Has("Repair ready games")&&Contains(App::Draw(),"0 items to verify")&&!mutations);
+    Case();Reset();nexus::hats::compatible=false;DisplayPcUsbImport();assert(App::option&&!App::progress&&Contains(App::option->message,"NX1"));nexus::hats::compatible=true;
+    Case();Reset();nexus::pc_firmware_rc=Fault;DisplayPcUsbImport();App::Run();assert(App::option&&!scans&&!pc_applied);nexus::pc_firmware_rc=0;
+    Case();Reset();DisplayPcUsbImport();App::Run();App::Run();assert(App::Has("Add games to HOME")&&!mutations);sphaira::ui::requested_icons.clear();App::Draw();assert(!sphaira::ui::requested_icons.empty());App::Select("Add games to HOME");assert(App::option->left=="Full check"&&App::option->selected==1);App::Press(0);App::Run();assert(imports==1&&!quick_import);
+    Case();Reset();DisplayPcUsbImport();App::Run();App::Run();App::Select("Add games to HOME");auto duplicate=App::option->callback;App::Press(1);duplicate(1);App::Run();assert(imports==1&&mutations==1&&quick_import&&App::menu);
+    Case();Reset();pc_removals={{0x0100000000001000ULL}};DisplayPcUsbImport();App::Run();assert(App::option->right=="Update HOME");App::Press(0);assert(!pc_applied);
+    Case();Reset();DisplayPcUsbImport();App::Run();App::Press(1);App::Run();assert(pc_applied==1&&App::option);pc_removals.clear();
+    Case();Reset();pc_removals={{11,"one.swap"},{22,"two.swap"},{11,"delete.del"}};
+    DisplayPcUsbImport(11);App::Run();App::Press(1);App::Run();assert(pc_applied==1&&App::option);
+    App::Press(0);assert(!App::progress);pc_removals.clear();
+    {
+        using namespace sphaira::ui;
+        auto scan=std::make_shared<UsbImportScan>();
+        for(auto id:{100,100,200,300})scan->titles.push_back(MakeRow("Title","",UsbImportStatus::Ready,id,1,NcmContentMetaType_Application,id));
+        requested_icons.clear();const auto before=allocated_icons,freed=released_icons;NVGcontext vg;
+        {
+            UsbImportIcons icons(scan);
+            assert(icons.Get(&vg,100)==1);
+            assert(icons.Get(&vg,200)==1);
+            const int first=icons.Get(&vg,100),second=icons.Get(&vg,200);
+            assert(first>1 && second>1 && first!=second);
+            icons.Get(&vg,300);assert(icons.Get(&vg,300)==1);
+            assert(icons.Get(&vg,100)==first && icons.Name(100,"Fallback")=="Title");
+            assert((requested_icons==std::vector<u64>{100,200,300}));
+        }
+        assert(allocated_icons-before==2 && released_icons-freed==2);
+    }
     librarycheck::Verify();networkcheck::Verify();startupcheck::Verify();
+    Case();Reset();auto was_applied=pc_applied;
+    pending_startup_removals=std::make_shared<std::vector<PcRemoval>>(2);
+    assert(DispatchPcRemovals()&&App::progress&&!App::option);App::Run();
+    assert(pc_applied==was_applied+2&&resumed_additions==1&&!DispatchPcRemovals());
     std::cout<<"Guided USB import actual production UI: "<<cases<<" flow cases passed; scan/preview/confirm/result, direct report details, cancellation/recovery, duplicate-input guards, preparation, installed-library entry and network save/session regression passed\n";
 }

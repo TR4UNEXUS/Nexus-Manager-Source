@@ -1,3 +1,4 @@
+#include "nexus/localize.hpp"
 #include "nexus/usb_import_core.hpp"
 #include <cassert>
 #include <iostream>

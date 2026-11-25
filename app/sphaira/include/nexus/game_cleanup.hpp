@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include <atomic>
+#include <set>
 #include "nexus/manager.hpp"
 #include <memory>
 namespace sphaira::nexusapp {
@@ -60,4 +62,7 @@ Result ScanUnusedTickets(ui::ProgressBox*,CleanupScan&);
 Result ScanGameLocations(ui::ProgressBox*,std::vector<Game>&);
 Result PreviewGameRemoval(ui::ProgressBox*,const CleanupItem&,GameRemovalPlan&);
 Result ApplyGameRemoval(ui::ProgressBox*,const GameRemovalPlan&,GameRemovalReport&);
+struct PcRemoval {std::string filename;u64 generation{},game{};std::array<u8,32> digest{};};
+Result ListPcRemovals(ui::ProgressBox*,std::vector<PcRemoval>&,const std::atomic_bool* cancel=nullptr,std::set<std::array<u8,16>>* verified_absences=nullptr);
+Result FinishPcRemoval(ui::ProgressBox*,const PcRemoval&,bool& changed);
 }

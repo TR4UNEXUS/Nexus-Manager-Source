@@ -91,7 +91,7 @@ Result ncmContentStorageReadContentIdFile(NcmContentStorage* storage,void* out,s
 namespace es{bool IsRightsIdValid(const FsRightsId& id){return id!=FsRightsId{};}bool IsRightsIdFound(const FsRightsId& id,const std::vector<FsRightsId>& tickets){return std::find(tickets.begin(),tickets.end(),id)!=tickets.end();}}
 namespace title{std::string GetCachedTitleName(u64){++world.cache_reads;return "Cached name";}}
 struct UsbTicketPair{};
-Result LoadUsbTicketPair(u64,const FsRightsId& id,UsbTicketPair&){++world.archive_reads;return world.archives.contains(id)?world.archives.at(id):MissingUsbTicket;}
+Result LoadUsbImportTicketPair(u64,const FsRightsId& id,UsbTicketPair&){++world.archive_reads;return world.archives.contains(id)?world.archives.at(id):MissingUsbTicket;}
 struct Session{
     ui::ProgressBox* progress;UsbImportScan& scan;const std::atomic_bool* cancel;const char* stage{"opening the read-only USB library scan"};
     NcmContentStorage native{NcmStorageId_SdCard};NcmContentMetaDatabase db{NcmStorageId_SdCard};int keys{};
@@ -185,15 +185,35 @@ int Main(){
     {Reset();auto healthy=Row();Registered(healthy);Routes(healthy);RetailUsb(healthy);
         for(unsigned attempt=0;attempt<2;++attempt){UsbImportScan check;
             REQUIRE(ScanUsbImports(nullptr,check,7,nullptr,false)==0&&check.complete);
-            REQUIRE(!SummarizeUsbLibrary(check).affected_games&&!SummarizeUsbLibrary(check).repairable_games);}}
+            REQUIRE(!SummarizeUsbLibrary(check).affected_games&&!SummarizeUsbLibrary(check).repairable_games);
+            for(const auto& item:check.titles)REQUIRE(!item.needs_home_import);}}
     {Reset();auto healthy=Row();Registered(healthy);Routes(healthy);RetailUsb(healthy);world.ticket_recheck_result=Fault;UsbImportScan check;
         REQUIRE(ScanUsbImports(nullptr,check,7,nullptr,false)==Fault&&!check.complete&&check.titles.empty());}
+    for (Result ticket_result : {Result{0}, MissingUsbTicket, Fault}) {
+        Reset();
+        auto game=Row();
+        RetailUsb(game);
+        const auto rights=IdOf(77);
+        world.usb_headers[game.record.content.back().info.content_id].rights_id=rights;
+        world.archives[rights]=ticket_result;
+        const auto before=StateSnapshot();
+        UsbImportScan scan;
+        const auto rc=ScanUsbImports(nullptr,scan,7,nullptr,false);
+        REQUIRE(StateSnapshot()==before);
+        if(ticket_result==Fault){
+            REQUIRE(rc==Fault&&!scan.complete&&scan.titles.empty());
+            REQUIRE(scan.detail.find("original ticket")!=std::string::npos && scan.detail.find(TitleId(game.record.key.id))!=std::string::npos);
+        } else {
+            REQUIRE(rc==0&&scan.complete&&scan.titles.size()==1);
+            REQUIRE(scan.titles.front().status==(ticket_result==0?UsbImportStatus::Ready:UsbImportStatus::TicketMissing));
+        }
+    }
 
     Reset();auto row=Row();Registered(row);Routes(row);DisabledBadges();REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::AlreadyRegistered&&row.registration==UsbImportRegistration::Usb);
-    for(unsigned missing=0;missing<3;++missing){Reset();row=Row();Registered(row);Routes(row);DisabledBadges();if(missing==0)world.routes.titles.clear();if(missing==1)world.routes.mappings.clear();if(missing==2)world.routes.content.erase(row.record.content.back().info.content_id);const auto before=world.routes;REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::Ready);REQUIRE(world.routes==before);}
+    for(unsigned missing=0;missing<3;++missing){Reset();row=Row();Registered(row);Routes(row);DisabledBadges();if(missing==0)world.routes.titles.clear();if(missing==1)world.routes.mappings.clear();if(missing==2)world.routes.content.erase(row.record.content.back().info.content_id);const auto before=world.routes;REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::Ready);REQUIRE(world.routes==before);REQUIRE(!row.needs_home_import);}
     Reset();row=Row();Registered(row);Routes(row);world.routes.mappings.at(AppId)[0]=IdOf(99);REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::Incomplete);
-    Reset();row=Row();Registered(row);Routes(row);DisabledBadges();world.home.clear();REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::Ready);
-    for(Result archive:{Result{0},MissingUsbTicket,InvalidUsbTicket,Fault}){Reset();row=Row();Registered(row);Routes(row);DisabledBadges();world.usb_headers[row.record.content.back().info.content_id].rights_id=IdOf(77);world.archives[IdOf(77)]=archive;const auto rc=ClassifyRow(row);REQUIRE(row.missing_tickets);REQUIRE(archive==Fault?rc==Fault:rc==0);if(!archive)REQUIRE(row.status==UsbImportStatus::Ready&&row.archived_tickets.size()==1);else if(archive!=Fault)REQUIRE(row.status==UsbImportStatus::TicketMissing);}
+    Reset();row=Row();Registered(row);Routes(row);DisabledBadges();world.home.clear();REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::Ready&&row.needs_home_import);
+    for(Result archive:{Result{0},MissingUsbTicket,InvalidUsbTicket,Fault}){Reset();row=Row();Registered(row);Routes(row);DisabledBadges();world.usb_headers[row.record.content.back().info.content_id].rights_id=IdOf(77);world.archives[IdOf(77)]=archive;const auto rc=ClassifyRow(row);REQUIRE(row.missing_tickets);REQUIRE(archive==Fault?rc==Fault:rc==0);if(!archive)REQUIRE(row.status==UsbImportStatus::Ready&&row.archived_tickets.size()==1&&row.needs_home_import);else if(archive!=Fault)REQUIRE(row.status==UsbImportStatus::TicketMissing&&!row.needs_home_import);}
     Reset();row=Row();Registered(row);Routes(row);DisabledBadges();world.usb_headers[row.record.content.back().info.content_id].rights_id=IdOf(77);world.tickets.push_back(IdOf(77));REQUIRE(ClassifyRow(row)==0&&row.status==UsbImportStatus::AlreadyRegistered&&!row.missing_tickets&&world.archive_reads==0);
     // Shared control files cannot turn a complete USB installation into native.
     Reset();row=Row();Registered(row);Routes(row);DisabledBadges();world.physical[{5,row.record.content[1].info.content_id}]=4096;REQUIRE(ClassifyRow(row)==0&&row.registration==UsbImportRegistration::Usb);

@@ -43,5 +43,30 @@ int main(){
     write_error=4567;auto third=second;third.c[3]=3;memcpy(ticket.data(),&third,sizeof(third));
     assert(SaveUsbTicketPair(42,third,ticket,cert)==4567);write_error=0;
     assert(LoadUsbTicketPair(42,third,out)==MissingUsbTicket);
-    std::cout<<"USB ticket archive fault tests passed\n";
+    files.erase(path);
+    Header h;h.magic=0x3150434e;h.rights=rights;
+    std::memcpy(ticket.data(),&rights,sizeof(rights));
+    h.ticket_size=ticket.size();h.certificate_size=cert.size();Checksum(h,ticket,cert);
+    std::vector<u8> pc(sizeof(h));std::memcpy(pc.data(),&h,sizeof(h));
+    pc.insert(pc.end(),ticket.begin(),ticket.end());pc.insert(pc.end(),cert.begin(),cert.end());
+    const auto handoff="/nexus/pc-import/v1/tickets/"+Hex(&rights,sizeof(rights))+".bin";
+    // A connected drive's session belongs to its client. A fresh lookup must
+    // open its own session even if the same-console archive lookup just succeeded.
+    nexus::Client unopened;nexus::Info info{};
+    assert(unopened.Stat(42,handoff,info)==0x1759);
+    const auto publication_writes=writes;
+    const auto no_pair=LoadUsbImportTicketPair(42,rights,out);
+    if(no_pair!=MissingUsbTicket)std::cerr<<"Missing PC ticket lookup returned "<<std::hex<<no_pair<<"\n";
+    assert(no_pair==MissingUsbTicket&&out.ticket.empty()&&writes==publication_writes);
+    files[handoff]=pc;
+    assert(LoadUsbTicketPair(42,rights,out)==MissingUsbTicket);
+    assert(LoadUsbImportTicketPair(42,rights,out)==0 && out.ticket==ticket && out.certificate==cert);
+    assert(ImportUsbTicketPair(42,rights)==0);
+    assert(LoadUsbImportTicketPair(43,rights,out)==77 && out.ticket.empty());
+    nexus::hats::supported=false;assert(LoadUsbImportTicketPair(42,rights,out)==InvalidUsbTicket);nexus::hats::supported=true;
+    import_error=123;assert(ImportUsbTicketPair(42,rights)==123);import_error=0;
+    files[handoff].back()^=1;assert(LoadUsbImportTicketPair(42,rights,out)==InvalidUsbTicket && out.ticket.empty());
+    files[path]=saved;assert(LoadUsbImportTicketPair(42,rights,out)==0);
+    files[handoff]=pc;files[path].back()^=1;assert(LoadUsbImportTicketPair(42,rights,out)==InvalidUsbTicket);
+    std::cout<<"USB ticket archive and PC handoff fault tests passed\n";
 }

@@ -14,6 +14,7 @@ struct UsbImportTitle {
     std::vector<FsRightsId> required_tickets,archived_tickets;
     UsbImportRegistration registration{UsbImportRegistration::Unknown};
     bool missing_tickets{};
+    bool needs_home_import{}; // Verified USB item lacks a current-system record or has an available original ticket.
 };
 struct UsbImportScan {
     u64 generation{};
@@ -26,6 +27,13 @@ struct UsbImportScan {
     bool complete{};
     std::string detail;
 };
+struct UsbImportArtwork {
+    std::string name;
+    std::vector<u8> icon;
+};
+using UsbImportFamily=std::vector<const UsbImportTitle*>;
+UsbImportArtwork ReadUsbImportArtwork(u64 generation,const UsbImportFamily&,const std::atomic_bool* cancel=nullptr);
+void ShowUsbImportGame(ui::ProgressBox*,u64 generation,const UsbImportFamily&);
 struct UsbLibrarySummary {
     size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{},selected_items{};
 };
@@ -43,6 +51,7 @@ UsbLibrarySummary SummarizeUsbLibrary(const UsbImportScan&);
 // title-name cache is accessed. The caller must stop/join before mutations.
 Result ScanUsbImports(ui::ProgressBox*,UsbImportScan&,u64 expected_generation=0,
     const std::atomic_bool* cancel=nullptr,bool names=true,bool ownership_only=false);
+bool HeaderType(u8 content_type,u8 header_type);
 std::string CanonicalUsbContentPath(const NcmContentId&);
 const char* UsbImportStatusText(UsbImportStatus);
 std::string UsbImportPreview(const UsbImportScan&);

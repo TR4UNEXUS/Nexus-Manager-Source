@@ -40,6 +40,7 @@ namespace sphaira::ui {struct ProgressBox {bool cancel{};bool ShouldExit(){retur
     void NewTransfer(const std::string&){}void SetTitle(const std::string&){}void SetProgressNote(const std::string&){}void SetOverallTransfer(u64,u64,const std::string&,bool){}
 };struct ProgressScope {ProgressScope(ProgressBox*,unsigned,unsigned){}};}
 namespace sphaira::fs {struct FsNativeSd{Result CreateDirectoryRecursively(const char*){return 0;}};}
+#include "nexus/pc_removal.hpp"
 namespace nexus::diagnostics {struct Operation{explicit Operation(const char*){}};}
 namespace nexus::reports {inline void QueueFailure(const char*,Result){}}
 namespace nexus {
@@ -47,7 +48,8 @@ constexpr Result Invalid=::Invalid,Unavailable=102;
 int LogicalStorage(Target t){return t==Target::Internal?4:5;}
 void Log(const char*,Result,u64=0){}
 Result CheckUsbMutationAllowed();
-struct Client {Result DeleteRegistered(u64,const std::string&,u64);};
+struct Info{bool directory{};u64 size{};};
+struct Client {Result Stat(u64,const std::string&,Info&);Result DeleteRegistered(u64,const std::string&,u64);};
 }
 namespace sphaira::nexusapp {
 namespace core=nexus::cleanup;using Id=core::Id;using Digest=std::array<u8,32>;using nexus::Target;
@@ -65,10 +67,12 @@ struct Sha256Context{std::vector<u8> bytes;};
 void sha256ContextCreate(Sha256Context* c){c->bytes.clear();}
 void sha256ContextUpdate(Sha256Context* c,const void* p,size_t n){const auto* b=static_cast<const u8*>(p);c->bytes.insert(c->bytes.end(),b,b+n);}
 void sha256ContextGetHash(Sha256Context* c,void* out){SHA256(c->bytes.data(),c->bytes.size(),static_cast<u8*>(out));}
+enum class UsbImportStatus{Ready,AlreadyRegistered,Incomplete};
+enum class UsbImportRegistration{Unknown,Usb};
 struct UsbImportScan {
-    struct Ref {struct {NcmContentId content_id;} info;};
-    struct Row {struct {u64 application_id{};std::vector<Ref> content;} record;std::string name;};
-    std::vector<NcmContentId> unresolved_ownership;std::vector<Row> titles;
+    struct Ref {struct {NcmContentId content_id;u64 size{};} info;};
+    struct Row {struct {u64 application_id{};std::vector<Ref> content;NcmContentMetaKey key{};} record;std::string name;UsbImportStatus status{};UsbImportRegistration registration{};};
+    std::vector<NcmContentId> unresolved_ownership;std::vector<Row> titles;bool complete{true};u64 generation{};
 };
 // STATE_PRODUCTION
 static Inventory live;
@@ -93,9 +97,10 @@ Result RemovedFileAbsent(Session&,const File& f){R_TRY(absence_error);return liv
 Result FileMatches(Session& s,const File& f){R_TRY(s.Check());R_TRY(preflight_error);const auto it=live.files.find(Identity(f.id));R_UNLESS(it!=live.files.end()&&it->second.size==f.size,Invalid);return 0;}
 Result KeepSharedRecord(ui::ProgressBox*,Target,const Record& r,bool& result){result=keep.contains(r.key.id);return 0;}
 Result UsbRoutingReferences(const std::set<Id>&,bool& found){found=false;return 0;}
+static std::set<Id> pc_routes;
 Result RemoveDeletedUsbRouting(ui::ProgressBox*,u64 generation,const std::vector<NcmContentId>& ids,const std::vector<u64>& apps){
     assert(live.target==Target::Usb&&generation==live.generation);++route_calls;
-    for(const auto& id:ids)assert(!live.files.contains(Identity(id)));for(auto id:apps)assert(id==app);return route_error;}
+    for(const auto& id:ids)assert(!live.files.contains(Identity(id)));for(auto id:apps)assert(id==app);if(!route_error)for(const auto& cid:ids)pc_routes.erase(Identity(cid));return route_error;}
 Result RemovePlaceholder(const Placeholder& p){assert(live.target==p.target&&live.generation==p.generation);auto i=live.placeholders.find(Identity(p.id));R_UNLESS(i!=live.placeholders.end()&&i->second==u64(p.size),Invalid);live.placeholders.erase(i);++deletes;return 0;}
 Result Delete(const NcmContentId& id){++deletes;if(fail_delete&&deletes==fail_delete)return Fault;assert(live.files.erase(Identity(id)));++live.stamp[0];return 0;}
 FILE* OpenLog(const char* path,const char* mode){assert((std::string(path)=="sdmc:/switch/nexusmanager/cleanup-last.log"||std::string(path)=="sdmc:/switch/nexusmanager/cleanup-all-last.log")&&std::string(mode)=="wb");return tmpfile();}
@@ -121,14 +126,103 @@ Result PushApplicationRecord(u64 id,const ncm::ContentStorageRecord* rows,size_t
 Result InvalidateApplicationControlCache(u64){return 0;}
 }
 Result nexus::CheckUsbMutationAllowed(){return sphaira::nexusapp::gate_error;}
+Result nexus::Client::Stat(u64 g,const std::string& path,nexus::Info& info){using namespace sphaira::nexusapp;
+    if(g!=live.generation)return Invalid;
+    for(const auto& [id,f]:live.files)if(f.path==path){info={false,f.size};return 0;}
+    return MAKERESULT(140,205);
+}
 Result nexus::Client::DeleteRegistered(u64 generation,const std::string& path,u64 size){using namespace sphaira::nexusapp;assert(live.target==Target::Usb&&generation==live.generation);
     for(const auto& [id,f]:live.files)if(f.path==path){assert(f.size==size);return Delete(f.id);}return Invalid;}
 namespace sphaira::nexusapp {
 #define fopen OpenLog
+struct PcRemoval{std::string filename;u64 generation,game;Digest digest;};
+static nexus::pc::Receipt pc_receipt;
+static UsbImportScan pc_scan;static nexus::pc::Receipt pc_fresh;
+constexpr auto MissingUsb=MAKERESULT(140,205);
+std::string CanonicalUsbContentPath(const NcmContentId& id){return "/registered/"+std::to_string(id.c[0]);}
+void ncmContentInfoSizeToU64(const decltype(UsbImportScan::Ref::info)* info,u64* size){*size=info->size;}
+Result Database(Session&,Inventory& out){out=live;return 0;}
+static Result publish_error{};
+static bool skip_publish{};
+Result ScanUsbImports(ui::ProgressBox*,UsbImportScan& scan,u64 generation,void*,bool,bool ownership){
+    scan=pc_scan;scan.generation=generation;
+    if(!ownership)for(auto& row:scan.titles){
+        std::set<Id> ids;for(const auto& c:row.record.content)ids.insert(Identity(c.info.content_id));
+        if(std::any_of(live.records.begin(),live.records.end(),[&](const auto& r){return r.ids==ids;})&&
+           std::any_of(home.begin(),home.end(),[&](const auto& h){return nexus::SameMetaKey(h.key,row.record.key);})&&
+           std::all_of(ids.begin(),ids.end(),[&](auto id){return pc_routes.contains(id);})){
+            row.status=UsbImportStatus::AlreadyRegistered;row.registration=UsbImportRegistration::Usb;
+        }
+    }
+    return 0;
+}
+struct UsbImportResult{size_t imported{},skipped{};bool pending{},rolled_back{};};
+struct MockPlan{struct {size_t repairable_games,selected_items;}summary;};
+MockPlan PlanUsbLibrary(const UsbImportScan& scan){return {{1,scan.titles.size()}};}
+Result ImportUsbLibrary(ui::ProgressBox*,const UsbImportScan& scan,UsbImportResult& out,bool quick){
+    assert(quick&&scan.generation==live.generation);
+    R_TRY(publish_error);
+    if(skip_publish){out.skipped=scan.titles.size();return 0;}
+    for(const auto& row:scan.titles){
+        assert(row.record.application_id==app);
+        Record fresh;fresh.application=app;fresh.key=row.record.key;
+        for(const auto& c:row.record.content){auto id=Identity(c.info.content_id);fresh.ids.insert(id);pc_routes.insert(id);}
+        live.records.push_back(fresh);
+        home.push_back({fresh.key,u8(nexus::LogicalStorage(Target::Usb))});
+        ++out.imported;
+    }
+    return 0;
+}
+Result RemovePcTickets(ui::ProgressBox*,nexus::Client&,const PcRemoval&,const std::set<u64>&,const Digest&){return 0;}
+Result ReadPcReceipt(nexus::Client&,const PcRemoval&,nexus::pc::Receipt& r,Digest& digest,nexus::pc::Receipt* fresh=nullptr){if(fresh)*fresh=pc_fresh;r=pc_receipt;digest={};return 0;}
+Result ReadUsbRoutingContent(std::set<Id>& out){out=pc_routes;return 0;}
 // FUNCTIONS_PRODUCTION
 #undef fopen
 }
 int main(){using namespace sphaira::nexusapp;sphaira::ui::ProgressBox p;
+    const auto prepare_pc=[&]{
+        Reset(Target::Usb);pc_fresh={};pc_receipt={};pc_receipt.game=app;pc_routes.clear();
+        for(size_t n=0;n<live.records.size();++n){
+            const auto& r=live.records[n];auto meta=I(n+1);live.files.erase(meta);pc_routes.insert(meta);
+            pc_receipt.members.push_back({r.key.id,r.key.version,r.key.type,meta,r.ids});
+        }
+        return PcRemoval{"synthetic.del",live.generation,app,{}};
+    };
+    bool changed{};auto request=prepare_pc();
+    assert(!FinishPcRemoval(&p,request,changed)&&changed&&!deletes&&db_removes==3&&home.empty()&&live.files.contains(I(4)));
+    assert(!FinishPcRemoval(&p,request,changed)&&!changed&&!deletes&&db_removes==3);
+    request=prepare_pc();for(const auto& r:live.records)keep.insert(r.key.id);
+    assert(!FinishPcRemoval(&p,request,changed)&&changed&&!deletes&&!db_removes&&!home_changes&&route_calls==1);
+    request=prepare_pc();++live.records.front().key.version;
+    assert(!FinishPcRemoval(&p,request,changed)&&!changed&&!deletes&&!db_removes&&!route_calls);
+    request=prepare_pc();live.files.emplace(I(1),File{Content(I(1)),100,"restored"});
+    assert(!FinishPcRemoval(&p,request,changed)&&!changed&&!deletes&&!db_removes&&!route_calls);
+    request=prepare_pc();++request.digest[0];
+    assert(FinishPcRemoval(&p,request,changed)==Invalid&&!changed&&!deletes&&!db_removes&&!route_calls);
+    request=prepare_pc();++request.generation;
+    assert(FinishPcRemoval(&p,request,changed)==Invalid&&!changed&&!deletes&&!db_removes&&!route_calls);
+    const auto replacement=[&]{
+        auto item=prepare_pc();item.filename="synthetic.swap";pc_fresh.game=app;pc_scan={};
+        const auto key=live.records.front().key;
+        pc_fresh.members.push_back({key.id,key.version,key.type,I(7),{I(7),I(4)}});
+        UsbImportScan::Row row{};row.record.application_id=app;row.record.key=key;
+        row.record.content={{{Content(I(7)),700}},{{Content(I(4)),400}}};pc_scan.titles.push_back(row);
+        live.files.emplace(I(7),File{Content(I(7)),700,"/registered/7"});return item;
+    };
+    request=replacement();assert(!FinishPcRemoval(&p,request,changed)&&changed&&db_removes==3&&!deletes&&home.size()==1&&live.files.size()==3&&pc_routes.contains(I(7)));
+    assert(!FinishPcRemoval(&p,request,changed)&&!changed&&db_removes==3);
+    request=replacement();keep.insert(live.records.front().key.id);assert(!FinishPcRemoval(&p,request,changed)&&!changed&&!db_removes&&!home_changes&&!route_calls);
+    request=replacement();pc_scan.titles.front().record.key.version++;assert(!FinishPcRemoval(&p,request,changed)&&!changed&&!db_removes&&!home_changes&&!route_calls);
+    request=replacement();live.files.at(I(7)).size++;assert(FinishPcRemoval(&p,request,changed)==Invalid&&!changed&&!db_removes&&!home_changes&&!route_calls);
+    request=replacement();++live.records.front().key.version;assert(!FinishPcRemoval(&p,request,changed)&&!changed&&!db_removes&&!home_changes&&!route_calls);
+    request=replacement();route_error=Fault;assert(FinishPcRemoval(&p,request,changed)==Fault&&!changed&&!db_removes&&!home_changes&&!deletes);
+    request=replacement();publish_error=Fault;
+    assert(FinishPcRemoval(&p,request,changed)==Fault&&!changed&&home.empty()&&!deletes);
+    publish_error=0;skip_publish=true;
+    assert(FinishPcRemoval(&p,request,changed)==Invalid&&!changed&&home.empty());
+    skip_publish=false;
+    assert(!FinishPcRemoval(&p,request,changed)&&changed&&home.size()==1&&pc_routes.contains(I(7))&&live.files.contains(I(7)));
+    pc_fresh={};
     for(auto t:{Target::Sd,Target::Internal,Target::Usb}){
         Reset(t);GameRemovalPlan plan;assert(!PreviewGameRemoval(&p,Item(),plan));assert(plan.files==3&&plan.bytes==600&&plan.shared==1&&plan.records==3);
         GameRemovalReport report;assert(!ApplyGameRemoval(&p,plan,report));assert(report.complete&&report.removed==3&&deletes==3&&db_removes==3&&home.empty());

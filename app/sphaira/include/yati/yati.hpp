@@ -124,12 +124,12 @@ struct ExistingUsbRecord {
 };
 // Read-only physical USB header/size/full-hash verification; no NCM routing,
 // placeholder creation, ticket import, registration or filesystem writes.
-Result VerifyExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord&);
+Result VerifyExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord&,bool quick_pc_import);
 // Coordinator must persist original indexes, raw NCM and NS records before
 // calling. Publishes existing bytes without copying/deleting NCAs. Does not
 // update AVM or HOME badges: those belong after coordinator commit.
 Result PublishExistingUsbRecord(ui::ProgressBox*,u64 generation,const ExistingUsbRecord&,
-    u32 latest_version,nexus::install::Diagnostic* diagnostic=nullptr);
+    u32 latest_version,bool quick_pc_import,nexus::install::Diagnostic* diagnostic=nullptr);
 
 Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path, const ConfigOverride& override = {});
 Result InstallFromSource(ui::ProgressBox* pbox, source::Base* source, const fs::FsPath& path, const ConfigOverride& override = {}, s64 source_size = -1);

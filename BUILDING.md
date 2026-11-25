@@ -1,6 +1,6 @@
 # Building Nexus Manager
 
-Use Linux or WSL, devkitPro devkitA64, CMake, Ninja, Make, Python 3 and Git. Install the Switch portlibs used by curl, zlib, minizip and mbedTLS, plus deko3d, uam and the usual Switch build tools. The SDK must support `NacpStruct.lang_data`; a pinned libnx source tree is included for that reason.
+Use Linux or WSL, devkitPro devkitARM and devkitA64, CMake, Ninja, Make, Python 3 and Git. Install the Switch portlibs used by curl, zlib, minizip and mbedTLS, plus deko3d, uam and the usual Switch build tools. The SDK must support `NacpStruct.lang_data`; a pinned libnx source tree is included for that reason.
 
 ```sh
 git clone https://github.com/TR4UNEXUS/Nexus-Manager-Source.git
@@ -10,7 +10,7 @@ sh tools/setup-libnx.sh
 sh build-nexus-wsl.sh
 ```
 
-`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.31 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
+`setup-libnx.sh` verifies and builds the pinned libnx source into `dependencies/sdk/libnx`. It also stages the installed deko3d headers and libraries separately. `build-nexus-wsl.sh` enables SMB and NFS, uses the vendored dependency revisions and builds version 0.2.40 by default. Set `NEXUS_BUILD_JOBS` to control parallelism.
 
 The NRO is written to `app/build/NexusPorts/switch/nexusmanager/NexusManager.nro`. No console key is embedded in the default build. Keep raw USB mounting disabled: Nexus firmware owns the drive.
 
@@ -84,3 +84,5 @@ python3 tests/run_usb_link_ticket_tests.py
 These cover firmware mismatch messages, destination registration collisions,
 source preservation, report attribution and the bulk-delete/link workflows.
 They do not replace a console run with the matching Nexus firmware.
+
+The build wrapper compiles the integrated HATS installer from app/extras/nexus-hats-payload and places it in the app resources before building the NRO. PC sync uses the NX1 pack identity.

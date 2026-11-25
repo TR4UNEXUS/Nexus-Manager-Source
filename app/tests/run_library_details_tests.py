@@ -17,6 +17,7 @@ fixture=r'''
 #include <cstdio>
 #include <cassert>
 #include <iostream>
+constexpr const char* operator""_nx(const char* value,size_t){return value;}
 using u64=uint64_t;using u32=uint32_t;using Result=u32;using Id=int;
 #define R_TRY(x) do{const auto rc_=(x);if(rc_)return rc_;}while(false)
 #define R_FAILED(x) ((x)!=0)
@@ -46,7 +47,7 @@ int main(){
  assert(g.size_known[0]&&g.size_known[1]&&g.size_known[2]&&!g.location_checked);
  assert(g.has_base&&g.base_version==0&&g.has_update&&g.update_version==65536&&g.dlc_count==1);
  assert(g.bytes==std::array<u64,3>{}); // Information never authorizes a mutation.
- assert(games[1].location_hint=="No files on connected storage"&&games[1].installed_bytes[0]==0);
+ assert(games[1].location_hint=="Registered game files not found"&&games[1].installed_bytes[0]==0);
  errors[2]=99;assert(!ScanGameLocations(&p,games));assert(!games[0].size_known[2]&&games[0].installed_bytes[2]==0&&games[0].location_hint=="SD");
  assert(games[1].location_hint.find("0x00000063")!=std::string::npos);
  disks[0]={};errors[2]=0;disks[2]={};assert(!ScanGameLocations(&p,games));assert(!games[0].has_update&&!games[0].dlc_count&&!games[0].installed_bytes[0]);

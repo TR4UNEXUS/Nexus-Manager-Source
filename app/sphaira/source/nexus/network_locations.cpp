@@ -313,6 +313,7 @@ Result RunInstallQueue(SessionPtr session,const std::vector<SelectedNetworkFile>
         progress->SetItem(report[i].file.path);
         ui::ProgressScope package_scope(progress,nexus::WorkPart(finished_bytes,all_bytes),nexus::WorkPart(finished_bytes+report[i].file.size,all_bytes));finished_bytes+=report[i].file.size;
         auto& row=report[i];
+        nexus::Log("install-network-source",0,session->protocol=="SMB"?1:2);
         progress->SetImage(0).SetTitle(Leaf(row.file.path)).SetProgressNote({});
         progress->SetActionName("Install "_nx+std::to_string(i+1)+" / "+std::to_string(report.size())+" from "_nx+session->protocol);
         auto result=CheckInstallQueue(session,progress,target,generation);

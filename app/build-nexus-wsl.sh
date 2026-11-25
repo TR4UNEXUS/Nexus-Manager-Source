@@ -13,6 +13,10 @@ if [ ! -f "$LIBNX/lib/libnx.a" ] || ! grep -q 'lang_data' "$LIBNX/include/switch
   echo 'Compatible project-local libnx is missing. Run tools/setup-libnx.sh first.' >&2
   exit 1
 fi
+export DEVKITARM=${DEVKITARM:-$DEVKITPRO/devkitARM}
+make -C "$app/extras/nexus-hats-payload" -j"$jobs"
+mkdir -p "$app/assets/romfs/nexus-hats"
+cp "$app/extras/nexus-hats-payload/output/hats-installer.bin" "$app/assets/romfs/nexus-hats/hats-installer.bin"
 cmake -S "$app" -B "$build" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$app/cmake/NexusSwitch.cmake" \
   -Dnexus_deko_include="$NEXUS_GRAPHICS/include" \
@@ -26,7 +30,7 @@ cmake -S "$app" -B "$build" -G Ninja \
   -DENABLE_AUDIO_MP3=OFF -DENABLE_AUDIO_OGG=OFF -DENABLE_AUDIO_WAV=OFF -DENABLE_AUDIO_FLAC=OFF \
   -DNEXUS_REPORT_CONFIG_DIR="${NEXUS_REPORT_CONFIG_DIR:-}" \
   -DNEXUS_BUNDLED_PROBE=OFF -DNEXUS_PRIVATE_KEY_INCLUDE_DIR= \
-  -Dsphaira_VERSION_OVERRIDE="${NEXUS_VERSION:-0.2.31}"
+  -Dsphaira_VERSION_OVERRIDE="${NEXUS_VERSION:-0.2.40}"
 if [ "${1:-}" != '--configure-only' ]; then
   cmake --build "$build" --parallel "$jobs" --target sphaira_nro
 fi

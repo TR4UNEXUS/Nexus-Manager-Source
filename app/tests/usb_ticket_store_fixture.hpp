@@ -45,12 +45,15 @@ Result IsRightsIdCommon(const FsRightsId&,bool* out){*out=imported&&readback_reg
 Result IsRightsIdPersonalised(const FsRightsId&,bool* out){*out=false;return 0;}
 }
 namespace nexus {
+namespace hats {inline bool supported=true;bool SupportsPcLibrary(){return supported;}}
 struct Info {u64 size{};bool directory{};};
 class Client {
+ bool active{};
+ Result Generation(u64 gen)const{return transport_error?transport_error:(gen==42?0:77);}
 public:
- Result Check(u64 gen){return transport_error?transport_error:(gen==42?0:77);}
- Result Stat(u64 gen,const std::string& path,Info& out){R_TRY(Check(gen));if(dirs.contains(path)){out={0,true};return 0;}auto it=files.find(path);if(it==files.end())return MAKERESULT(140,205);out={it->second.size(),false};return 0;}
- Result Read(u64 gen,const std::string& path,u64 off,void* data,size_t size,u64& got){R_TRY(Check(gen));auto it=files.find(path);if(it==files.end())return MAKERESULT(140,205);if(off>it->second.size())return 88;got=std::min<u64>(size,it->second.size()-off);memcpy(data,it->second.data()+off,got);return 0;}
+ Result Check(u64 gen){active=true;return Generation(gen);}
+ Result Stat(u64 gen,const std::string& path,Info& out){if(!active)return 0x1759;R_TRY(Generation(gen));if(dirs.contains(path)){out={0,true};return 0;}auto it=files.find(path);if(it==files.end())return MAKERESULT(140,205);out={it->second.size(),false};return 0;}
+ Result Read(u64 gen,const std::string& path,u64 off,void* data,size_t size,u64& got){if(!active)return 0x1759;R_TRY(Generation(gen));auto it=files.find(path);if(it==files.end())return MAKERESULT(140,205);if(off>it->second.size())return 88;got=std::min<u64>(size,it->second.size()-off);memcpy(data,it->second.data()+off,got);return 0;}
  Result CreateDirectory(u64 gen,const std::string& path){R_TRY(Check(gen));++writes;if(write_error)return write_error;dirs[path]=true;return 0;}
  Result CreateFile(u64 gen,const std::string& path,u64 size){R_TRY(Check(gen));++writes;if(write_error)return write_error;if(files.contains(path))return 13;files[path].resize(size);return 0;}
  Result Write(u64 gen,const std::string& path,u64 off,const void* data,size_t size){R_TRY(Check(gen));++writes;if(write_error)return write_error;auto& dest=files[path];if(off+size>dest.size())return 88;memcpy(dest.data()+off,data,size);return 0;}

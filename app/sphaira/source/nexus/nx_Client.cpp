@@ -395,25 +395,29 @@ Result Client::DeleteRegistered(u64 generation,const std::string& path,u64 expec
 Result Destination::Probe(NcmContentStorage &storage) {
     NcmPlaceHolderId ph{};
     auto rc = ncmContentStorageGeneratePlaceHolderId(&storage, &ph);
+    if(R_FAILED(rc))Log("usb-probe-generate-id",rc,generation);
     if(R_FAILED(rc)) return rc;
     NcmContentId id{};
     memcpy(&id, &ph, sizeof(id));
     rc = ncmContentStorageCreatePlaceHolder(&storage, &id, &ph, 32);
+    if(R_FAILED(rc))Log("usb-probe-create",rc,generation);
     if(R_FAILED(rc)) return rc; // Never delete an ID we did not create.
     std::array<u8,32> expected{}, actual{};
     randomGet(expected.data(), expected.size());
     char common[FS_MAX_PATH]{};
     std::string path;
     rc = ncmContentStorageWritePlaceHolder(&storage, &ph, 0, expected.data(), expected.size());
-    if(R_SUCCEEDED(rc)) rc = ncmContentStorageGetPlaceHolderPath(&storage, common, sizeof(common), &ph);
+    if(R_FAILED(rc))Log("usb-probe-write",rc,generation);
+    if(R_SUCCEEDED(rc)) {rc = ncmContentStorageGetPlaceHolderPath(&storage, common, sizeof(common), &ph);if(R_FAILED(rc))Log("usb-probe-path",rc,generation);}
     if(R_SUCCEEDED(rc) && !ContentPath(common, true, path)) rc = Invalid;
     u64 got = 0;
-    if(R_SUCCEEDED(rc)) rc = client.Read(generation, path, 0, actual.data(), actual.size(), got);
-    if(R_SUCCEEDED(rc) && (got != actual.size() || actual != expected)) rc = Invalid;
+    if(R_SUCCEEDED(rc)) {rc = client.Read(generation, path, 0, actual.data(), actual.size(), got);if(R_FAILED(rc))Log("usb-probe-read",rc,generation);}
+    if(R_SUCCEEDED(rc) && (got != actual.size() || actual != expected)) {rc = Invalid;Log("usb-probe-compare",rc,got);}
     // Do not send cleanup into a different media generation.
     const auto check = client.Check(generation);
     if(R_SUCCEEDED(check)) {
         const auto clean = ncmContentStorageDeletePlaceHolder(&storage, &ph);
+        if(R_FAILED(clean))Log("usb-probe-cleanup",clean,generation);
         if(R_SUCCEEDED(rc)) rc = clean;
     } else if(R_SUCCEEDED(rc)) rc = check;
     Log("physical-usb-probe", rc, generation);
@@ -443,9 +447,11 @@ Result Destination::Write(NcmContentStorage &storage, const NcmPlaceHolderId &id
     // NCM-created placeholder; it is not created by the raw write endpoint.
     Info info{};
     auto rc = client.Stat(generation, path, info);
-    if(R_FAILED(rc)) return rc;
-    if(info.directory || info.size != total) return Invalid;
-    return client.Write(generation, path, offset, buf, size);
+    if(R_FAILED(rc)) {Log("usb-destination-stat",rc,generation);return rc;}
+    if(info.directory || info.size != total) {Log("usb-destination-size",Invalid,info.size);return Invalid;}
+    rc=client.Write(generation, path, offset, buf, size);
+    if(R_FAILED(rc))Log("usb-destination-write",rc,offset);
+    return rc;
 }
 Result Destination::Verify(NcmContentStorage &storage, const NcmContentId &id, u64 size) {
     auto rc = Validate();

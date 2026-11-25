@@ -6,6 +6,7 @@
 #include "nexus/game_cleanup.hpp"
 #include "nexus/mods.hpp"
 #include "nexus/release.hpp"
+#include "nexus/saltynx.hpp"
 #include <map>
 #include <set>
 #include <atomic>
@@ -25,6 +26,10 @@ private:
     std::string path="/";
     std::vector<nexusapp::Item> files;
     std::vector<nexusapp::Game> games;
+    nexus::saltynx::Library salty_library;
+    bool HasSaltyDetails() const;
+    const char* SaltyLabel(const nexusapp::Game&) const;
+    void ShowSaltyDetails();
     std::set<u64> selected_games;
     void ToggleGame();
     void DeleteSelectedGames();

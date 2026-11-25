@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <atomic>
+#include <algorithm>
+#include <set>
+#include <vector>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
@@ -25,13 +28,27 @@ static unsigned cases{},assertions{};
 Result threadStart(Thread* thread){++started;if(fail_start)return Fault;thread->state->thread=std::thread([state=thread->state]{state->entry(state->arg);});return 0;}
 Result threadWaitForExit(Thread* thread){++joined;if(fail_join)return Fault;thread->state->thread.join();return 0;}
 Result threadClose(Thread* thread){++closed;if(fail_close)return Fault;assert(!thread->state->thread.joinable());delete thread->state;thread->state=nullptr;return 0;}
+constexpr Result Missing = 7;
+#define MAKERESULT(m,n) Missing
+void svcSleepThread(long long){std::this_thread::yield();}
+static bool compatible=true, marker=true, partial=false, backup=false, new_work=true, blocked=false;
+static bool removed=false,staging=false,replacing=false;
 namespace nexus {
-constexpr Result Invalid=5977;
+void Log(const char*,Result){}
+namespace hats { bool SupportsPcLibrary(){return compatible;} }
 namespace lifecycle {inline std::atomic_bool foreground{true};bool CanPoll(){return foreground.load();}}
 struct Status {u64 generation{};bool mounted{};bool Available()const{return mounted;}};
+struct Info {bool directory{};u64 size{};};
 struct Client {
     Client(){++clients;}~Client(){--clients;}
     Result Query(Status& status){++queries;status={current_generation,available};return query_error;}
+    Result Check(u64 gen){return available && current_generation==gen ? 0 : Fault;}
+    Result Stat(u64,const std::string& path,Info& out){
+        out={};if(path.ends_with("/session.lock"))return marker?0:Missing;
+        if(path.ends_with("/install-stage")||path.ends_with("/install-ready"))return staging?0:Missing;
+        if(path.ends_with("/replace-stage")||path.ends_with("/replace-ready"))return replacing?0:Missing;
+        assert(path.ends_with("/content.partial"));return partial?0:Missing;
+    }
 };
 }
 namespace sphaira {
@@ -43,21 +60,24 @@ Result CreateThread(Thread* thread,void(*entry)(void*),void* arg,size_t stack){
 }
 }
 namespace nexusapp {
-struct UsbLibraryStartupResult {Result result{};bool pending{};size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{};std::string detail;};
-struct UsbImportScan {
-    bool complete{};std::string detail;
-    UsbImportScan(){++scan_buffers;}~UsbImportScan(){--scan_buffers;}
-};
-struct UsbLibrarySummary {size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{},selected_items{};};
-static UsbLibrarySummary summary{3,2,1,1,7};
+struct PcRemoval {u64 generation;};
+Result ListPcRemovals(void*,std::vector<PcRemoval>& out,const std::atomic_bool*){
+    if(removed)out.push_back({current_generation});
+    return 0;
+}
+struct Row {struct {u64 application_id;} record;bool needs_home_import;bool selected;};
+struct UsbImportScan {u64 generation{};bool complete{};std::vector<Row> titles;};
 Result UsbImportPending(bool& out){++pending_reads;out=pending;return pending_error;}
-Result ScanUsbImports(void* progress,UsbImportScan& scan,u64 generation,const std::atomic_bool* cancel,bool names){
-    assert(!progress&&!names&&cancel&&generation==7);++scans;scan_entered=1;
+Result MissingRoutingWithConsoleBackup(bool& out){out=backup;return 0;}
+struct Plan {std::vector<bool> selected;};
+Plan PlanUsbLibrary(const UsbImportScan& scan){Plan p;for(auto& row:scan.titles)p.selected.push_back(row.selected);return p;}
+Result ScanUsbImports(void* progress,UsbImportScan& scan,u64 gen,const std::atomic_bool* cancel,bool names){
+    assert(!progress && !names && cancel);++scans;scan_entered=1;
     while(block_scan&&!cancel->load())std::this_thread::yield();
-    scan.complete=scan_complete;scan.detail=scan_error?"Actual scan failure":std::string{};
+    scan.complete=scan_complete;scan.generation=gen;
+    scan.titles={{{1},new_work,!blocked},{{1},false,!blocked},{{2},false,true},{{3},true,false}};
     return cancel->load()?Fault:scan_error;
 }
-UsbLibrarySummary SummarizeUsbLibrary(const UsbImportScan& scan){assert(scan.complete);return summary;}
 }
 }
 // PRODUCTION_WORKER
@@ -67,49 +87,53 @@ template<class Predicate>void Wait(Predicate ready){
     while(!ready()){assert(std::chrono::steady_clock::now()<limit);std::this_thread::yield();}
 }
 void Reset(){
-    CHECK(!startup_library.started&&clients==0&&scan_buffers==0);
-    startup_library.~StartupLibraryJob();new(&startup_library)StartupLibraryJob{};
+    CHECK(!detection.started&&clients==0);
+    detection.~Detection();new(&detection)Detection{};
     created=started=joined=closed=queries=pending_reads=scans=scan_entered=0;
-    fail_create=fail_start=fail_join=fail_close=applet=pending=block_scan=false;
-    available=scan_complete=true;query_error=pending_error=scan_error=0;current_generation=7;
-    nexus::lifecycle::foreground=true;summary={3,2,1,1,7};++cases;
+    fail_create=fail_start=fail_join=fail_close=applet=pending=block_scan=partial=backup=blocked=false;
+    available=scan_complete=compatible=marker=new_work=true;query_error=pending_error=scan_error=0;current_generation=7;
+    nexus::lifecycle::foreground=true;++cases;
+    removed=staging=false;
 }
-UsbLibraryStartupResult Complete(){
-    StartUsbLibraryStartupCheck();Wait([]{return startup_library.done.load();});
-    CHECK(clients==0&&scan_buffers==0);UsbLibraryStartupResult result;CHECK(TakeUsbLibraryStartupCheck(result));
-    CHECK(!startup_library.started&&joined==1&&closed==1);return result;
+void StartAndWait(){
+    StartPcInstallDetection();
+    Wait([]{return detection.done.load();});
 }
 int main(){
-    Reset();auto result=Complete();CHECK(result.affected_games==3&&result.repairable_games==2&&result.blocked_games==1&&result.missing_ticket_games==1);
-    CHECK(scans==1&&queries==2&&pending_reads==1);CHECK(!TakeUsbLibraryStartupCheck(result));StartUsbLibraryStartupCheck();CHECK(created==1);
-    Reset();summary={};result=Complete();CHECK(result.affected_games==0&&queries==1);
-    Reset();available=false;result=Complete();CHECK(result.result==0&&!result.pending&&scans==0&&queries==1);
-    Reset();query_error=Fault;result=Complete();CHECK(result.result==0&&scans==0);
-    Reset();pending=true;available=false;result=Complete();CHECK(result.pending&&queries==0&&scans==0);
-    Reset();pending_error=Fault;result=Complete();CHECK(result.result==Fault&&!result.detail.empty()&&scans==0);
-    Reset();pending_error=Fault;available=false;result=Complete();CHECK(result.result==0&&!result.pending&&scans==0);
-    Reset();scan_error=Fault;result=Complete();CHECK(result.result==Fault&&result.detail=="Actual scan failure"&&result.affected_games==0);
-    Reset();scan_complete=false;result=Complete();CHECK(result.result==nexus::Invalid&&result.affected_games==0&&!result.detail.empty());
-    for(bool replace:{false,true}){
-        Reset();StartUsbLibraryStartupCheck();Wait([]{return startup_library.done.load();});
-        if(replace)current_generation=8;else available=false;
-        CHECK(TakeUsbLibraryStartupCheck(result)&&result.affected_games==0&&result.result==0);CHECK(joined==1&&closed==1);
+    Reset();removed=true;StartAndWait();auto deletion=TakeDetectedPcRemovals();
+    CHECK(deletion&&deletion->size()==1&&!scans&&!TakeDetectedPcInstalls());
+    ResumePcInstallDetection();StartAndWait();CHECK(!TakeDetectedPcRemovals()&&TakeDetectedPcInstalls()&&scans==1);
+    Reset();removed=true;StartAndWait();++current_generation;CHECK(!TakeDetectedPcRemovals());
+    Reset();replacing=true;StartAndWait();CHECK(!TakeDetectedPcRemovals()&&!TakeDetectedPcInstalls()&&!scans);replacing=false;
+    Reset();staging=removed=true;StartAndWait();CHECK(!TakeDetectedPcRemovals()&&!TakeDetectedPcInstalls()&&!scans);
+    Reset();StartAndWait();auto found=TakeDetectedPcInstalls();
+    CHECK(found&&found->titles.size()==2&&found->titles[0].record.application_id==1&&found->titles[1].record.application_id==1);
+    CHECK(!TakeDetectedPcInstalls());StartPcInstallDetection();CHECK(created==1&&joined==1&&closed==1);
+    for(bool* no:{&available,&compatible,&marker}){
+        Reset();*no=false;StartAndWait();CHECK(!TakeDetectedPcInstalls()&&scans==0);
     }
-    Reset();block_scan=true;StartUsbLibraryStartupCheck();Wait([]{return scan_entered.load()!=0;});
-    CHECK(!TakeUsbLibraryStartupCheck(result));StopUsbLibraryStartupCheck();
-    CHECK(startup_library.cancel&&joined==1&&closed==1&&clients==0&&scan_buffers==0);CHECK(!TakeUsbLibraryStartupCheck(result));
-    StartUsbLibraryStartupCheck();CHECK(created==1);StopUsbLibraryStartupCheck();CHECK(closed==1);
-    Reset();StartUsbLibraryStartupCheck();Wait([]{return startup_library.done.load();});StopUsbLibraryStartupCheck();CHECK(!TakeUsbLibraryStartupCheck(result)&&startup_library.result.affected_games==0);
-    Reset();StopUsbLibraryStartupCheck();StartUsbLibraryStartupCheck();CHECK(created==0&&pending_reads==0&&!TakeUsbLibraryStartupCheck(result));
-    Reset();nexus::lifecycle::foreground=false;CancelUsbLibraryStartupCheck();nexus::lifecycle::foreground=true;
-    result=Complete();CHECK(created==1&&result.affected_games==3);
-    Reset();block_scan=true;StartUsbLibraryStartupCheck();Wait([]{return scan_entered.load()!=0;});nexus::lifecycle::foreground=false;CancelUsbLibraryStartupCheck();
-    Wait([]{return startup_library.done.load();});CHECK(!TakeUsbLibraryStartupCheck(result)&&closed==1);nexus::lifecycle::foreground=true;CHECK(!TakeUsbLibraryStartupCheck(result));
-    Reset();applet=true;StartUsbLibraryStartupCheck();CHECK(created==0&&TakeUsbLibraryStartupCheck(result)&&result.affected_games==0);
-    Reset();fail_create=true;StartUsbLibraryStartupCheck();CHECK(created==1&&started==0&&closed==0&&TakeUsbLibraryStartupCheck(result));
-    Reset();fail_start=true;StartUsbLibraryStartupCheck();CHECK(created==1&&started==1&&closed==1&&joined==0&&TakeUsbLibraryStartupCheck(result));
-    Reset();StartUsbLibraryStartupCheck();Wait([]{return startup_library.done.load();});fail_join=true;
-    try{StopUsbLibraryStartupCheck();CHECK(false);}catch(Result rc){CHECK(rc==Fault&&startup_library.started&&closed==0);}
-    fail_join=false;StopUsbLibraryStartupCheck();CHECK(closed==1&&!startup_library.started);
-    std::cout<<"USB startup worker: "<<cases<<" cases / "<<assertions<<" checks; actual threaded cancellation, service cleanup, delivery generation, quiet absence and foreground stop passed\n";
+    for(bool* yes:{&partial,&pending,&backup}){
+        Reset();*yes=true;StartAndWait();CHECK(!TakeDetectedPcInstalls()&&scans==0);
+    }
+    for(bool* no:{&new_work,&scan_complete}){
+        Reset();*no=false;StartAndWait();CHECK(!TakeDetectedPcInstalls()&&scans==1);
+    }
+    Reset();blocked=true;StartAndWait();CHECK(!TakeDetectedPcInstalls());
+    Reset();scan_error=Fault;StartAndWait();CHECK(!TakeDetectedPcInstalls());
+    Reset();pending_error=Fault;StartAndWait();CHECK(!TakeDetectedPcInstalls()&&!scans);
+    for(bool swapped:{false,true}){
+        Reset();StartAndWait();if(swapped)++current_generation;else available=false;CHECK(!TakeDetectedPcInstalls());
+    }
+    Reset();block_scan=true;StartPcInstallDetection();Wait([]{return scan_entered.load()!=0;});
+    CHECK(!TakeDetectedPcInstalls());StopUsbLibraryStartupCheck();
+    CHECK(joined==1&&closed==1&&clients==0&&!TakeDetectedPcInstalls());
+    Reset();StartAndWait();nexus::lifecycle::foreground=false;CHECK(!TakeDetectedPcInstalls());
+    Reset();StopUsbLibraryStartupCheck();StartPcInstallDetection();CHECK(created==0);
+    Reset();CancelUsbLibraryStartupCheck();StartAndWait();CHECK(TakeDetectedPcInstalls());
+    Reset();applet=true;StartPcInstallDetection();CHECK(created==0&&!TakeDetectedPcInstalls());
+    Reset();fail_create=true;StartPcInstallDetection();CHECK(created==1&&!started);
+    Reset();fail_start=true;StartPcInstallDetection();CHECK(created==1&&started==1&&!detection.started&&closed==1);
+    Reset();StartAndWait();fail_join=true;try{StopUsbLibraryStartupCheck();CHECK(false);}catch(Result rc){CHECK(rc==Fault&&detection.started);}
+    fail_join=false;StopUsbLibraryStartupCheck();CHECK(!detection.started);
+    std::cout<<"PC install detection: "<<cases<<" cases, "<<assertions<<" checks passed\n";
 }

@@ -43,6 +43,8 @@ assert '"Import USB games into this system",[]{nexusapp::DisplayUsbImport();}' n
 assert '"Installed games"' in menu and '"My games"' not in menu
 fixture = fixture.replace('// USB_IMPORT_GUIDED_CASES', cases)
 assert fixture.count('// USB_IMPORT_UI_PRODUCTION') == 1
+icons = (root / 'sphaira/include/ui/usb_import_icons.hpp').read_text()
+fixture = fixture.replace('// USB_ICON_CACHE_PRODUCTION', '\n'.join(line for line in icons.splitlines() if not line.lstrip().startswith('#')))
 fixture = fixture.replace('// USB_IMPORT_UI_PRODUCTION', production)
 network = (root / 'sphaira/source/nexus/network_locations.cpp').read_text()
 session = network[network.index('struct Session {'):network.index('using SessionPtr=')]

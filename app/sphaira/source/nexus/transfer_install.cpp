@@ -34,6 +34,7 @@ public:
     }
 };
 Result InstallStream(sphaira::ui::ProgressBox* p,const InstallJob& job,nexus::install::Diagnostic& diagnostic){
+    nexus::Log("install-ftp-stream",0,job.usb?1:0);
     FtpSource source(job.stream,p);sphaira::yati::ConfigOverride config{};
     config.nexus_target=job.usb?Target::Usb:Target::Sd;
     config.nexus_destination_generation=job.usb?job.generation:0;config.diagnostic=&diagnostic;

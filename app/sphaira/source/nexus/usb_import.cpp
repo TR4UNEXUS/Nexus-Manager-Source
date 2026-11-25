@@ -307,7 +307,7 @@ Result RestoreUsbImport(ui::ProgressBox* p,UsbImportResult& out){
     if(R_FAILED(result)&&out.detail.empty())out.detail=core::FailureDetail(d.step,result);
     return result;
 }
-Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportResult& out){
+Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportResult& out,bool quick_pc_import){
     const auto operation=[&]()->Result{
     out={};Disk d;d.progress=p;d.generation=scan.generation;
     const auto operation=[&]()->Result{
@@ -320,13 +320,17 @@ Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportRe
     std::map<u64,std::vector<const UsbImportTitle*>> groups;
     const auto plan=PlanUsbLibrary(scan);
     std::set<const UsbImportTitle*> handled;
+    const auto report_entry=[&](u64 application,std::string text){
+        out.entry_applications.push_back(application);
+        out.entries.push_back(std::move(text));
+    };
     for(size_t i=0;i<scan.titles.size();++i){const auto& row=scan.titles[i];
         if(plan.selected[i])groups[row.record.application_id].push_back(&row);
         else {
             handled.insert(&row);++out.skipped;
             const auto reason=!plan.family_reason[i].empty()?plan.family_reason[i]+" No registration changes will be made for this family."_nx:
                 row.status==UsbImportStatus::Ready?"A newer version is on this drive; the older version was not selected."_nx:std::string(UsbImportStatusText(row.status))+". "+row.reason;
-            out.entries.push_back("Skipped: "+Label(row)+" - "+reason);
+            report_entry(row.record.application_id,"Skipped: "+Label(row)+" - "+reason);
         }
     }
     Result final{};
@@ -338,15 +342,16 @@ Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportRe
             const bool failed=R_FAILED(d.rc);
             const auto reason=failed?core::FailureDetail(d.step,d.rc):
                 std::string("The existing state does not allow import while "_nx)+d.step+". Check this title's existing installation before trying again."_nx;
-            for(const auto* row:rows){handled.insert(row);++out.skipped;out.entries.push_back("Not added: "_nx+Label(*row)+" - "+reason+" No registration changes were made for this game."_nx);}
+            for(const auto* row:rows){handled.insert(row);++out.skipped;report_entry(row->record.application_id,"Not added: "_nx+Label(*row)+" - "+reason+" No registration changes were made for this game."_nx);}
             if(failed){out.detail=reason;final=d.rc;break;}
             continue;
         }
-        // Hash all records in the family before any live registration. A bad
+        // Check all records in the family before any live registration. A bad
         // update must not leave a partially imported base game behind.
-        d.step="verifying existing USB content hashes"_nx;
-        for(const auto* row:rows){final=yati::VerifyExistingUsbRecord(p,scan.generation,row->record);if(R_FAILED(final))break;}
-        if(R_FAILED(final)){for(const auto* row:rows){handled.insert(row);++out.skipped;out.entries.push_back("Not imported: "_nx+Label(*row)+" - verification failed or the scan was cancelled; no registration for this game."_nx);}break;}
+        ShowUsbImportGame(p,scan.generation,rows);
+        d.step=quick_pc_import?"Checking USB files"_nx:"verifying existing USB content hashes"_nx;
+        for(const auto* row:rows){final=yati::VerifyExistingUsbRecord(p,scan.generation,row->record,quick_pc_import);if(R_FAILED(final))break;}
+        if(R_FAILED(final)){for(const auto* row:rows){handled.insert(row);++out.skipped;report_entry(row->record.application_id,"Not imported: "_nx+Label(*row)+" - verification failed or the scan was cancelled; no registration for this game."_nx);}break;}
         if(!d.Directory("/atmosphere")||!d.Directory(nexus::repair::Folder)||!Activate(d,j)){
             // Rename may have succeeded before an SD commit error. Check the
             // marker rather than assuming failure means nothing was activated.
@@ -361,7 +366,7 @@ Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportRe
             d.step="publishing USB routing indexes"_nx;
             if(j.before!=j.after)R_UNLESS(nexus::repair::Publish(d,{j.nonce,j.before,j.after}),Failure(d));
             d.step="registering existing USB content and HOME records"_nx;
-            for(const auto* row:rows){R_UNLESS(d.Check(),Failure(d));R_TRY(yati::PublishExistingUsbRecord(p,scan.generation,row->record,0));}
+            for(const auto* row:rows){R_UNLESS(d.Check(),Failure(d));R_TRY(yati::PublishExistingUsbRecord(p,scan.generation,row->record,0,quick_pc_import));}
             Snapshot indexes;Image home;R_UNLESS(d.Indexes(indexes)&&core::SameIndexes(indexes,j.after)&&d.HomeRead(application,home)&&home==j.home_after,Failure(d));
             for(const auto& m:j.metadata){Image actual;R_UNLESS(d.MetaRead(m.key,actual)&&actual==m.after,Failure(d));}
             R_UNLESS(d.Check()&&d.Finish(j,true),Failure(d));return 0;
@@ -372,20 +377,20 @@ Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportRe
             d.progress=nullptr;d.generation=0;Image marker;
             const bool checked=d.Read(core::Pending,marker);
             if(checked&&marker.exists){out.rolled_back=core::Restore(d,j);out.pending=!out.rolled_back;}else out.pending=true;
-            for(const auto* row:rows){handled.insert(row);++out.skipped;out.entries.push_back("Import stopped: "_nx+Label(*row)+(out.rolled_back?" - previous registration restored."_nx:" - recovery needs checking before further changes."_nx));}
+            for(const auto* row:rows){handled.insert(row);++out.skipped;report_entry(row->record.application_id,"Import stopped: "_nx+Label(*row)+(out.rolled_back?" - previous registration restored."_nx:" - recovery needs checking before further changes."_nx));}
             break;
         }
         out.pending=false;out.imported+=rows.size();
-        for(const auto* row:rows){handled.insert(row);out.entries.push_back("Imported: "+Label(*row));}
+        for(const auto* row:rows){handled.insert(row);report_entry(row->record.application_id,"Imported: "+Label(*row));}
         const auto launch=ns::SetLowestLaunchVersion(application);
-        if(R_FAILED(launch))out.entries.push_back("Game registration completed, but its launch-version refresh could not be confirmed. Keep the report if HOME asks for an update."_nx);
+        if(R_FAILED(launch))report_entry(0,"Game registration completed, but its launch-version refresh could not be confirmed. Keep the report if HOME asks for an update."_nx);
         // Cosmetic refresh happens only after registration commits. Its retry
         // receipt survives reboot; failure never undoes a verified install.
         auto badge=QueueHomeRefresh(application);
         if(R_SUCCEEDED(badge)){Game game;game.id=application;game.badge_state=1;badge=UpdateHomeBadge(game);if(R_SUCCEEDED(badge))badge=FinishHomeRefresh(application);}
-        if(R_FAILED(badge))out.entries.push_back("HOME icon refresh pending for "_nx+std::to_string(application)+". Use Refresh HOME USB icons after restarting."_nx);
+        if(R_FAILED(badge))report_entry(0,"HOME icon refresh pending for "_nx+std::to_string(application)+". Use Refresh HOME USB icons after restarting."_nx);
     }
-    for(const auto& row:scan.titles)if(!handled.contains(&row)){++out.skipped;out.entries.push_back("Not attempted: "_nx+Label(row)+" - import stopped before this title completed. Scan again after recovery/restart."_nx);}
+    for(const auto& row:scan.titles)if(!handled.contains(&row)){++out.skipped;report_entry(row.record.application_id,"Not attempted: "_nx+Label(row)+" - import stopped before this title completed. Scan again after recovery/restart."_nx);}
     const auto failure_context=out.detail;
     if(out.pending)out.detail="Repair stopped. Open Installed games > Repair USB games > Restore backup before installing or moving anything. Keep all backup folders."_nx;
     else if(R_FAILED(final))out.detail=out.rolled_back?"Import stopped; the current game's original registration was restored. Earlier completed imports are kept. Fully restart the Switch."_nx:"Import stopped. Review the report before trying again."_nx;

@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
     nexus::startup::Event("app-loop", "begin");
     nexusWatchdogDisarm(); // no automatic timeout while the user can start writes
     app->Loop();
+    nexus::power::Stop();
     nexus::updates::StopStartupCheck();
     nexus::transfer::Stop();
     nexus::lifecycle::BeginShutdown();
@@ -84,6 +85,7 @@ void userAppInit(void) {
 }
 
 void userAppExit(void) {
+    nexus::power::Stop();
     nexus::lifecycle::BeginShutdown();
     nexus::startup::BeginShutdown();
     nexus::startup::Event("user-app-exit", "begin");

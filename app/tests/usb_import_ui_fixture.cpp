@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -15,7 +17,7 @@
 #include "nexus/network_location_core.hpp"
 #include "nexus/network_session_passwords.hpp"
 #include "ui/usb_import_view.hpp"
-using Result=std::uint32_t;using s64=std::int64_t;
+using u64=std::uint64_t;using Result=std::uint32_t;using s64=std::int64_t;
 constexpr Result Fault=123,Cancelled=456;
 #include "network_socket_ui_mock.hpp"
 #define MAKERESULT(module,description) (Result(10000+(module)+(description)))
@@ -24,15 +26,17 @@ constexpr Result Fault=123,Cancelled=456;
 #define R_TRY(expression) do { const auto result=(expression);if(R_FAILED(result))return result; } while(false)
 #define R_UNLESS(expression,result) do { if(!(expression))return (result); } while(false)
 namespace nexus {constexpr Result Invalid=20,Unavailable=21;}
+namespace nexus::hats {inline bool compatible=true;bool SupportsPcLibrary(){return compatible;}}
+namespace nexus {inline Result pc_firmware_rc{};Result CheckUsbFirmware(){return pc_firmware_rc;}}
+inline Result ncmInitialize(){return 0;}inline void ncmExit(){}
+#define ON_SCOPE_EXIT(expr) ((void)0)
 namespace nexus::safety {enum class Operation{ReadOnly,MayWrite};}
 namespace nexus::lifecycle {inline bool poll_allowed=true;bool CanPoll(){return poll_allowed;}}
 // USB_LIBRARY_STARTUP_HEADER
 namespace sphaira::nexusapp {
-inline UsbLibraryStartupResult startup_result;
 inline unsigned startup_starts{},startup_takes{},startup_stops{};
 inline bool startup_available{};
-void StartUsbLibraryStartupCheck(){++startup_starts;}
-bool TakeUsbLibraryStartupCheck(UsbLibraryStartupResult& out){++startup_takes;if(!startup_available)return false;startup_available=false;out=startup_result;return true;}
+void AddPcGames(std::shared_ptr<UsbImportScan> scan);
 void StopUsbLibraryStartupCheck(){++startup_stops;startup_available=false;}
 }
 constexpr unsigned NcmContentMetaType_Application=0x80,NcmContentMetaType_Patch=0x81,NcmContentMetaType_AddOnContent=0x82,NcmContentMetaType_DataPatch=0x84;
@@ -109,7 +113,10 @@ struct App {
     static inline std::unique_ptr<ui::menu::MenuBase> menu;
     static inline unsigned option_pushes{},progress_pushes{};
     static inline bool applet{},exited{};
+    static NVGcontext* GetVg(){static NVGcontext vg;return &vg;}
+    static int GetDefaultImage(){return 1;}
     static bool IsApplet(){return applet;}
+    static void PushErrorBox(Result,const std::string& message){Push<ui::OptionBox>(message,"Back",[](auto){});}
     static void Exit(){exited=true;}
     static void Focus(){if(menu)menu->focused=!option&&!progress;}
     template<class T,class... Args>static void Push(Args&&... args){
@@ -136,7 +143,7 @@ struct Key{std::uint64_t id{};unsigned version{},type{NcmContentMetaType_Applica
 struct Record{Key key;std::uint64_t application_id{};};
 struct Row{std::string name,reason;UsbImportStatus status{};Record record;std::string meta_path;};
 using UsbImportTitle=Row;
-struct UsbImportScan{std::vector<Row> titles;bool complete{};std::string detail;size_t nca_files{},unreadable_ncas{};};
+struct UsbImportScan{u64 generation{31};std::vector<Row> titles;bool complete{};std::string detail;size_t nca_files{},unreadable_ncas{};};
 struct UsbLibrarySummary{size_t affected_games{},repairable_games{},blocked_games{},missing_ticket_games{},selected_items{};};
 struct UsbLibraryPlan{UsbLibrarySummary summary;std::vector<bool> selected;std::vector<std::string> family_reason;};
 static std::optional<UsbLibraryPlan> injected_plan;
@@ -150,7 +157,7 @@ UsbLibraryPlan PlanUsbLibrary(const UsbImportScan& scan){
     for(const auto& row:scan.titles){const bool selected=row.status==UsbImportStatus::Ready&&row.record.key.version==newest[{row.record.key.id,row.record.key.type}];plan.selected.push_back(selected);plan.family_reason.emplace_back();if(selected){++plan.summary.selected_items;ready[row.record.application_id]=true;}if(row.status!=UsbImportStatus::AlreadyRegistered)affected[row.record.application_id]=true;}
     plan.summary.affected_games=affected.size();plan.summary.repairable_games=ready.size();plan.summary.blocked_games=affected.size()-ready.size();return plan;
 }
-struct UsbImportResult{std::vector<std::string> entries;size_t imported{},skipped{};bool restart{},pending{},rolled_back{};std::string detail,report_path;};
+struct UsbImportResult{std::vector<std::string> entries;std::vector<uint64_t> entry_applications;size_t imported{},skipped{};bool restart{},pending{},rolled_back{};std::string detail,report_path;};
 static bool pending_flag{};static Result pending_rc{},scan_rc{},import_rc{},restore_rc{};
 static unsigned pending_checks{},scans{},imports{},restores{},mutations{};
 static UsbImportScan prepared_scan;static UsbImportResult import_result,restore_result;
@@ -158,7 +165,8 @@ const char* UsbImportStatusText(UsbImportStatus s){switch(s){case UsbImportStatu
 std::string UsbImportPreview(const UsbImportScan&){return "Preview summary: source files stay on USB";}
 Result UsbImportPending(bool& pending){++pending_checks;pending=pending_flag;return pending_rc;}
 Result ScanUsbImports(ui::ProgressBox* p,UsbImportScan& result){++scans;assert(p->operation==nexus::safety::Operation::ReadOnly);if(p->cancelled){result.detail="Cancelled";return Cancelled;}result=prepared_scan;return scan_rc;}
-Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportResult& result){++imports;assert(startup_stops&&!startup_available);assert(p->operation==nexus::safety::Operation::MayWrite);assert(scan.complete);if(p->cancelled){result.detail="Cancelled before registration";return Cancelled;}++mutations;result=import_result;return import_rc;}
+static bool quick_import{};
+Result ImportUsbLibrary(ui::ProgressBox* p,const UsbImportScan& scan,UsbImportResult& result,bool quick=false){quick_import=quick;++imports;assert(startup_stops&&!startup_available);assert(p->operation==nexus::safety::Operation::MayWrite);assert(scan.complete);if(p->cancelled){result.detail="Cancelled before registration";return Cancelled;}++mutations;result=import_result;return import_rc;}
 Result RestoreUsbImport(ui::ProgressBox* p,UsbImportResult& result){++restores;assert(p->operation==nexus::safety::Operation::MayWrite);if(p->cancelled){result.detail="Restore cancelled before writes";return Cancelled;}++mutations;result=restore_result;return restore_rc;}
 enum class UsbTicketPrepareStatus{Ready,AlreadyPrepared,NeedsBackup,Incomplete};
 struct UsbTicketPrepareTitle{std::string name,reason,identity;UsbTicketPrepareStatus status{};};
@@ -171,6 +179,43 @@ std::string UsbTicketPreparePreview(const UsbTicketPreparePlan&){return "Support
 Result PlanUsbTicketPreparation(ui::ProgressBox* p,const UsbImportScan& scan,UsbTicketPreparePlan& plan){++plans;assert(scan.complete&&p->operation==nexus::safety::Operation::ReadOnly);if(p->cancelled){plan.detail="Cancelled";return Cancelled;}plan=prepare_plan;return plan_rc;}
 Result PrepareUsbTickets(ui::ProgressBox* p,const UsbTicketPreparePlan& plan,UsbTicketPrepareResult& result){++prepares;assert(plan.complete&&p->operation==nexus::safety::Operation::MayWrite);if(p->cancelled){result.detail="Cancelled before saving";return Cancelled;}++mutations;result=prepare_result;return prepare_rc;}
 }
+namespace sphaira::nexusapp {
+void DisplayPcUsbImport(u64 only_application=0);
+struct PcRemoval {std::uint64_t game{};std::string filename{"change.swap"};};inline std::vector<PcRemoval> pc_removals;inline unsigned pc_applied{};
+inline std::shared_ptr<std::vector<PcRemoval>> pending_startup_removals;
+inline unsigned resumed_additions{};
+std::shared_ptr<std::vector<PcRemoval>> TakeDetectedPcRemovals(){return std::move(pending_startup_removals);}
+void ResumePcInstallDetection(){++resumed_additions;}
+Result ListPcRemovals(ui::ProgressBox*,std::vector<PcRemoval>& out){out=pc_removals;return 0;}
+Result FinishPcRemoval(ui::ProgressBox*,const PcRemoval&,bool& changed){++pc_applied;changed=true;return 0;}
+}
+struct Thread{void(*work)(void*){};void* arg{};};
+Result threadStart(Thread* t){t->work(t->arg);return 0;}
+Result threadWaitForExit(Thread*){return 0;}
+void threadClose(Thread*){}
+void fatalThrow(Result){std::abort();}
+inline unsigned allocated_icons{},released_icons{};
+int nvgCreateImageMem(NVGcontext*,int,unsigned char*,size_t){return 10+ ++allocated_icons;}
+void nvgDeleteImage(NVGcontext*,int image){assert(image>1);++released_icons;}
+namespace sphaira::utils {
+Result CreateThread(Thread* thread,void(*work)(void*),void* arg,size_t){*thread={work,arg};return 0;}
+}
+namespace sphaira::ui {
+inline std::vector<u64> requested_icons;
+namespace gfx {void drawImage(NVGcontext*,float,float,float,float,int,int){}}
+}
+namespace sphaira::nexusapp {
+using UsbImportFamily=std::vector<const UsbImportTitle*>;
+struct UsbImportArtwork{std::string name;std::vector<unsigned char> icon;};
+UsbImportArtwork ReadUsbImportArtwork(u64 generation,const UsbImportFamily& family,const std::atomic_bool* cancel){
+    assert(generation==31 && !family.empty() && !cancel->load());
+    const auto app=family.front()->record.application_id;
+    for(const auto* row:family)assert(row->record.application_id==app);
+    ui::requested_icons.push_back(app);
+    return {family.front()->name, app==300?std::vector<unsigned char>{}:std::vector<unsigned char>{1}};
+}
+}
+// USB_ICON_CACHE_PRODUCTION
 // USB_IMPORT_UI_PRODUCTION
 namespace networkcheck {
 using u32=std::uint32_t;using Connection=nexus::network::Connection;

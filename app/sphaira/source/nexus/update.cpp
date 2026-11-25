@@ -1,6 +1,7 @@
 #include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/update.hpp"
+#include "nexus/hats.hpp"
 #include "nexus/update_transaction.hpp"
 #include "nexus/nx_Client.hpp"
 #include "nexus/network_socket_config.hpp"
@@ -126,6 +127,8 @@ struct StartupCheck {
     bool attempted{},thread_started{},consumed{};
     Artifact kind{Artifact::Nro};
     Release release;
+    hats::Release hats_release;
+    bool hats_consumed{};
 } startup_check;
 
 void StartupDeadline(void*){
@@ -161,6 +164,10 @@ void StartupWorker(void*){
                 SelectRelease({bytes.data(),bytes.size()},release,startup_check.kind) && ValidRelease(release) &&
                 VersionCode(release.version)>VersionCode(Version) && !startup_check.cancel.load(std::memory_order_relaxed))
                 startup_check.release=std::move(release);
+            bytes.clear();
+            if(!startup_check.cancel.load(std::memory_order_relaxed) &&
+                R_SUCCEEDED(Fetch(nullptr,hats::Api,2*1024*1024,bytes,detail,&startup_check.cancel,8000,3000)))
+                hats::Parse({bytes.data(),bytes.size()},hats::Installed(),startup_check.hats_release);
         }
     }
     startup_check.request_finished.store(true,std::memory_order_release);
@@ -197,6 +204,18 @@ void StopStartupCheck(){
     startup_check.cancel.store(true,std::memory_order_relaxed);
     JoinStartupWorker();
 }
+Result FetchHatsData(ProgressBox* p,const std::string& url,size_t limit,std::vector<char>& bytes,std::string& detail){
+    R_UNLESS(url==hats::Api ||
+        url=="https://raw.githubusercontent.com/TR4UNEXUS/Nexus-USB-HATS/main/hats-exclusions.json" ||
+        url.starts_with("https://github.com/TR4UNEXUS/Nexus-USB-HATS/releases/download/"),Invalid);
+    Network network;R_TRY(network.Open());return Fetch(p,url,limit,bytes,detail,nullptr,600000,10000);
+}
+bool TakeStartupHats(hats::Release& release){
+    if(startup_check.hats_consumed||!startup_check.complete.load(std::memory_order_acquire))return false;
+    JoinStartupWorker();startup_check.hats_consumed=true;
+    if(startup_check.hats_release.packs.empty())return false;
+    release=std::move(startup_check.hats_release);return true;
+}
 Result FetchRepairCatalog(ProgressBox* p,std::vector<u8>& output,std::string& detail){
     Network network;R_TRY(network.Open());std::vector<char> bytes;
     const std::string_view server=reports::CatalogEndpoint;
@@ -206,6 +225,16 @@ Result FetchRepairCatalog(ProgressBox* p,std::vector<u8>& output,std::string& de
     if(R_FAILED(rc)){if(p)R_TRY(p->ShouldExitResult());R_TRY(Fetch(p,catalog::Url,catalog::MaxBytes,bytes,detail,nullptr,30000,10000));}
     output.assign(bytes.begin(),bytes.end());return 0;
 }
+
+} // namespace nexus::updates
+namespace nexus::hats {
+Result Check(sphaira::ui::ProgressBox* p,Release& release,std::string& detail){
+    std::vector<char> bytes;R_TRY(updates::FetchHatsData(p,Api,2*1024*1024,bytes,detail));
+    R_UNLESS(Parse({bytes.data(),bytes.size()},Installed(),release),nexus::Invalid);return 0;
+}
+bool TakeStartup(Release& release){return updates::TakeStartupHats(release);}
+}
+namespace nexus::updates {
 Result SendDiagnosticReport(const std::string& payload,std::string& receipt,const std::atomic_bool& cancel){
     receipt.clear();const std::string_view endpoint=reports::Endpoint;
     R_UNLESS(endpoint.starts_with("https://")&&endpoint.size()<512&&endpoint.find_first_of("@?#\r\n")==endpoint.npos&&payload.size()<=128*1024,Invalid);

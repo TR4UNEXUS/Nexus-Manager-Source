@@ -1,116 +1,130 @@
-#include "nexus/localize.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nexus/usb_library_startup.hpp"
-#include "nexus/routing_backup.hpp"
 #include "nexus/usb_import.hpp"
+#include "nexus/game_cleanup.hpp"
+#include "nexus/hats.hpp"
 #include "nexus/lifecycle.hpp"
 #include "nexus/nx_Client.hpp"
+#include "nexus/routing_backup.hpp"
 #include "utils/thread.hpp"
 #include "app.hpp"
+#include <algorithm>
 #include <atomic>
-#include <utility>
+#include <set>
 
 namespace sphaira::nexusapp {
 namespace {
-struct StartupLibraryJob {
+struct Detection {
     Thread thread{};
-    std::atomic_bool cancel{},done{};
-    bool attempted{},started{},consumed{};
-    u64 generation{};
-    UsbLibraryStartupResult result;
-} startup_library;
+    std::atomic_bool cancel{}, done{};
+    bool attempted{}, started{};
+    bool checked_removals{};
+    std::shared_ptr<std::vector<PcRemoval>> removals;
+    std::shared_ptr<UsbImportScan> ready;
+} detection;
 
-bool Stopped(){return startup_library.cancel.load(std::memory_order_relaxed)||!nexus::lifecycle::CanPoll();}
+bool Stopped() { return detection.cancel.load() || !nexus::lifecycle::CanPoll(); }
 
-UsbLibraryStartupResult ReadStartupLibrary(){
-    UsbLibraryStartupResult out;
-    if(Stopped())return out;
-    const auto pending_result=UsbImportPending(out.pending);
-    if(Stopped())return {};
-    // Recovery uses the current SD/system backup, even without the USB drive.
-    if(R_SUCCEEDED(pending_result)&&out.pending)return out;
-    nexus::Client usb;nexus::Status status{};
-    if(R_FAILED(usb.Query(status))||!status.Available()||Stopped())return {};
-    startup_library.generation=status.generation;
-    if(R_FAILED(pending_result)){
-        out.result=pending_result;
-        out.detail="Could not check the previous USB repair state. Keep any recovery backups and open Repair USB games to review it."_nx;
-        return out;
+void SelectNewFamilies(UsbImportScan& scan) {
+    const auto plan = PlanUsbLibrary(scan);
+    std::set<u64> additions;
+    for (size_t i=0; i<scan.titles.size(); ++i) {
+        const auto& row = scan.titles[i];
+        if (plan.selected[i] && row.needs_home_import) additions.insert(row.record.application_id);
     }
-    if(R_SUCCEEDED(MissingRoutingWithConsoleBackup(out.console_backup_available))&&out.console_backup_available)return out;
-    UsbImportScan scan;
-    const auto rc=ScanUsbImports(nullptr,scan,status.generation,&startup_library.cancel,false);
-    if(Stopped())return {};
-    if(R_FAILED(rc)||!scan.complete){
-        out.result=R_FAILED(rc)?rc:nexus::Invalid;
-        out.detail=scan.detail.empty()?"The USB library check could not finish. Open Repair USB games to check again. No game data was changed."_nx:scan.detail;
-        return out;
-    }
-    const auto summary=SummarizeUsbLibrary(scan);
-    out.affected_games=summary.affected_games;
-    out.repairable_games=summary.repairable_games;
-    out.blocked_games=summary.blocked_games;
-    out.missing_ticket_games=summary.missing_ticket_games;
-    return out;
-}
-void StartupLibraryWorker(void*){
-    // ReadStartupLibrary releases all service handles and metadata buffers
-    // before publishing completion. Only a small summary reaches the UI.
-    auto result=ReadStartupLibrary();
-    if(!Stopped())startup_library.result=std::move(result);
-    startup_library.done.store(true,std::memory_order_release);
-}
-void JoinStartupLibrary(){
-    if(!startup_library.started)return;
-    const auto waited=threadWaitForExit(&startup_library.thread);
-    if(R_FAILED(waited))fatalThrow(waited); // Never continue while a worker owns services.
-    const auto closed=threadClose(&startup_library.thread);
-    if(R_FAILED(closed))fatalThrow(closed);
-    startup_library.started=false;
-}
+    // Keep every sibling (including native versions and blockers) for the normal
+    // transaction planner. Never automatically repair an unrelated ready item.
+    std::erase_if(scan.titles, [&](const auto& row) {
+        const auto family = row.record.application_id;
+        return !additions.contains(family);
+    });
 }
 
-void StartUsbLibraryStartupCheck(){
-    if(startup_library.attempted)return;
-    startup_library.attempted=true;
-    if(App::IsApplet()||!nexus::lifecycle::CanPoll()){
-        startup_library.done.store(true,std::memory_order_release);return;
-    }
-    // An initial applet focus callback can run before the first menu frame.
-    // That event cancels no live worker; it must not suppress the later first
-    // foreground check. Stop() still suppresses it by setting attempted.
-    startup_library.cancel.store(false,std::memory_order_relaxed);
-    const auto created=utils::CreateThread(&startup_library.thread,StartupLibraryWorker,nullptr,256*1024);
-    if(R_FAILED(created)){
-        startup_library.done.store(true,std::memory_order_release);return;
-    }
-    const auto started=threadStart(&startup_library.thread);
-    if(R_FAILED(started)){
-        threadClose(&startup_library.thread);
-        startup_library.done.store(true,std::memory_order_release);return;
-    }
-    startup_library.started=true;
-}
-bool TakeUsbLibraryStartupCheck(UsbLibraryStartupResult& out){
-    if(startup_library.consumed||!startup_library.done.load(std::memory_order_acquire))return false;
-    JoinStartupLibrary();startup_library.consumed=true;
-    if(Stopped()){startup_library.result={};return false;}
-    // A result may have waited behind a browser/dialog. Do not report the
-    // previous drive's games after unplugging or replacing it. Recovery of an
-    // existing SD journal is deliberately independent of USB availability.
-    if(!startup_library.result.pending&&(startup_library.result.console_backup_available||startup_library.result.affected_games||R_FAILED(startup_library.result.result))){
-        nexus::Client usb;nexus::Status status{};
-        if(R_FAILED(usb.Query(status))||!status.Available()||status.generation!=startup_library.generation){
-            startup_library.result={};out={};return true;
+void DetectPcInstalls(void*) {
+    auto detect = []() -> std::shared_ptr<UsbImportScan> {
+        if (Stopped() || !nexus::hats::SupportsPcLibrary()) return {};
+        nexus::Client usb;
+        nexus::Status status{};
+        // A bus-powered drive can still be mounting when Manager opens.
+        for (int attempt=0; attempt<10; ++attempt) {
+            if (Stopped() || R_FAILED(usb.Query(status))) return {};
+            if (status.Available()) break;
+            svcSleepThread(200'000'000);
         }
-    }
-    out=std::move(startup_library.result);
-    return true;
+        if (!status.Available() || Stopped()) return {};
+        // PC Manager 0.1.x keeps this empty session file even for packages with
+        // multiple titles, no ticket or no display-name hint. A newly discovered
+        // drive is scanned read-only; only the foreground import writes records.
+        nexus::Info session{};
+        if (R_FAILED(usb.Stat(status.generation,"/nexus/pc-import/v1/session.lock",session))
+            || session.directory || session.size || Stopped()) return {};
+        nexus::Info partial{};
+        if (usb.Stat(status.generation,"/nexus/pc-import/v1/content.partial",partial) != MAKERESULT(140,205)) return {};
+        for(const auto* name:{"/nexus/pc-import/v1/install-stage","/nexus/pc-import/v1/install-ready","/nexus/pc-import/v1/replace-stage","/nexus/pc-import/v1/replace-ready"})
+            if(usb.Stat(status.generation,name,partial)!=MAKERESULT(140,205))return {};
+        bool pending{}, needs_backup{};
+        if (R_FAILED(UsbImportPending(pending)) || pending || Stopped()) return {};
+        if (R_FAILED(MissingRoutingWithConsoleBackup(needs_backup)) || needs_backup || Stopped()) return {};
+        if(!detection.checked_removals){
+            auto removed=std::make_shared<std::vector<PcRemoval>>();
+            const auto rc=ListPcRemovals(nullptr,*removed,&detection.cancel);
+            if(R_FAILED(rc)){nexus::Log("pc-startup-removals",rc);return {};}
+            if(!removed->empty()){detection.removals=std::move(removed);return {};}
+        }
+        auto scan = std::make_shared<UsbImportScan>();
+        if (R_FAILED(ScanUsbImports(nullptr,*scan,status.generation,&detection.cancel,false)) || !scan->complete || Stopped()) return {};
+        SelectNewFamilies(*scan);
+        return scan->titles.empty() ? nullptr : scan;
+    };
+    detection.ready = detect();
+    detection.done.store(true,std::memory_order_release);
 }
-void CancelUsbLibraryStartupCheck(){startup_library.cancel.store(true,std::memory_order_relaxed);}
-void StopUsbLibraryStartupCheck(){
-    startup_library.attempted=true;
-    CancelUsbLibraryStartupCheck();JoinStartupLibrary();
-    startup_library.result={};startup_library.consumed=true;
+
+void JoinDetection() {
+    if (!detection.started) return;
+    const auto waited = threadWaitForExit(&detection.thread);
+    if (R_FAILED(waited)) fatalThrow(waited);
+    const auto closed = threadClose(&detection.thread);
+    if (R_FAILED(closed)) fatalThrow(closed);
+    detection.started = false;
+}
+}
+
+void StartPcInstallDetection() {
+    if (detection.attempted || !nexus::lifecycle::CanPoll()) return;
+    detection.attempted = true;
+    if (App::IsApplet()) return;
+    detection.cancel.store(false);
+    if (R_FAILED(utils::CreateThread(&detection.thread,DetectPcInstalls,nullptr,256*1024))) return;
+    if (R_FAILED(threadStart(&detection.thread))) { threadClose(&detection.thread); return; }
+    detection.started = true;
+}
+std::shared_ptr<UsbImportScan> TakeDetectedPcInstalls() {
+    if (!detection.started || !detection.done.load(std::memory_order_acquire)) return {};
+    JoinDetection();
+    auto scan = std::move(detection.ready);
+    if (!scan || Stopped()) return {};
+    nexus::Client usb;
+    if (R_FAILED(usb.Check(scan->generation))) return {};
+    return scan;
+}
+std::shared_ptr<std::vector<PcRemoval>> TakeDetectedPcRemovals(){
+    if(!detection.started||!detection.done.load(std::memory_order_acquire)||!detection.removals)return {};
+    JoinDetection();
+    auto receipts=std::move(detection.removals);
+    nexus::Client usb;
+    if(Stopped()||R_FAILED(usb.Check(receipts->front().generation)))return {};
+    return receipts;
+}
+void ResumePcInstallDetection(){
+    if(!detection.started){detection.checked_removals=true;detection.attempted=false;}
+}
+void CancelUsbLibraryStartupCheck() { detection.cancel.store(true); }
+void StopUsbLibraryStartupCheck() {
+    detection.attempted = true;
+    CancelUsbLibraryStartupCheck();
+    JoinDetection();
+    detection.ready.reset();
+    detection.removals.reset();
 }
 }
