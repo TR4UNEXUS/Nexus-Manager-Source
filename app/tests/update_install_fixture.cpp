@@ -17,6 +17,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
+
+constexpr const char* operator""_nx(const char* text, std::size_t) { return text; }
 using Result=unsigned;using u64=std::uint64_t;
 constexpr Result NetworkFault=101,ProgramFault=102,StorageFault=103,SdFault=104,InstallerFault=105,Cancelled=106,FirmwareFault=107;
 #define R_TRY(expr) do{const auto fixture_result=(expr);if(fixture_result)return fixture_result;}while(false)

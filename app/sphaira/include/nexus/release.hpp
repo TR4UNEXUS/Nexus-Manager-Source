@@ -8,7 +8,7 @@ namespace nexus::updates {
 inline constexpr char Version[]=APP_VERSION;
 #else
 // Standalone host tools and fixtures compile without the Switch build flags.
-inline constexpr char Version[]="0.2.40";
+inline constexpr char Version[]="0.2.41";
 #endif
 inline constexpr char Repository[]="https://github.com/TechRepairs4U/Nexus-Manager";
 inline constexpr char ReleaseApi[]="https://api.github.com/repos/TechRepairs4U/Nexus-Manager/releases?per_page=20";

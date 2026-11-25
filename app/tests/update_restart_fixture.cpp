@@ -6,6 +6,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+constexpr const char* operator""_nx(const char* text, std::size_t) { return text; }
 using Result=unsigned;using u32=std::uint32_t;using u64=std::uint64_t;
 extern "C" {u32 __nx_applet_exit_mode=1;}
 constexpr int AppletType_Application=0,AppletType_LibraryApplet=2,AppletType_SystemApplication=4;

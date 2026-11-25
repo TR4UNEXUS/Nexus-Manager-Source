@@ -11,6 +11,8 @@
 #include <set>
 #include <string>
 #include <vector>
+
+constexpr const char* operator""_nx(const char* text, std::size_t) { return text; }
 #include <unistd.h>
 namespace update=nexus::manager_update;
 namespace manager_update=nexus::manager_update;
@@ -120,7 +122,7 @@ int main(){
         if(fault==2)reported_caps.magic=0;if(fault==3)reported_caps.abi=2;
         if(fault==4)--reported_caps.titles;if(fault==5)--reported_caps.content;
         if(fault==6)reported_caps.reserved=1;if(fault==7)reported_caps.features=0;
-        assert(CheckManagerUpdateStorage(NcmStorageId_SdCard,detail)==nexus::Unavailable);
+        assert(CheckManagerUpdateStorage(NcmStorageId_SdCard,detail)==nexus::registration::FirmwareUpdateRequired);
         assert(detail.find("U1")!=std::string::npos&&detail.find("internal storage")!=std::string::npos);
     }
     reported_caps=supported;capability_error=345;
