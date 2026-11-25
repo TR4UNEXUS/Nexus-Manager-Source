@@ -32,6 +32,8 @@ USB features require matching Nexus firmware. Manager uses the shared firmware s
 
 If Nexus has been useful to you, consider [buying me a coffee](https://www.buymeacoffee.com/TechRepairs4u). Your support gives me more time to build new features and test fixes. Thanks for supporting my work!
 
+<a href="https://www.buymeacoffee.com/TechRepairs4u"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="217" height="60"></a>
+
 ## Credits and licence
 
 Nexus Manager is based on Sphaira and retains its GPL licence and dependency notices. Read [the source attribution](app/ATTRIBUTION.md), [LICENSE](LICENSE) and [dependency revisions](app/DEPENDENCIES.json). Source names inherited from upstream are kept where they are part of the implementation.
