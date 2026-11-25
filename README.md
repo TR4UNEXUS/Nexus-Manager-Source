@@ -28,6 +28,10 @@ The application is in `app/`. Most Nexus features are under `app/sphaira/source/
 
 USB features require matching Nexus firmware. Manager uses the shared firmware service so two raw USB drivers do not try to own the same drive. The updater uses the existing Manager release repository; this repository is for development.
 
+## Support Nexus
+
+If Nexus has been useful to you, consider [buying me a coffee](https://www.buymeacoffee.com/TechRepairs4u). Your support gives me more time to build new features and test fixes. Thanks for supporting my work!
+
 ## Credits and licence
 
 Nexus Manager is based on Sphaira and retains its GPL licence and dependency notices. Read [the source attribution](app/ATTRIBUTION.md), [LICENSE](LICENSE) and [dependency revisions](app/DEPENDENCIES.json). Source names inherited from upstream are kept where they are part of the implementation.
