@@ -17,6 +17,11 @@
 using Result=std::uint32_t;using s64=std::int64_t;using u32=std::uint32_t;
 using u64=std::uint64_t;using u8=std::uint8_t;
 constexpr Result Fault=123,Cancelled=456;
+constexpr const char* operator""_nx(const char* text,size_t){return text;}
+namespace nexus::reports {
+void Stop(){} bool OfferChoice(){return false;} Result SetPreference(bool){return 0;} void Poll(bool){}
+}
+namespace nexus::hats {struct Release{};bool TakeStartup(Release&){return false;}void Prompt(const Release&){}}
 #define R_FAILED(rc) ((rc)!=0)
 static bool standalone{};
 bool envIsNso(){return standalone;}
@@ -40,6 +45,7 @@ struct ProgressBox {
 }
 namespace sphaira {
 struct App {
+    static void Notify(const char*){}
     static inline std::unique_ptr<ui::OptionBox> option;
     static inline std::unique_ptr<ui::ProgressBox> progress;
     static inline unsigned options{},progresses{},exits{};
@@ -135,8 +141,13 @@ Image ImageResize(const std::vector<u8>&,int,int,int,int){return {};}
 namespace nexus_badge{void Overlay(u8*,size_t,int){}}
 int nvgCreateImageRGBA(void*,int,int,int,const u8*){return 0;}
 void nvgDeleteImage(void*,int){}
-namespace nexusapp{void DisplayUsbImport(){}}
+namespace nexusapp {
+void DisplayUsbImport(){} void DisplayPcUsbImport(){} void PollAutomaticRoutingBackup(){}
+void StartPcInstallDetection(){} bool DispatchPcRemovals(){return false;}
+std::shared_ptr<int> TakeDetectedPcInstalls(){return {};}void AddPcGames(std::shared_ptr<int>){}
+}
 struct Menu:MenuBase {
+    bool ShouldPop(){return false;}bool HasSaltyDetails(){return false;}void ShowSaltyDetails(){}
     enum class Page{Home,More,Installed,Files,Homebrew,Cleanup,Queue,Results,Mods,ModFolders};
     Page page=Page::Home;bool cleanup_tickets{};nexus::Target cleanup_target{};size_t selected{};bool actions_dirty{true},refresh_pending{},usb_source{};
     // STARTUP_UPDATE_UI_STATE

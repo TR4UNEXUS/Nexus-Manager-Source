@@ -2,11 +2,13 @@
 
 Nexus Manager is the Switch app for managing games across SD and USB storage. It provides game installation and moves, USB library import and repair, a file manager, network installation over SMB/NFS, and app updates.
 
-This repository contains the 0.2.40 application source, assets, dependencies, build scripts and tests. Installable NSP and NRO updates are published separately in [Nexus Manager releases](https://github.com/TR4UNEXUS/Nexus-USB-HATS/releases/tag/vNX1).
+This repository contains the 0.2.40 application source, assets, dependencies, build scripts and tests. The Switch app checks for NSP and NRO updates on the [Nexus Manager release feed](https://github.com/TechRepairs4U/Nexus-Manager/releases/latest).
 
 ## Changes in 0.2.40
 
 Switch Manager picks up changes prepared by Nexus Manager for PC, including new USB games, game removals and replacements after compression. You can also run the import from Installed games. The app recognises the NX1 pack and edition, offers HATS updates, and includes SaltyNX compatibility guidance.
+
+PC sync reopens the USB drive and checks its identity before applying a change detected at startup. The updater and diagnostic log use the same version number as the installed app.
 
 Help building, testing and improving Nexus is welcome. Private report service settings are configured separately for deployment.
 

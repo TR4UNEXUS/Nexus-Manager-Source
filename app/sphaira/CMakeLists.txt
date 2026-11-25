@@ -204,7 +204,7 @@ endif()
 
 target_compile_definitions(sphaira PRIVATE
     -DNEXUS_BUNDLED_PROBE=$<BOOL:${NEXUS_BUNDLED_PROBE}>
-    -DAPP_VERSION="${sphaira_VERSION}"
+    -DAPP_VERSION="${sphaira_NACP_VERSION}"
     -DAPP_DISPLAY_VERSION="${sphaira_DISPLAY_VERSION}"
     -DCURL_NO_OLDIES=1
     -DDEV_BUILD=$<BOOL:${DEV_BUILD}>

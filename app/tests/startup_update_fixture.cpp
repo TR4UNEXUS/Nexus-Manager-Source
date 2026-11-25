@@ -12,6 +12,13 @@
 #include <type_traits>
 #include <vector>
 using Result=unsigned;using u32=unsigned;using curl_off_t=long long;
+constexpr const char* operator""_nx(const char* text,size_t){return text;}
+namespace nexus::hats {
+struct Release {};
+constexpr char Api[]="https://api.github.com/repos/TR4UNEXUS/Nexus-USB-HATS/releases?per_page=20";
+inline std::string Installed(){return "NX1";}
+inline void Parse(std::string_view,std::string_view,Release&){}
+}
 #define R_TRY(expr) do{const auto fixture_result=(expr);if(fixture_result)return fixture_result;}while(false)
 #define R_UNLESS(expr,rc) do{if(!(expr))return (rc);}while(false)
 #define R_SUCCEED() return 0
@@ -31,7 +38,7 @@ std::atomic_uint socket_opens{},socket_closes{},curl_closes{},thread_creates{},t
 std::vector<long> timeouts;
 }
 namespace sphaira::ui {
-struct ProgressBox {bool ShouldExit(){assert(false);return false;}void UpdateTransfer(curl_off_t,curl_off_t){assert(false);}};
+struct ProgressBox {bool ShouldExit(){assert(false);return false;}void UpdateTransferBytes(curl_off_t,curl_off_t){assert(false);}};
 }
 struct Thread {void(*function)(void*){};void* arg{};std::thread worker;bool created{};};
 namespace sphaira::utils {
@@ -101,6 +108,7 @@ std::string Feed(){
         "\",\"browser_download_url\":\""+nexus::updates::Repository+"/releases/download/"+tag+"/"+asset+"\"}]}]";
 }
 CURLcode curl_easy_perform(CURL* h){
+    if(h->url==nexus::hats::Api){char body[]="[]";return h->write(body,1,2,h->body)==2?CURLE_OK:CURLE_FAILED;}
     assert(h->peer==1&&h->host==2&&h->protocol==CURLPROTO_HTTPS&&!h->follow&&h->signal==1);
     assert(h->ca=="romfs:/certs/cacert.pem"&&h->connect>0&&h->connect<=3000&&h->timeout>0&&h->timeout<=8000);
     assert(mock::sockets&&mock::curl&&mock::romfs);const auto call=++mock::requests;

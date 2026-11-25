@@ -49,7 +49,7 @@ int LogicalStorage(Target t){return t==Target::Internal?4:5;}
 void Log(const char*,Result,u64=0){}
 Result CheckUsbMutationAllowed();
 struct Info{bool directory{};u64 size{};};
-struct Client {Result Stat(u64,const std::string&,Info&);Result DeleteRegistered(u64,const std::string&,u64);};
+struct Client {bool connected{};Result Check(u64);Result Stat(u64,const std::string&,Info&);Result DeleteRegistered(u64,const std::string&,u64);};
 }
 namespace sphaira::nexusapp {
 namespace core=nexus::cleanup;using Id=core::Id;using Digest=std::array<u8,32>;using nexus::Target;
@@ -126,6 +126,7 @@ Result PushApplicationRecord(u64 id,const ncm::ContentStorageRecord* rows,size_t
 Result InvalidateApplicationControlCache(u64){return 0;}
 }
 Result nexus::CheckUsbMutationAllowed(){return sphaira::nexusapp::gate_error;}
+Result nexus::Client::Check(u64 g){connected=g!=0&&g==sphaira::nexusapp::live.generation;return connected?0:Invalid;}
 Result nexus::Client::Stat(u64 g,const std::string& path,nexus::Info& info){using namespace sphaira::nexusapp;
     if(g!=live.generation)return Invalid;
     for(const auto& [id,f]:live.files)if(f.path==path){info={false,f.size};return 0;}
@@ -174,7 +175,7 @@ Result ImportUsbLibrary(ui::ProgressBox*,const UsbImportScan& scan,UsbImportResu
     return 0;
 }
 Result RemovePcTickets(ui::ProgressBox*,nexus::Client&,const PcRemoval&,const std::set<u64>&,const Digest&){return 0;}
-Result ReadPcReceipt(nexus::Client&,const PcRemoval&,nexus::pc::Receipt& r,Digest& digest,nexus::pc::Receipt* fresh=nullptr){if(fresh)*fresh=pc_fresh;r=pc_receipt;digest={};return 0;}
+Result ReadPcReceipt(nexus::Client& client,const PcRemoval&,nexus::pc::Receipt& r,Digest& digest,nexus::pc::Receipt* fresh=nullptr){R_UNLESS(client.connected,Invalid);if(fresh)*fresh=pc_fresh;r=pc_receipt;digest={};return 0;}
 Result ReadUsbRoutingContent(std::set<Id>& out){out=pc_routes;return 0;}
 // FUNCTIONS_PRODUCTION
 #undef fopen

@@ -822,9 +822,18 @@ Result RemovePcTickets(ui::ProgressBox* p,nexus::Client& usb,const PcRemoval& it
 Result FinishPcRemoval(ui::ProgressBox* p,const PcRemoval& item,bool& changed){
     changed=false;nexus::Client usb;nexus::pc::Receipt request,fresh;Digest hash;
     R_TRY(ncmInitialize());ON_SCOPE_EXIT(ncmExit());
-    R_TRY(ReadPcReceipt(usb,item,request,hash,&fresh));R_UNLESS(hash==item.digest&&request.game==item.game,Invalid);
+    // Detection ran on another worker. Its USB connection has already closed.
+    const auto connected=usb.Check(item.generation);
+    if(R_FAILED(connected)){nexus::Log("pc-sync-connect",connected,item.game);return connected;}
+    const auto read=ReadPcReceipt(usb,item,request,hash,&fresh);
+    if(R_FAILED(read)){nexus::Log("pc-sync-read-change",read,item.game);return read;}
+    R_UNLESS(hash==item.digest&&request.game==item.game,Invalid);
     R_TRY(nexus::CheckUsbMutationAllowed());
-    if(!fresh.members.empty())return FinishPcReplacement(p,usb,item,request,fresh,changed);
+    if(!fresh.members.empty()){
+        const auto result=FinishPcReplacement(p,usb,item,request,fresh,changed);
+        nexus::Log("pc-sync-replacement",result,item.game);
+        return result;
+    }
     Inventory i;R_TRY(ReadInventory(p,Target::Usb,i,false));R_UNLESS(i.generation==item.generation&&!i.usb_unknown,Invalid);
     std::set<Id> others;for(const auto& ref:i.references)if(ref.application!=item.game)others.insert(ref.content.begin(),ref.content.end());
     // A reinstall or a new member invalidates the old request. Shared physical

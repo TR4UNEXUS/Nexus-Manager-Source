@@ -6,7 +6,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'sphaira/source/nexus/update.cpp').read_text()
-backend = source[source.index('namespace nexus::updates {'):source.index('Result Check(ProgressBox*')]
+backend = source[source.index('namespace nexus::updates {'):source.index('Result FetchHatsData(')]
 fixture = (root / 'tests/startup_update_fixture.cpp').read_text()
 fixture = fixture.replace('// UPDATE_BACKEND_PRODUCTION', backend + '\n}')
 cases = ('new-nro', 'new-nsp', 'current', 'invalid', 'offline', 'owned-sockets',
